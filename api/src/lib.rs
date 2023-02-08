@@ -1,41 +1,37 @@
-mod db;
-mod graphql;
+#![deny(clippy::disallowed_methods, clippy::suspicious, clippy::style)]
+#![warn(clippy::pedantic, clippy::cargo)]
+#![allow(clippy::module_name_repetitions)]
 
-use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
-use async_graphql_poem::GraphQL;
-use holaplex_rust_boilerplate_core::prelude::*;
-use poem::{get, handler, listener::TcpListener, post, web::Html, IntoResponse, Route, Server};
+pub mod api;
+pub mod db;
+pub mod entities;
+pub mod handlers;
+use db::Connection;
+use hub_core::{clap, prelude::*};
+use solana_client::rpc_client::RpcClient;
 
-use crate::graphql::schema::build_schema;
+#[derive(Debug, clap::Args)]
+#[command(version, author, about)]
+pub struct Args {
+    #[arg(short, long, env, default_value_t = 3002)]
+    pub port: u16,
 
-#[handler]
-async fn playground() -> impl IntoResponse {
-    Html(playground_source(GraphQLPlaygroundConfig::new("/graphql")))
+    #[arg(short, long, env)]
+    pub solana_endpoint: String,
+
+    #[command(flatten)]
+    pub db: db::DbArgs,
 }
 
-#[tokio::main]
-pub async fn start() -> Result<()> {
-    if cfg!(debug_assertions) {
-        dotenv::dotenv().ok();
+#[derive(Clone)]
+pub struct AppState {
+    pub connection: Connection,
+    pub rpc: Arc<RpcClient>,
+}
+
+impl AppState {
+    #[must_use]
+    pub fn new(connection: Connection, rpc: Arc<RpcClient>) -> Self {
+        Self { connection, rpc }
     }
-
-    env_logger::builder()
-        .filter_level(if cfg!(debug_assertions) {
-            log::LevelFilter::Debug
-        } else {
-            log::LevelFilter::Info
-        })
-        .parse_default_env()
-        .init();
-
-    let schema = build_schema().await?;
-
-    Server::new(TcpListener::bind("127.0.0.1:3001"))
-        .run(
-            Route::new()
-                .at("/graphql", post(GraphQL::new(schema)))
-                .at("/playground", get(playground)),
-        )
-        .await
-        .map_err(Into::into)
 }

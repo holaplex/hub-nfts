@@ -1,33 +1,39 @@
+use std::time::Duration;
+
+use hub_core::{anyhow::Result, clap, prelude::*};
 pub use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
-use holaplex_rust_boilerplate_core::prelude::*;
-
 /// Arguments for establishing a database connection
-#[derive(Debug, Parser)]
-pub struct Args {
-    #[arg(long, env, default_value = "500")]
-    max_connections: u32,
-    #[arg(long, env, default_value = "60")]
-    connection_timeout: u64,
-    #[arg(long, env, default_value = "60")]
-    acquire_timeout: u64,
-    #[arg(long, env, default_value = "60")]
-    idle_timeout: u64,
+#[derive(Debug, clap::Args)]
+pub struct DbArgs {
+    #[arg(long, env, default_value_t = 500)]
+    pub max_connections: u32,
+    #[arg(long, env, default_value_t = 60)]
+    pub connection_timeout: u64,
+    #[arg(long, env, default_value_t = 10)]
+    pub acquire_timeout: u64,
+    #[arg(long, env, default_value_t = 60)]
+    pub idle_timeout: u64,
     #[arg(long, env)]
-    database_url: String,
+    pub database_url: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct Connection(DatabaseConnection);
 
 impl Connection {
-    pub async fn new() -> Result<Self> {
-        let Args {
+    /// Res
+    ///
+    /// # Errors
+    /// This function fails if ...
+    pub async fn new(args: DbArgs) -> Result<Self> {
+        let DbArgs {
             max_connections,
             connection_timeout,
             acquire_timeout,
             idle_timeout,
             database_url,
-        } = Args::parse();
+        } = args;
 
         let options = ConnectOptions::new(database_url)
             .max_connections(max_connections)
@@ -36,15 +42,15 @@ impl Connection {
             .idle_timeout(Duration::from_secs(idle_timeout))
             .clone();
 
-        let db = Database::connect(options)
+        let connection = sea_orm::Database::connect(options)
             .await
             .context("failed to get database connection")?;
 
-        Ok(Self(db))
+        Ok(Self(connection))
     }
 
     #[must_use]
-    pub fn get(self) -> DatabaseConnection {
-        self.0
+    pub fn get(&self) -> &DatabaseConnection {
+        &self.0
     }
 }

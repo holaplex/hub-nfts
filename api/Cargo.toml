@@ -1,23 +1,48 @@
 [package]
-name = "holaplex-rust-boilerplate-api"
+name = "holaplex-hub-treasuries"
 version = "0.1.0"
+publish = false
+authors = [
+  "Holaplex <engineering@holaplex.com>",
+]
 edition = "2021"
+description = "Holaplex Hub treasury service"
+readme = "./README.md"
+repository = "https://github.com/holaplex/hub-treasuries"
+license = "AGPL-3.0-or-later"
+keywords = ["hub", "holaplex", "web3"]
+categories = ["cryptography::cryptocurrencies", "web-programming"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
 
 [dependencies]
-holaplex-rust-boilerplate-core = { path = "./../core" }
-sea-orm = { version = "^0.10.0" , features = [ "debug-print", "runtime-async-std-native-tls", "sqlx-postgres" ] }
-async-graphql = { version = "5.0.3", features = ["chrono", "uuid", "log", "dataloader"] }
-poem = "1.3.50"
+sea-orm = { version = "^0.10.0", features = [
+  "debug-print",
+  "runtime-tokio-rustls",
+  "sqlx-postgres",
+] }
+serde = { version = "1.0.152", features = ["derive"] }
+poem = { version = "1.3.50", features = ["anyhow", "test"] }
 async-graphql-poem = "5.0.3"
-async-std = { version = "^1", features = ["attributes", "tokio1"] }
-chrono = "0.4.23"
-serde = { version = "1", features = ["derive"] }
-clap = { version = "4.0.22", features = ["derive", "env"] }
-anyhow = "1.0.66"
-dotenv = "0.15.0"
-uuid = "1.2.2"
-log = "0.4.17"
-tokio = { version = "1.0", features = ["full"] }
-env_logger = "0.10.0"
+poem-openapi = { version = "2.0.23", features = ["swagger-ui", "uuid", "chrono"] }
+prost = "0.11.5"
+solana-program = "1.15.0"
+solana-client = "1.15.0"
+spl-token = "3.5.0"
+solana-sdk = "1.15.0"
+spl-associated-token-account = "1.1.2"
+mpl-token-metadata = "1.8.2"
+
+[dependencies.hub-core]
+package = "holaplex-hub-core"
+version = "0.1.0"
+git = "https://github.com/holaplex/hub-core"
+branch = "stable"
+features = ["kafka"]
+
+[build-dependencies.hub-core-build]
+package = "holaplex-hub-core-build"
+version = "0.1.0"
+git = "https://github.com/holaplex/hub-core"
+branch = "stable"
