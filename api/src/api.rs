@@ -1,21 +1,18 @@
-use hub_core::{prelude::*, uuid::Uuid};
-use poem::{web::Data, Result};
-use poem_openapi::{
-    param::{Header, Path},
-    payload::Json,
-    Object, OpenApi,
-};
-use sea_orm::{prelude::*, Set};
-use solana_client::rpc_client::RpcClient;
-use solana_program::{borsh::get_packed_len, program_pack::Pack};
-use solana_sdk::{
-    signer::{keypair::Keypair, Signer},
-    transaction::Transaction,
-};
+use hub_core::uuid::Uuid;
+use poem::{error::InternalServerError, web::Data, Result};
+use poem_openapi::{param::Header, payload::Json, Object, OpenApi};
+use solana_program::program_pack::Pack;
+use solana_sdk::signer::{keypair::Keypair, Signer};
 use spl_associated_token_account::get_associated_token_address;
-use spl_token::state::Account;
 
-use crate::{entities::prelude::*, AppState};
+use crate::{
+    proto::{
+        self,
+        drop_events::{self},
+        DropEventKey,
+    },
+    AppState, DropEvents,
+};
 
 pub struct NftApi;
 
@@ -25,24 +22,17 @@ impl NftApi {
     async fn create(
         &self,
         state: Data<&AppState>,
+        #[oai(name = "X-USER-ID")] user_id: Header<Uuid>,
         #[oai(name = "X-ORGANIZATION-ID")] organization: Header<Uuid>,
-        _owner_address: String,
+        input: Json<CreateEditionInput>,
     ) -> Result<Json<String>> {
         let Data(state) = state;
         let Header(organization) = organization;
-        let conn = state.connection.get();
-
+        let Header(user_id) = user_id;
+        let producer = state.producer.clone();
         let rpc = &*state.rpc;
 
-        let owner_keypair = Keypair::new();
-        rpc.request_airdrop(&owner_keypair.pubkey(), 1000000)
-            .unwrap();
-        let owner = owner_keypair.pubkey();
-
-        // let owner = "5pqCSBiXmiBtjdg85A3JFeMEYUGfW19RdUqd1Y8pJsdr"
-        //     .to_string()
-        //     .parse()
-        //     .unwrap();
+        let owner = input.owner_address.parse().unwrap();
 
         let mint = Keypair::new();
 
@@ -130,7 +120,9 @@ impl NftApi {
             Some(1),
         );
 
-        let mut tx = Transaction::new_with_payer(
+        let blockhash = rpc.get_latest_blockhash().unwrap();
+
+        let message = solana_program::message::Message::new_with_blockhash(
             &[
                 create_account_ins,
                 initialize_mint_ins,
@@ -140,13 +132,44 @@ impl NftApi {
                 create_master_edition_ins,
             ],
             Some(&owner),
+            &blockhash,
         );
 
-        let blockhash = rpc.get_latest_blockhash().unwrap();
+        let serialized_message = message.serialize();
+        let signature = mint.try_sign_message(&message.serialize()).unwrap();
+        let hashed_message = hex::encode(message.serialize());
 
-        tx.sign(&[&owner_keypair, &mint], blockhash);
-        let tx_resp = rpc.send_and_confirm_transaction(&tx).unwrap();
+        // payload includes serialized_message, signature, hashed_message and project_id
+
+        let event = DropEvents {
+            event: Some(drop_events::Event::MintEditionTransaction(
+                proto::Transaction {
+                    serialized_message,
+                    signed_message_signature: signature.to_string(),
+                    hashed_message: hashed_message.to_string(),
+                    project_id: input.project_id.to_string(),
+                    organization_id: organization.to_string(),
+                    blockhash: blockhash.to_string(),
+                },
+            )),
+        };
+
+        let key = DropEventKey {
+            id: signature.to_string(),
+            user_id: user_id.to_string(),
+        };
+
+        producer
+            .send(Some(&event), Some(&key))
+            .await
+            .map_err(InternalServerError)?;
 
         Ok(Json("its working".to_string()))
     }
+}
+
+#[derive(Debug, Clone, Object)]
+pub struct CreateEditionInput {
+    owner_address: String,
+    project_id: Uuid,
 }
