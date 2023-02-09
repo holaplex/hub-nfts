@@ -7,7 +7,7 @@ pub mod db;
 pub mod entities;
 pub mod handlers;
 use db::Connection;
-use hub_core::{clap, prelude::*};
+use hub_core::{clap, prelude::*, producer::Producer};
 use solana_client::rpc_client::RpcClient;
 
 #[derive(Debug, clap::Args)]
@@ -23,15 +23,34 @@ pub struct Args {
     pub db: db::DbArgs,
 }
 
+pub mod proto {
+    include!(concat!(env!("OUT_DIR"), "/drops.proto.rs"));
+}
+
+use proto::DropEvents;
+
+impl hub_core::producer::Message for proto::DropEvents {
+    type Key = proto::DropEventKey;
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub connection: Connection,
     pub rpc: Arc<RpcClient>,
+    pub producer: Producer<DropEvents>,
 }
 
 impl AppState {
     #[must_use]
-    pub fn new(connection: Connection, rpc: Arc<RpcClient>) -> Self {
-        Self { connection, rpc }
+    pub fn new(
+        connection: Connection,
+        rpc: Arc<RpcClient>,
+        producer: Producer<DropEvents>,
+    ) -> Self {
+        Self {
+            connection,
+            rpc,
+            producer,
+        }
     }
 }

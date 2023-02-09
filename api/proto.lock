@@ -1,0 +1,9 @@
+[[schemas]]
+subject = "drops"
+version = 1
+sha512 = "d9e80a9cd5bc3447a6046b49cb0779da0b10740153cff797d183544f344ef4b8bce43a4ad39ba79bfba4bee188ee3d4b9f0f80eef80e8e81d36fca37ebd1fc10"
+
+[[schemas]]
+subject = "organization"
+version = 1
+sha512 = "5c17e628a20016c8427fd1d3b79cda44ed384cb2d23e86c04c171628b19cf17b93cfe46baeb1203953786fb498c287c0121671e5f03e6fc175e7c7ef915f4744"
