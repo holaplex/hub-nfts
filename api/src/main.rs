@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use holaplex_hub_treasuries::{api::NftApi, db::Connection, handlers::health, AppState, Args};
+use holaplex_hub_nfts::{api::NftApi, db::Connection, handlers::health, AppState, Args};
 use hub_core::anyhow::Context as AnyhowContext;
 use poem::{get, listener::TcpListener, middleware::AddData, EndpointExt, Route, Server};
 use poem_openapi::OpenApiService;

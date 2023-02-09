@@ -1,14 +1,14 @@
 [package]
-name = "holaplex-hub-treasuries"
+name = "holaplex-hub-nfts"
 version = "0.1.0"
 publish = false
 authors = [
   "Holaplex <engineering@holaplex.com>",
 ]
 edition = "2021"
-description = "Holaplex Hub treasury service"
+description = "Holaplex Hub Nfts service"
 readme = "./README.md"
-repository = "https://github.com/holaplex/hub-treasuries"
+repository = "https://github.com/holaplex/hub-nfts"
 license = "AGPL-3.0-or-later"
 keywords = ["hub", "holaplex", "web3"]
 categories = ["cryptography::cryptocurrencies", "web-programming"]

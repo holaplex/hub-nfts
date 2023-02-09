@@ -26,6 +26,7 @@ impl NftApi {
         &self,
         state: Data<&AppState>,
         #[oai(name = "X-ORGANIZATION-ID")] organization: Header<Uuid>,
+        _owner_address: String,
     ) -> Result<Json<String>> {
         let Data(state) = state;
         let Header(organization) = organization;

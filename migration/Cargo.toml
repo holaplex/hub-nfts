@@ -1,16 +1,32 @@
 [package]
 name = "migration"
 version = "0.1.0"
-edition = "2021"
 publish = false
+authors = [
+  "Holaplex <engineering@holaplex.com>",
+]
+edition = "2021"
+description = "Holaplex Hub Nfts migrations"
+readme = "./README.md"
+repository = "https://github.com/holaplex/hub-nfts"
+license = "AGPL-3.0-or-later"
+keywords = ["hub", "holaplex", "web3"]
+categories = ["cryptography::cryptocurrencies", "web-programming"]
 
 [lib]
 name = "migration"
 path = "src/lib.rs"
 
+[[bin]]
+name = "migration"
+
+
 [dependencies]
-async-std = { version = "^1", features = ["attributes", "tokio1"] }
-sea-orm-migration = { version = "^0.10.0", features = [
+tokio = { version = "1.22.0", features = ["macros"] }
+
+[dependencies.sea-orm-migration]
+version = "^0.10.0"
+features = [
   "runtime-tokio-rustls",
-  "sqlx-postgres",
-] }
+  "sqlx-postgres", 
+]
