@@ -22,10 +22,17 @@ sea-orm = { version = "^0.10.0", features = [
   "runtime-tokio-rustls",
   "sqlx-postgres",
 ] }
+async-graphql = { version = "5.0.4", features = [
+  "chrono",
+  "uuid",
+  "log",
+  "dataloader",
+  "apollo_tracing",
+] }
+chrono = "0.4.23"
 serde = { version = "1.0.152", features = ["derive"] }
 poem = { version = "1.3.50", features = ["anyhow", "test"] }
 async-graphql-poem = "5.0.3"
-poem-openapi = { version = "2.0.23", features = ["swagger-ui", "uuid", "chrono"] }
 prost = "0.11.5"
 solana-program = "1.15.0"
 solana-client = "1.15.0"

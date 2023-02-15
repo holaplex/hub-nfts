@@ -2,10 +2,14 @@
 
 use std::sync::Arc;
 
-use holaplex_hub_drops::{api::NftApi, db::Connection, handlers::health, proto, AppState, Args};
+use holaplex_hub_drops::{
+    build_schema,
+    db::Connection,
+    handlers::{graphql_handler, health, playground},
+    proto, AppState, Args,
+};
 use hub_core::anyhow::Context as AnyhowContext;
-use poem::{get, listener::TcpListener, middleware::AddData, EndpointExt, Route, Server};
-use poem_openapi::OpenApiService;
+use poem::{get, listener::TcpListener, middleware::AddData, post, EndpointExt, Route, Server};
 use solana_client::rpc_client::RpcClient;
 
 pub fn main() {
@@ -26,21 +30,17 @@ pub fn main() {
                 .context("failed to get database connection")?;
             let rpc = RpcClient::new(solana_endpoint);
 
-            let api_service = OpenApiService::new(NftApi, "HubDrops", "0.1.0")
-                .server(format!("http://localhost:{port}/v1"));
-            let ui = api_service.swagger_ui();
-            let spec = api_service.spec_endpoint();
+            let schema = build_schema();
 
             let producer = common.producer_cfg.build::<proto::DropEvents>().await?;
 
-            let state = AppState::new(connection, Arc::new(rpc), producer);
+            let state = AppState::new(schema, connection, Arc::new(rpc), producer);
 
             Server::new(TcpListener::bind(format!("0.0.0.0:{port}")))
                 .run(
                     Route::new()
-                        .nest("/v1", api_service.with(AddData::new(state)))
-                        .nest("/", ui)
-                        .at("/spec", spec)
+                        .at("/graphql", post(graphql_handler).with(AddData::new(state)))
+                        .at("/playground", get(playground))
                         .at("/health", get(health)),
                 )
                 .await

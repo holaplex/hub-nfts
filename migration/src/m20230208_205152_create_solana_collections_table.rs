@@ -42,6 +42,26 @@ impl MigrationTrait for Migration {
                             .string()
                             .not_null(),
                     )
+                    .col(
+                        ColumnDef::new(SolanaCollections::AtaPubkey)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SolanaCollections::OwnerPubkey)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SolanaCollections::MintPubkey)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SolanaCollections::MetadataPubkey)
+                            .string()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(SolanaCollections::Name).string().not_null())
                     .col(
                         ColumnDef::new(SolanaCollections::Description)
@@ -60,7 +80,11 @@ impl MigrationTrait for Migration {
                             .not_null(),
                     )
                     .col(ColumnDef::new(SolanaCollections::ExternalLink).string())
-                    .col(ColumnDef::new(SolanaCollections::SellerFeeBasisPoints).big_integer())
+                    .col(
+                        ColumnDef::new(SolanaCollections::SellerFeeBasisPoints)
+                            .small_integer()
+                            .not_null(),
+                    )
                     .col(
                         ColumnDef::new(SolanaCollections::RoyaltyWallet)
                             .string()
@@ -72,7 +96,11 @@ impl MigrationTrait for Migration {
                             .custom(CreationStatus::Type)
                             .not_null(),
                     )
-                    .col(ColumnDef::new(SolanaCollections::CreatedBy).uuid())
+                    .col(
+                        ColumnDef::new(SolanaCollections::CreatedBy)
+                            .uuid()
+                            .not_null(),
+                    )
                     .col(
                         ColumnDef::new(SolanaCollections::CreatedAt)
                             .timestamp()
@@ -161,6 +189,10 @@ pub enum SolanaCollections {
     RoyaltyWallet,
     Supply,
     CreationStatus,
+    AtaPubkey,
+    OwnerPubkey,
+    MintPubkey,
+    MetadataPubkey,
     CreatedBy,
     CreatedAt,
 }

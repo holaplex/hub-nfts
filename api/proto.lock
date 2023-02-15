@@ -1,7 +1,7 @@
 [[schemas]]
 subject = "drops"
 version = 1
-sha512 = "d9e80a9cd5bc3447a6046b49cb0779da0b10740153cff797d183544f344ef4b8bce43a4ad39ba79bfba4bee188ee3d4b9f0f80eef80e8e81d36fca37ebd1fc10"
+sha512 = "f91625a7bc09e76934c598bbd0b167aeb09c8b2d19b2631e8f6f0efed3ac81b8c30ce67a9b9c41b236720c370ff0aa1e1ef2e853993b1cdc33c0d32819995c88"
 
 [[schemas]]
 subject = "organization"

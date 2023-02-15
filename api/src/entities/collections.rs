@@ -2,22 +2,15 @@
 
 use sea_orm::entity::prelude::*;
 
-use super::sea_orm_active_enums::CreationStatus;
+use super::sea_orm_active_enums::Blockchain;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "drops")]
+#[sea_orm(table_name = "collections")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    pub project_id: Uuid,
-    pub organization_id: Uuid,
-    pub collection_id: Uuid,
-    pub creation_status: CreationStatus,
-    pub start_time: DateTime,
-    pub end_time: DateTime,
-    pub price: i64,
-    pub created_by: Uuid,
-    pub created_at: DateTime,
+    pub collection: Uuid,
+    pub blockchain: Blockchain,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -28,10 +28,10 @@ impl MigrationTrait for Migration {
                             .custom(CreationStatus::Type)
                             .not_null(),
                     )
-                    .col(ColumnDef::new(Drops::StartTime).timestamp())
-                    .col(ColumnDef::new(Drops::EndTime).timestamp())
-                    .col(ColumnDef::new(Drops::Price).big_integer())
-                    .col(ColumnDef::new(Drops::CreatedBy).uuid())
+                    .col(ColumnDef::new(Drops::StartTime).timestamp().not_null())
+                    .col(ColumnDef::new(Drops::EndTime).timestamp().not_null())
+                    .col(ColumnDef::new(Drops::Price).big_integer().not_null())
+                    .col(ColumnDef::new(Drops::CreatedBy).uuid().not_null())
                     .col(
                         ColumnDef::new(Drops::CreatedAt)
                             .timestamp()
