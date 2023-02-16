@@ -41,34 +41,12 @@ impl Mutation {
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let UserID(id) = user_id;
 
-        let CreateDropInput {
-            owner_address,
-            royalty_address,
-            project_id,
-            organization_id,
-            price,
-            name,
-            description,
-            symbol,
-            uri,
-            animation_uri,
-            image_uri,
-            external_uri,
-            creators,
-            seller_fee_basis_points,
-            update_authority_is_signer,
-            is_mutable,
-            supply,
-            start_time,
-            end_time,
-        } = input;
-
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
 
         let producer = ctx.data::<Producer<DropEvents>>()?;
         let rpc = &**ctx.data::<Arc<RpcClient>>()?;
 
-        let owner = owner_address.clone().parse().unwrap();
+        let owner = input.owner_address.clone().parse().unwrap();
 
         let mint = Keypair::new();
 
@@ -125,7 +103,7 @@ impl Mutation {
             spl_token::instruction::mint_to(&spl_token::ID, &mint.pubkey(), &ata, &owner, &[], 1)
                 .unwrap();
 
-        let creators = creators.as_ref().map(|creators| {
+        let creators = input.creators.as_ref().map(|creators| {
             creators
                 .iter()
                 .map(|creator| creator.clone().try_into().unwrap())
@@ -139,13 +117,13 @@ impl Mutation {
                 owner,
                 owner,
                 owner,
-                name.clone(),
-                symbol.clone(),
-                uri.clone(),
+                input.name.clone(),
+                input.symbol.clone(),
+                input.uri.clone(),
                 creators,
-                seller_fee_basis_points,
-                update_authority_is_signer,
-                is_mutable,
+                input.seller_fee_basis_points,
+                input.update_authority_is_signer,
+                input.is_mutable,
                 None,
                 None,
                 None,
@@ -159,7 +137,7 @@ impl Mutation {
             owner,
             token_metadata_pubkey,
             owner,
-            supply,
+            input.supply,
         );
 
         let blockhash = rpc.get_latest_blockhash().unwrap();
@@ -187,7 +165,7 @@ impl Mutation {
                 proto::Transaction {
                     serialized_message,
                     signed_message_signature: signature.to_string(),
-                    project_id: project_id.to_string(),
+                    project_id: input.project_id.to_string(),
                 },
             )),
         };
@@ -200,23 +178,23 @@ impl Mutation {
         producer.send(Some(&event), Some(&key)).await?;
 
         let solana_collections_active_model = solana_collections::ActiveModel {
-            project_id: Set(project_id),
-            organization_id: Set(organization_id),
+            project_id: Set(input.project_id),
+            organization_id: Set(input.organization_id),
             address: Set(master_edition_pubkey.to_string()),
-            name: Set(name),
-            description: Set(description),
-            metadata_uri: Set(uri),
-            animation_uri: Set(animation_uri),
-            image_uri: Set(image_uri),
-            external_link: Set(external_uri),
-            seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
-            royalty_wallet: Set(royalty_address.to_string()),
-            supply: Set(supply.map(|s| s.try_into().unwrap_or_default())),
+            name: Set(input.name),
+            description: Set(input.description),
+            metadata_uri: Set(input.uri),
+            animation_uri: Set(input.animation_uri),
+            image_uri: Set(input.image_uri),
+            external_link: Set(input.external_uri),
+            seller_fee_basis_points: Set(input.seller_fee_basis_points.try_into()?),
+            royalty_wallet: Set(input.royalty_address.to_string()),
+            supply: Set(input.supply.map(|s| s.try_into().unwrap_or_default())),
             creation_status: Set(CreationStatus::Pending),
             created_by: Set(user_id),
             created_at: Set(Local::now().naive_utc()),
             ata_pubkey: Set(ata.to_string()),
-            owner_pubkey: Set(owner_address.to_string()),
+            owner_pubkey: Set(input.owner_address.to_string()),
             mint_pubkey: Set(mint.pubkey().to_string()),
             metadata_pubkey: Set(token_metadata_pubkey.to_string()),
             ..Default::default()
@@ -226,20 +204,20 @@ impl Mutation {
 
         let collection_active_model = collections::ActiveModel {
             collection: Set(solana_collection.id),
-            blockchain: Set(Blockchain::Solana),
+            blockchain: Set(input.blockchain),
             ..Default::default()
         };
 
         let collection = collection_active_model.insert(db.get()).await?;
 
         let drop = drops::ActiveModel {
-            project_id: Set(project_id),
-            organization_id: Set(organization_id),
+            project_id: Set(input.project_id),
+            organization_id: Set(input.organization_id),
             collection_id: Set(collection.id),
             creation_status: Set(CreationStatus::Pending),
-            start_time: Set(start_time.naive_utc()),
-            end_time: Set(end_time.naive_utc()),
-            price: Set(price.try_into()?),
+            start_time: Set(input.start_time.naive_utc()),
+            end_time: Set(input.end_time.naive_utc()),
+            price: Set(input.price.try_into()?),
             created_by: Set(user_id),
             created_at: Set(Local::now().naive_utc()),
             ..Default::default()
@@ -272,6 +250,7 @@ pub struct CreateDropInput {
     supply: Option<u64>,
     start_time: DateTime<Utc>,
     end_time: DateTime<Utc>,
+    blockchain: Blockchain,
 }
 
 #[derive(Debug, Clone, InputObject)]

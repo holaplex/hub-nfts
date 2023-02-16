@@ -1,6 +1,9 @@
 use sea_orm_migration::prelude::*;
 
-use crate::m20230208_205152_create_solana_collections_table::CreationStatus;
+use crate::{
+    m20230208_205152_create_solana_collections_table::CreationStatus,
+    m20230214_212301_create_collections_table::Collections,
+};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -37,6 +40,14 @@ impl MigrationTrait for Migration {
                             .timestamp()
                             .not_null()
                             .extra("default now()".to_string()),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-drops_collections_id")
+                            .from(Drops::Table, Drops::CollectionId)
+                            .to(Collections::Table, Collections::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
                     )
                     .to_owned(),
             )

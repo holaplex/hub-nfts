@@ -2,6 +2,6 @@
 
 pub use super::{
     collection_attributes::Entity as CollectionAttributes,
-    collection_mints::Entity as CollectionMints, drops::Entity as Drops,
-    solana_collections::Entity as SolanaCollections,
+    collection_mints::Entity as CollectionMints, collections::Entity as Collections,
+    drops::Entity as Drops, solana_collections::Entity as SolanaCollections,
 };
