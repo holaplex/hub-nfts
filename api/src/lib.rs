@@ -5,6 +5,8 @@
 pub mod db;
 pub mod entities;
 pub mod handlers;
+use std::{fs::File, io::Read};
+
 use db::Connection;
 pub mod mutations;
 pub mod queries;
@@ -45,6 +47,9 @@ pub struct Args {
     #[arg(short, long, env)]
     pub solana_endpoint: String,
 
+    #[arg(short, long, env)]
+    pub keypair_path: String,
+
     #[command(flatten)]
     pub db: db::DbArgs,
 }
@@ -81,6 +86,7 @@ pub struct AppState {
     pub connection: Connection,
     pub rpc: Arc<RpcClient>,
     pub producer: Producer<DropEvents>,
+    pub keypair: [u8; 64],
 }
 
 impl AppState {
@@ -90,12 +96,19 @@ impl AppState {
         connection: Connection,
         rpc: Arc<RpcClient>,
         producer: Producer<DropEvents>,
+        path: String,
     ) -> Self {
+        let mut f = File::open(path).expect("unable to locate keypair file");
+        let mut keypair = [0; 64];
+
+        f.read_exact(&mut keypair).expect("unable to read keypair");
+
         Self {
             schema,
             connection,
             rpc,
             producer,
+            keypair,
         }
     }
 }

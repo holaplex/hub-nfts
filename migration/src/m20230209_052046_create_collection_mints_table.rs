@@ -28,7 +28,7 @@ impl MigrationTrait for Migration {
                             .custom(CreationStatus::Type)
                             .not_null(),
                     )
-                    .col(ColumnDef::new(CollectionMints::CreatedBy).uuid())
+                    .col(ColumnDef::new(CollectionMints::CreatedBy).uuid().not_null())
                     .col(
                         ColumnDef::new(CollectionMints::CreatedAt)
                             .timestamp()

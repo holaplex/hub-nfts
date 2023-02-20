@@ -33,12 +33,12 @@ impl MigrationTrait for Migration {
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(SolanaCollections::OrganizationId)
-                            .uuid()
+                        ColumnDef::new(SolanaCollections::Address)
+                            .string()
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(SolanaCollections::Address)
+                        ColumnDef::new(SolanaCollections::UpdateAuthority)
                             .string()
                             .not_null(),
                     )
@@ -190,6 +190,7 @@ pub enum SolanaCollections {
     Supply,
     CreationStatus,
     AtaPubkey,
+    UpdateAuthority,
     OwnerPubkey,
     MintPubkey,
     MetadataPubkey,

@@ -15,7 +15,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub owner: String,
     pub creation_status: CreationStatus,
-    pub created_by: Option<Uuid>,
+    pub created_by: Uuid,
     pub created_at: DateTime,
 }
 

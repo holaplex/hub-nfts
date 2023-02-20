@@ -21,6 +21,7 @@ pub fn main() {
         let Args {
             port,
             solana_endpoint,
+            keypair_path,
             db,
         } = args;
 
@@ -34,7 +35,7 @@ pub fn main() {
 
             let producer = common.producer_cfg.build::<proto::DropEvents>().await?;
 
-            let state = AppState::new(schema, connection, Arc::new(rpc), producer);
+            let state = AppState::new(schema, connection, Arc::new(rpc), producer, keypair_path);
 
             Server::new(TcpListener::bind(format!("0.0.0.0:{port}")))
                 .run(
