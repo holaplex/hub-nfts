@@ -163,16 +163,7 @@ impl Mutation {
         let solana_collections_active_model = solana_collections::ActiveModel {
             project_id: Set(input.project_id),
             address: Set(master_edition_pubkey.to_string()),
-            name: Set(input.name),
-            description: Set(input.description),
-            metadata_uri: Set(input.uri),
-            animation_uri: Set(input.animation_uri),
-            image_uri: Set(input.image_uri),
-            external_link: Set(input.external_uri),
             seller_fee_basis_points: Set(input.seller_fee_basis_points.try_into()?),
-            royalty_wallet: Set(input.royalty_address.to_string()),
-            supply: Set(input.supply.map(|s| s.try_into().unwrap_or_default())),
-            creation_status: Set(CreationStatus::Created),
             created_by: Set(user_id),
             created_at: Set(Local::now().naive_utc()),
             ata_pubkey: Set(ata.to_string()),
@@ -187,6 +178,12 @@ impl Mutation {
         let collection_active_model = collections::ActiveModel {
             collection: Set(solana_collection.id),
             blockchain: Set(input.blockchain),
+            name: Set(input.name),
+            description: Set(input.description),
+            metadata_uri: Set(input.uri),
+            royalty_wallet: Set(input.royalty_address.to_string()),
+            supply: Set(input.supply.map(|s| s.try_into().unwrap_or_default())),
+            creation_status: Set(CreationStatus::Created),
             ..Default::default()
         };
 

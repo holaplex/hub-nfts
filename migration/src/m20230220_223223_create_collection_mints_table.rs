@@ -1,6 +1,6 @@
 use sea_orm_migration::prelude::*;
 
-use crate::m20230208_205152_create_solana_collections_table::CreationStatus;
+use crate::m20230214_212301_create_collections_table::CreationStatus;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;

@@ -16,6 +16,15 @@ impl MigrationTrait for Migration {
             .await?;
 
         manager
+            .create_type(
+                Type::create()
+                    .as_enum(CreationStatus::Type)
+                    .values([CreationStatus::Pending, CreationStatus::Created])
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
             .create_table(
                 Table::create()
                     .table(Collections::Table)
@@ -33,6 +42,31 @@ impl MigrationTrait for Migration {
                             .custom(Blockchain::Type)
                             .not_null(),
                     )
+                    .col(ColumnDef::new(Collections::Name).string().not_null())
+                    .col(ColumnDef::new(Collections::Description).string().not_null())
+                    .col(ColumnDef::new(Collections::MetadataUri).string().not_null())
+                    .col(
+                        ColumnDef::new(Collections::RoyaltyWallet)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(Collections::Supply).big_integer())
+                    .col(
+                        ColumnDef::new(Collections::CreationStatus)
+                            .custom(CreationStatus::Type)
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                IndexCreateStatement::new()
+                    .name("solana-collections_name_idx")
+                    .table(Collections::Table)
+                    .col(Collections::Name)
+                    .index_type(IndexType::Hash)
                     .to_owned(),
             )
             .await
@@ -40,6 +74,15 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
             .drop_table(Table::drop().table(Collections::Table).to_owned())
+            .await?;
+
+        manager
+            .drop_type(
+                Type::drop()
+                    .if_exists()
+                    .name(CreationStatus::Type)
+                    .to_owned(),
+            )
             .await?;
 
         manager
@@ -54,6 +97,12 @@ pub enum Collections {
     Id,
     Collection,
     Blockchain,
+    Name,
+    Description,
+    MetadataUri,
+    RoyaltyWallet,
+    Supply,
+    CreationStatus,
 }
 
 pub enum Blockchain {
@@ -68,6 +117,23 @@ impl Iden for Blockchain {
             Self::Type => "blockchain",
             Self::Solana => "solana",
             Self::Polygon => "polyogn",
+        })
+        .unwrap();
+    }
+}
+
+pub enum CreationStatus {
+    Type,
+    Pending,
+    Created,
+}
+
+impl Iden for CreationStatus {
+    fn unquoted(&self, s: &mut dyn std::fmt::Write) {
+        write!(s, "{}", match self {
+            Self::Type => "creation_status",
+            Self::Pending => "pending",
+            Self::Created => "created",
         })
         .unwrap();
     }
