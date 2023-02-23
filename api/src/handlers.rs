@@ -31,7 +31,8 @@ pub async fn graphql_handler(
             req.0
                 .data(context)
                 .data(state.rpc.clone())
-                .data(state.producer.clone()),
+                .data(state.producer.clone())
+                .data(state.keypair.clone()),
         )
         .await
         .into())

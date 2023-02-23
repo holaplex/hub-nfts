@@ -5,7 +5,7 @@
 pub mod db;
 pub mod entities;
 pub mod handlers;
-use std::{fs::File, io::Read};
+use std::fs::File;
 
 use db::Connection;
 pub mod mutations;
@@ -19,6 +19,7 @@ use hub_core::{
     clap,
     prelude::*,
     producer::Producer,
+    serde_json,
     uuid::Uuid,
 };
 use mutations::Mutation;
@@ -86,7 +87,7 @@ pub struct AppState {
     pub connection: Connection,
     pub rpc: Arc<RpcClient>,
     pub producer: Producer<DropEvents>,
-    pub keypair: [u8; 64],
+    pub keypair: Vec<u8>,
 }
 
 impl AppState {
@@ -98,10 +99,9 @@ impl AppState {
         producer: Producer<DropEvents>,
         path: String,
     ) -> Self {
-        let mut f = File::open(path).expect("unable to locate keypair file");
-        let mut keypair = [0; 64];
-
-        f.read_exact(&mut keypair).expect("unable to read keypair");
+        let f = File::open(path).expect("unable to locate keypair file");
+        let keypair: Vec<u8> =
+            serde_json::from_reader(f).expect("unable to read keypair bytes from the file");
 
         Self {
             schema,

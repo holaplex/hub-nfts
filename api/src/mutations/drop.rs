@@ -34,16 +34,20 @@ impl Mutation {
         &self,
         ctx: &Context<'_>,
         input: CreateDropInput,
-    ) -> Result<solana_collections::Model> {
+    ) -> Result<drops::Model> {
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let UserID(id) = user_id;
 
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
-        let keypair_bytes = ctx.data::<[u8; 64]>()?;
+
+        let keypair_bytes = ctx.data::<Vec<u8>>()?;
+
         let rpc = &**ctx.data::<Arc<RpcClient>>()?;
 
         let owner = Keypair::from_bytes(keypair_bytes)?;
+
         let mint = Keypair::new();
+
         let update_authority = input.update_authority_address.parse()?;
 
         let ata = get_associated_token_address(&owner.pubkey(), &mint.pubkey());
@@ -69,13 +73,13 @@ impl Mutation {
 
         let len = spl_token::state::Mint::LEN;
 
-        let rent = rpc.get_minimum_balance_for_rent_exemption(len).unwrap();
+        let rent = rpc.get_minimum_balance_for_rent_exemption(len)?;
 
         let create_account_ins = solana_program::system_instruction::create_account(
             &owner.pubkey(),
             &mint.pubkey(),
             rent,
-            len.try_into().unwrap(),
+            len.try_into()?,
             &spl_token::ID,
         );
 
@@ -85,8 +89,7 @@ impl Mutation {
             &owner.pubkey(),
             Some(&owner.pubkey()),
             0,
-        )
-        .unwrap();
+        )?;
 
         let ata_ins = spl_associated_token_account::instruction::create_associated_token_account(
             &owner.pubkey(),
@@ -102,8 +105,7 @@ impl Mutation {
             &owner.pubkey(),
             &[],
             1,
-        )
-        .unwrap();
+        )?;
 
         let creators = input.creators.as_ref().map(|creators| {
             creators
@@ -142,7 +144,7 @@ impl Mutation {
             input.supply,
         );
 
-        let blockhash = rpc.get_latest_blockhash().unwrap();
+        let blockhash = rpc.get_latest_blockhash()?;
 
         let tx = Transaction::new_signed_with_payer(
             &[
@@ -154,7 +156,7 @@ impl Mutation {
                 create_master_edition_ins,
             ],
             Some(&owner.pubkey()),
-            &[&mint, &owner],
+            &[&owner, &mint],
             blockhash,
         );
 
@@ -168,6 +170,7 @@ impl Mutation {
             created_at: Set(Local::now().naive_utc()),
             ata_pubkey: Set(ata.to_string()),
             owner_pubkey: Set(owner.pubkey().to_string()),
+            update_authority: Set(input.update_authority_address),
             mint_pubkey: Set(mint.pubkey().to_string()),
             metadata_pubkey: Set(token_metadata_pubkey.to_string()),
             ..Default::default()
@@ -202,9 +205,9 @@ impl Mutation {
             ..Default::default()
         };
 
-        drop.insert(db.get()).await?;
+        let drop_model = drop.insert(db.get()).await?;
 
-        Ok(solana_collection)
+        Ok(drop_model)
     }
 }
 
@@ -219,9 +222,6 @@ pub struct CreateDropInput {
     description: String,
     symbol: String,
     uri: String,
-    animation_uri: Option<String>,
-    image_uri: String,
-    external_uri: Option<String>,
     creators: Option<Vec<MetadataCreator>>,
     seller_fee_basis_points: u16,
     update_authority_is_signer: bool,
@@ -250,7 +250,7 @@ impl TryFrom<MetadataCreator> for Creator {
         }: MetadataCreator,
     ) -> Result<Self> {
         Ok(Self {
-            address: address.parse().unwrap(),
+            address: address.parse()?,
             verified,
             share,
         })

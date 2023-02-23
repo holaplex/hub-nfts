@@ -47,7 +47,7 @@ impl Mutation {
         let UserID(id) = user_id;
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
 
-        let keypair_bytes = ctx.data::<[u8; 64]>()?;
+        let keypair_bytes = ctx.data::<Vec<u8>>()?;
 
         let wallet = Keypair::from_bytes(keypair_bytes)?;
 
@@ -144,8 +144,36 @@ impl Mutation {
             sc.update_authority.parse()?,
             sc.metadata_pubkey.parse()?,
             master_edition_mint,
-            1,
+            input.edition,
         ));
+
+        let destination_token_account =
+            get_associated_token_address(&input.destination.parse()?, &new_mint_key.pubkey());
+
+        instructions.push(create_associated_token_account(
+            &wallet.pubkey(),
+            &input.destination.parse()?,
+            &new_mint_key.pubkey(),
+            &spl_token::ID,
+        ));
+
+        // instructions.push(create_account(
+        //     &input.destination.parse()?,
+        //     &new_mint_key.pubkey(),
+        //     rpc.get_minimum_balance_for_rent_exemption(Mint::LEN)
+        //         .unwrap(),
+        //     Mint::LEN as u64,
+        //     &token_key,
+        // ));
+
+        instructions.push(spl_token::instruction::transfer(
+            &spl_token::id(),
+            &added_token_account,
+            &destination_token_account,
+            &wallet.pubkey(),
+            &[&wallet.pubkey()],
+            1,
+        )?);
 
         let recent_blockhash = rpc.get_latest_blockhash().unwrap();
 
@@ -180,4 +208,5 @@ pub struct MintDropInput {
     drop: Uuid,
     owner_address: String,
     destination: String,
+    edition: u64,
 }
