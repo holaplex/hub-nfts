@@ -1,0 +1,7 @@
+[registry]
+endpoint = "https://schemas.holaplex.tools"
+
+[schemas]
+organization = 1
+drops = 1
+customer = 1

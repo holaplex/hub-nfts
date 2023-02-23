@@ -1,41 +1,136 @@
-mod db;
-mod graphql;
+#![deny(clippy::disallowed_methods, clippy::suspicious, clippy::style)]
+#![warn(clippy::pedantic, clippy::cargo)]
+#![allow(clippy::module_name_repetitions)]
 
-use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
-use async_graphql_poem::GraphQL;
-use holaplex_rust_boilerplate_core::prelude::*;
-use poem::{get, handler, listener::TcpListener, post, web::Html, IntoResponse, Route, Server};
+pub mod db;
+pub mod entities;
+pub mod handlers;
+use std::fs::File;
 
-use crate::graphql::schema::build_schema;
+use db::Connection;
+pub mod mutations;
+pub mod queries;
+use async_graphql::{
+    extensions::{ApolloTracing, Logger},
+    EmptySubscription, Schema,
+};
+use hub_core::{
+    anyhow::{Error, Result},
+    clap,
+    prelude::*,
+    producer::Producer,
+    serde_json,
+    uuid::Uuid,
+};
+use mutations::Mutation;
+use poem::{async_trait, FromRequest, Request, RequestBody};
+use queries::Query;
+use solana_client::rpc_client::RpcClient;
 
-#[handler]
-async fn playground() -> impl IntoResponse {
-    Html(playground_source(GraphQLPlaygroundConfig::new("/graphql")))
+pub mod proto {
+    include!(concat!(env!("OUT_DIR"), "/drops.proto.rs"));
 }
 
-#[tokio::main]
-pub async fn start() -> Result<()> {
-    if cfg!(debug_assertions) {
-        dotenv::dotenv().ok();
+use proto::DropEvents;
+
+impl hub_core::producer::Message for proto::DropEvents {
+    type Key = proto::DropEventKey;
+}
+
+pub type AppSchema = Schema<Query, Mutation, EmptySubscription>;
+
+#[derive(Debug, clap::Args)]
+#[command(version, author, about)]
+pub struct Args {
+    #[arg(short, long, env, default_value_t = 3004)]
+    pub port: u16,
+
+    #[arg(short, long, env)]
+    pub solana_endpoint: String,
+
+    #[arg(short, long, env)]
+    pub keypair_path: String,
+
+    #[command(flatten)]
+    pub db: db::DbArgs,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct UserID(Option<Uuid>);
+
+impl TryFrom<&str> for UserID {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        let id = Uuid::from_str(value)?;
+
+        Ok(Self(Some(id)))
     }
+}
 
-    env_logger::builder()
-        .filter_level(if cfg!(debug_assertions) {
-            log::LevelFilter::Debug
-        } else {
-            log::LevelFilter::Info
-        })
-        .parse_default_env()
-        .init();
+#[async_trait]
+impl<'a> FromRequest<'a> for UserID {
+    async fn from_request(req: &'a Request, _body: &mut RequestBody) -> poem::Result<Self> {
+        let id = req
+            .headers()
+            .get("X-USER-ID")
+            .and_then(|value| value.to_str().ok())
+            .map_or(Ok(Self(None)), Self::try_from)?;
 
-    let schema = build_schema().await?;
+        Ok(id)
+    }
+}
 
-    Server::new(TcpListener::bind("127.0.0.1:3001"))
-        .run(
-            Route::new()
-                .at("/graphql", post(GraphQL::new(schema)))
-                .at("/playground", get(playground)),
-        )
-        .await
-        .map_err(Into::into)
+#[derive(Clone)]
+pub struct AppState {
+    pub schema: AppSchema,
+    pub connection: Connection,
+    pub rpc: Arc<RpcClient>,
+    pub producer: Producer<DropEvents>,
+    pub keypair: Vec<u8>,
+}
+
+impl AppState {
+    #[must_use]
+    pub fn new(
+        schema: AppSchema,
+        connection: Connection,
+        rpc: Arc<RpcClient>,
+        producer: Producer<DropEvents>,
+        path: String,
+    ) -> Self {
+        let f = File::open(path).expect("unable to locate keypair file");
+        let keypair: Vec<u8> =
+            serde_json::from_reader(f).expect("unable to read keypair bytes from the file");
+
+        Self {
+            schema,
+            connection,
+            rpc,
+            producer,
+            keypair,
+        }
+    }
+}
+
+pub struct AppContext {
+    pub db: Connection,
+    user_id: UserID,
+}
+
+impl AppContext {
+    #[must_use]
+    pub fn new(db: Connection, user_id: UserID) -> Self {
+        Self { db, user_id }
+    }
+}
+
+/// Builds the GraphQL Schema, attaching the Database to the context
+#[must_use]
+pub fn build_schema() -> AppSchema {
+    Schema::build(Query::default(), Mutation::default(), EmptySubscription)
+        .extension(ApolloTracing)
+        .extension(Logger)
+        .enable_federation()
+        .finish()
 }
