@@ -21,7 +21,6 @@ impl MigrationTrait for Migration {
                             .extra("default gen_random_uuid()".to_string()),
                     )
                     .col(ColumnDef::new(Drops::ProjectId).uuid().not_null())
-                    .col(ColumnDef::new(Drops::OrganizationId).uuid().not_null())
                     .col(ColumnDef::new(Drops::CollectionId).uuid().not_null())
                     .col(
                         ColumnDef::new(Drops::CreationStatus)
@@ -64,17 +63,6 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 IndexCreateStatement::new()
-                    .name("drops_organization_id_idx")
-                    .table(Drops::Table)
-                    .col(Drops::OrganizationId)
-                    .index_type(IndexType::Hash)
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .create_index(
-                IndexCreateStatement::new()
                     .name("drops_collection_id_idx")
                     .table(Drops::Table)
                     .col(Drops::CollectionId)
@@ -95,7 +83,6 @@ pub enum Drops {
     Table,
     Id,
     ProjectId,
-    OrganizationId,
     CollectionId,
     CreationStatus,
     StartTime,

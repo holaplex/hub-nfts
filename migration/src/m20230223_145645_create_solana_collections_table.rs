@@ -1,5 +1,7 @@
 use sea_orm_migration::prelude::*;
 
+use crate::m20230214_212301_create_collections_table::Collections;
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -19,12 +21,12 @@ impl MigrationTrait for Migration {
                             .extra("default gen_random_uuid()".to_string()),
                     )
                     .col(
-                        ColumnDef::new(SolanaCollections::ProjectId)
+                        ColumnDef::new(SolanaCollections::CollectionId)
                             .uuid()
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(SolanaCollections::Address)
+                        ColumnDef::new(SolanaCollections::MasterEditionAddress)
                             .string()
                             .not_null(),
                     )
@@ -69,6 +71,14 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .extra("default now()".to_string()),
                     )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-drops_solana_collections_id")
+                            .from(SolanaCollections::Table, SolanaCollections::CollectionId)
+                            .to(Collections::Table, Collections::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -78,7 +88,7 @@ impl MigrationTrait for Migration {
                 IndexCreateStatement::new()
                     .name("solana-collections_project_id_idx")
                     .table(SolanaCollections::Table)
-                    .col(SolanaCollections::ProjectId)
+                    .col(SolanaCollections::CollectionId)
                     .index_type(IndexType::Hash)
                     .to_owned(),
             )
@@ -89,7 +99,7 @@ impl MigrationTrait for Migration {
                 IndexCreateStatement::new()
                     .name("solana-collections_address_idx")
                     .table(SolanaCollections::Table)
-                    .col(SolanaCollections::Address)
+                    .col(SolanaCollections::MasterEditionAddress)
                     .index_type(IndexType::Hash)
                     .to_owned(),
             )
@@ -107,8 +117,8 @@ impl MigrationTrait for Migration {
 pub enum SolanaCollections {
     Table,
     Id,
-    ProjectId,
-    Address,
+    CollectionId,
+    MasterEditionAddress,
     SellerFeeBasisPoints,
     AtaPubkey,
     UpdateAuthority,

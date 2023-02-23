@@ -1,6 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
-use async_graphql::{self, Context, Error, InputObject, Object, Result};
+use async_graphql::{self, Context, Error, InputObject, Object, Result, SimpleObject};
+use hub_core::tracing::info;
 use mpl_token_metadata::{
     instruction::mint_new_edition_from_master_edition_via_token,
     state::{EDITION, PREFIX},
@@ -41,7 +42,11 @@ impl Mutation {
     ///
     /// # Errors
     /// This function fails if ...
-    pub async fn mint_edition(&self, ctx: &Context<'_>, input: MintDropInput) -> Result<String> {
+    pub async fn mint_edition(
+        &self,
+        ctx: &Context<'_>,
+        input: MintDropInput,
+    ) -> Result<MintEditionPayload> {
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let rpc = &**ctx.data::<Arc<RpcClient>>()?;
         let UserID(id) = user_id;
@@ -58,13 +63,13 @@ impl Mutation {
             .one(db.get())
             .await?;
 
-        let (drop, collection_model) =
-            drop_model.ok_or_else(|| Error::new("Drop not found in db"))?;
+        let (_, collection_model) = drop_model.ok_or_else(|| Error::new("Drop not found in db"))?;
+
         let collection =
             collection_model.ok_or_else(|| Error::new("Collection not found in db"))?;
 
         let solana_collection_model = SolanaCollections::find()
-            .filter(solana_collections::Column::Id.eq(collection.collection))
+            .filter(solana_collections::Column::CollectionId.eq(collection.id))
             .one(db.get())
             .await?;
 
@@ -72,11 +77,11 @@ impl Mutation {
             solana_collection_model.ok_or_else(|| Error::new("Solana Collection not found"))?;
 
         let program_pubkey = mpl_token_metadata::id();
-        let master_edition_pubkey: Pubkey = sc.address.parse()?;
+        let master_edition_pubkey: Pubkey = sc.master_edition_address.parse()?;
         let master_edition_mint: Pubkey = sc.mint_pubkey.parse()?;
         let existing_token_account: Pubkey = sc.ata_pubkey.parse()?;
 
-        let token_key = Pubkey::from_str(TOKEN_PROGRAM_PUBKEY).unwrap();
+        let token_key = Pubkey::from_str(TOKEN_PROGRAM_PUBKEY)?;
 
         let new_mint_key = Keypair::new();
         let added_token_account =
@@ -101,8 +106,7 @@ impl Mutation {
             create_account(
                 &wallet.pubkey(),
                 &new_mint_key.pubkey(),
-                rpc.get_minimum_balance_for_rent_exemption(Mint::LEN)
-                    .unwrap(),
+                rpc.get_minimum_balance_for_rent_exemption(Mint::LEN)?,
                 Mint::LEN as u64,
                 &token_key,
             ),
@@ -112,8 +116,7 @@ impl Mutation {
                 &wallet.pubkey(),
                 Some(&wallet.pubkey()),
                 0,
-            )
-            .unwrap(),
+            )?,
             create_associated_token_account(
                 &wallet.pubkey(),
                 &wallet.pubkey(),
@@ -127,8 +130,7 @@ impl Mutation {
                 &wallet.pubkey(),
                 &[&wallet.pubkey()],
                 1,
-            )
-            .unwrap(),
+            )?,
         ];
 
         instructions.push(mint_new_edition_from_master_edition_via_token(
@@ -157,15 +159,6 @@ impl Mutation {
             &spl_token::ID,
         ));
 
-        // instructions.push(create_account(
-        //     &input.destination.parse()?,
-        //     &new_mint_key.pubkey(),
-        //     rpc.get_minimum_balance_for_rent_exemption(Mint::LEN)
-        //         .unwrap(),
-        //     Mint::LEN as u64,
-        //     &token_key,
-        // ));
-
         instructions.push(spl_token::instruction::transfer(
             &spl_token::id(),
             &added_token_account,
@@ -175,7 +168,7 @@ impl Mutation {
             1,
         )?);
 
-        let recent_blockhash = rpc.get_latest_blockhash().unwrap();
+        let recent_blockhash = rpc.get_latest_blockhash()?;
 
         let tx = Transaction::new_signed_with_payer(
             &instructions,
@@ -186,8 +179,10 @@ impl Mutation {
 
         let signature = rpc.send_and_confirm_transaction(&tx)?;
 
+        info!("editionn minted {:?}", signature);
+
         let collection_mint_active_model = collection_mints::ActiveModel {
-            drop_id: Set(drop.id),
+            collection_id: Set(collection.id),
             address: Set(edition_key.to_string()),
             owner: Set(wallet.pubkey().to_string()),
             creation_status: Set(CreationStatus::Created),
@@ -195,12 +190,11 @@ impl Mutation {
             ..Default::default()
         };
 
-        collection_mint_active_model.insert(db.get()).await?;
+        let collection_model = collection_mint_active_model.insert(db.get()).await?;
 
-        Ok(format!(
-            "Minted edition signautre {:?}",
-            signature.to_string()
-        ))
+        Ok(MintEditionPayload {
+            collection_mint: collection_model,
+        })
     }
 }
 #[derive(Debug, Clone, InputObject)]
@@ -209,4 +203,9 @@ pub struct MintDropInput {
     owner_address: String,
     destination: String,
     edition: u64,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct MintEditionPayload {
+    collection_mint: collection_mints::Model,
 }

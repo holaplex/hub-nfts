@@ -1,6 +1,6 @@
 use sea_orm_migration::prelude::*;
 
-use crate::m20230214_212301_create_collections_table::CreationStatus;
+use crate::m20230214_212301_create_collections_table::{Collections, CreationStatus};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -20,7 +20,11 @@ impl MigrationTrait for Migration {
                             .primary_key()
                             .extra("default gen_random_uuid()".to_string()),
                     )
-                    .col(ColumnDef::new(CollectionMints::DropId).uuid().not_null())
+                    .col(
+                        ColumnDef::new(CollectionMints::CollectionId)
+                            .uuid()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(CollectionMints::Address).text().not_null())
                     .col(ColumnDef::new(CollectionMints::Owner).text().not_null())
                     .col(
@@ -35,6 +39,14 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .extra("default now()".to_string()),
                     )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-drops_collections_id")
+                            .from(CollectionMints::Table, CollectionMints::CollectionId)
+                            .to(Collections::Table, Collections::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -42,9 +54,9 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 IndexCreateStatement::new()
-                    .name("collection-mints_drop_id_idx")
+                    .name("collection-mints_collection_id_idx")
                     .table(CollectionMints::Table)
-                    .col(CollectionMints::DropId)
+                    .col(CollectionMints::CollectionId)
                     .index_type(IndexType::Hash)
                     .to_owned(),
             )
@@ -84,7 +96,7 @@ impl MigrationTrait for Migration {
 enum CollectionMints {
     Table,
     Id,
-    DropId,
+    CollectionId,
     Address,
     Owner,
     CreationStatus,

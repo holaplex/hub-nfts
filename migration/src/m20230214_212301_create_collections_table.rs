@@ -36,7 +36,6 @@ impl MigrationTrait for Migration {
                             .primary_key()
                             .extra("default gen_random_uuid()".to_string()),
                     )
-                    .col(ColumnDef::new(Collections::Collection).uuid().not_null())
                     .col(
                         ColumnDef::new(Collections::Blockchain)
                             .custom(Blockchain::Type)
@@ -95,7 +94,6 @@ impl MigrationTrait for Migration {
 pub enum Collections {
     Table,
     Id,
-    Collection,
     Blockchain,
     Name,
     Description,
@@ -116,7 +114,7 @@ impl Iden for Blockchain {
         write!(s, "{}", match self {
             Self::Type => "blockchain",
             Self::Solana => "solana",
-            Self::Polygon => "polyogn",
+            Self::Polygon => "polygon",
         })
         .unwrap();
     }

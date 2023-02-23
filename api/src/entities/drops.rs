@@ -11,7 +11,6 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub project_id: Uuid,
-    pub organization_id: Uuid,
     pub collection_id: Uuid,
     pub creation_status: CreationStatus,
     pub start_time: DateTime,

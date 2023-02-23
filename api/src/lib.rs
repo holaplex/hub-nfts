@@ -42,7 +42,7 @@ pub type AppSchema = Schema<Query, Mutation, EmptySubscription>;
 #[derive(Debug, clap::Args)]
 #[command(version, author, about)]
 pub struct Args {
-    #[arg(short, long, env, default_value_t = 3002)]
+    #[arg(short, long, env, default_value_t = 3004)]
     pub port: u16,
 
     #[arg(short, long, env)]

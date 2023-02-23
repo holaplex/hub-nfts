@@ -162,24 +162,7 @@ impl Mutation {
 
         rpc.send_and_confirm_transaction(&tx)?;
 
-        let solana_collections_active_model = solana_collections::ActiveModel {
-            project_id: Set(input.project_id),
-            address: Set(master_edition_pubkey.to_string()),
-            seller_fee_basis_points: Set(input.seller_fee_basis_points.try_into()?),
-            created_by: Set(user_id),
-            created_at: Set(Local::now().naive_utc()),
-            ata_pubkey: Set(ata.to_string()),
-            owner_pubkey: Set(owner.pubkey().to_string()),
-            update_authority: Set(input.update_authority_address),
-            mint_pubkey: Set(mint.pubkey().to_string()),
-            metadata_pubkey: Set(token_metadata_pubkey.to_string()),
-            ..Default::default()
-        };
-
-        let solana_collection = solana_collections_active_model.insert(db.get()).await?;
-
         let collection_active_model = collections::ActiveModel {
-            collection: Set(solana_collection.id),
             blockchain: Set(input.blockchain),
             name: Set(input.name),
             description: Set(input.description),
@@ -192,9 +175,24 @@ impl Mutation {
 
         let collection = collection_active_model.insert(db.get()).await?;
 
+        let solana_collections_active_model = solana_collections::ActiveModel {
+            collection_id: Set(collection.id),
+            master_edition_address: Set(master_edition_pubkey.to_string()),
+            seller_fee_basis_points: Set(input.seller_fee_basis_points.try_into()?),
+            created_by: Set(user_id),
+            created_at: Set(Local::now().naive_utc()),
+            ata_pubkey: Set(ata.to_string()),
+            owner_pubkey: Set(owner.pubkey().to_string()),
+            update_authority: Set(input.update_authority_address),
+            mint_pubkey: Set(mint.pubkey().to_string()),
+            metadata_pubkey: Set(token_metadata_pubkey.to_string()),
+            ..Default::default()
+        };
+
+        solana_collections_active_model.insert(db.get()).await?;
+
         let drop = drops::ActiveModel {
             project_id: Set(input.project_id),
-            organization_id: Set(input.organization_id),
             collection_id: Set(collection.id),
             creation_status: Set(CreationStatus::Pending),
             start_time: Set(input.start_time.naive_utc()),
@@ -216,7 +214,6 @@ pub struct CreateDropInput {
     royalty_address: String,
     update_authority_address: String,
     project_id: Uuid,
-    organization_id: Uuid,
     price: u64,
     name: String,
     description: String,
