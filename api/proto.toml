@@ -5,3 +5,4 @@ endpoint = "https://schemas.holaplex.tools"
 organization = 1
 drops = 1
 customer = 1
+treasury = 1

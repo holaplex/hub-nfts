@@ -4,6 +4,7 @@
 
 pub mod db;
 pub mod entities;
+pub mod events;
 pub mod handlers;
 use std::fs::File;
 
@@ -17,6 +18,7 @@ use async_graphql::{
 use hub_core::{
     anyhow::{Error, Result},
     clap,
+    consumer::RecvError,
     prelude::*,
     producer::Producer,
     serde_json,
@@ -27,14 +29,43 @@ use poem::{async_trait, FromRequest, Request, RequestBody};
 use queries::Query;
 use solana_client::rpc_client::RpcClient;
 
+#[allow(clippy::pedantic)]
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/drops.proto.rs"));
+    include!(concat!(env!("OUT_DIR"), "/treasury.proto.rs"));
 }
 
 use proto::DropEvents;
 
 impl hub_core::producer::Message for proto::DropEvents {
     type Key = proto::DropEventKey;
+}
+
+#[derive(Debug)]
+pub enum Services {
+    Treasuries(proto::TreasuryEventKey, proto::TreasuryEvents),
+}
+
+impl hub_core::consumer::MessageGroup for Services {
+    const REQUESTED_TOPICS: &'static [&'static str] = &["hub-treasuries"];
+
+    fn from_message<M: hub_core::consumer::Message>(msg: &M) -> Result<Self, RecvError> {
+        let topic = msg.topic();
+        let key = msg.key().ok_or(RecvError::MissingKey)?;
+        let val = msg.payload().ok_or(RecvError::MissingPayload)?;
+        info!(topic, ?key, ?val);
+
+        match topic {
+            "hub-treasuries" => {
+                let key = proto::TreasuryEventKey::decode(key)?;
+                let val = proto::TreasuryEvents::decode(val)?;
+
+                Ok(Services::Treasuries(key, val))
+            },
+
+            t => Err(RecvError::BadTopic(t.into())),
+        }
+    }
 }
 
 pub type AppSchema = Schema<Query, Mutation, EmptySubscription>;

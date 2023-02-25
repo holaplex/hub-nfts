@@ -25,7 +25,7 @@ use crate::{
         sea_orm_active_enums::CreationStatus,
         solana_collections,
     },
-    proto::{self, drop_events, DropEventKey, DropEvents},
+    proto::{drop_events, DropEventKey, DropEvents, Transaction},
     AppContext, UserID,
 };
 
@@ -178,7 +178,7 @@ impl Mutation {
             collection_id: Set(collection.id),
             address: Set(edition_key.to_string()),
             owner: Set(owner.to_string()),
-            creation_status: Set(CreationStatus::Created),
+            creation_status: Set(CreationStatus::Pending),
             created_by: Set(user_id),
             ..Default::default()
         };
@@ -186,7 +186,7 @@ impl Mutation {
         let collection_mint_model = collection_mint_active_model.insert(db.get()).await?;
 
         let event = DropEvents {
-            event: Some(drop_events::Event::MintEdition(proto::Transaction {
+            event: Some(drop_events::Event::MintEdition(Transaction {
                 serialized_message,
                 signed_message_signatures: vec![
                     payer_signature.to_string(),
