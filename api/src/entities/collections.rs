@@ -7,6 +7,7 @@ use super::sea_orm_active_enums::{Blockchain, CreationStatus};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
 #[sea_orm(table_name = "collections")]
+#[graphql(concrete(name = "Collection", params()))]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
