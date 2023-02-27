@@ -5,7 +5,7 @@ sha512 = "e91f3aa8f20639973deb1ca131c2342b53c802807a52ea40f4f54c3ab7c79158f969cd
 
 [[schemas]]
 subject = "drops"
-version = 1
+version = 2
 sha512 = "12d985af9b79f5ae5feff2900e573b40255576bb1cea52be18b699e10d655d6fd5cbf61db8f9def62bdc7d9e46f45fd32e383db2601b13568119a73c79c4469d"
 
 [[schemas]]
