@@ -199,16 +199,16 @@ impl Mutation {
         let drop_model = drop.insert(db.get()).await?;
 
         let event = DropEvents {
-            event: Some(drop_events::Event::CreateMasterEdition(
-                proto::Transaction {
+            event: Some(drop_events::Event::CreateDrop(proto::DropTransaction {
+                transaction: Some(proto::Transaction {
                     serialized_message,
                     signed_message_signatures: vec![
                         payer_signature.to_string(),
                         mint_signature.to_string(),
                     ],
-                    project_id: input.project_id.to_string(),
-                },
-            )),
+                }),
+                project_id: input.project_id.to_string(),
+            })),
         };
         let key = DropEventKey {
             id: drop_model.id.to_string(),

@@ -25,7 +25,7 @@ use crate::{
         sea_orm_active_enums::CreationStatus,
         solana_collections,
     },
-    proto::{drop_events, DropEventKey, DropEvents, Transaction},
+    proto::{drop_events, DropEventKey, DropEvents, MintTransaction, Transaction},
     AppContext, UserID,
 };
 
@@ -186,13 +186,16 @@ impl Mutation {
         let collection_mint_model = collection_mint_active_model.insert(db.get()).await?;
 
         let event = DropEvents {
-            event: Some(drop_events::Event::MintEdition(Transaction {
-                serialized_message,
-                signed_message_signatures: vec![
-                    payer_signature.to_string(),
-                    mint_signature.to_string(),
-                ],
+            event: Some(drop_events::Event::MintDrop(MintTransaction {
+                transaction: Some(Transaction {
+                    serialized_message,
+                    signed_message_signatures: vec![
+                        payer_signature.to_string(),
+                        mint_signature.to_string(),
+                    ],
+                }),
                 project_id: drop_model.project_id.to_string(),
+                drop_id: drop_model.id.to_string(),
             })),
         };
         let key = DropEventKey {

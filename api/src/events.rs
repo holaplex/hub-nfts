@@ -4,7 +4,10 @@ use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 use crate::{
     db::Connection,
     entities::{collection_mints, drops, sea_orm_active_enums::CreationStatus},
-    proto::{treasury_events, TreasuryEventKey},
+    proto::{
+        treasury_events::{self, DropCreated, DropMinted},
+        TreasuryEventKey,
+    },
     Services,
 };
 
@@ -15,14 +18,14 @@ use crate::{
 pub async fn process(msg: Services, db: Connection) -> Result<()> {
     // match topics
     match msg {
-        Services::Treasuries(k, e) => match e.event {
-            Some(treasury_events::Event::MasterEdition(status)) => {
-                update_drop_status(k, status, db).await
+        Services::Treasuries(key, e) => match e.event {
+            Some(treasury_events::Event::DropCreated(payload)) => {
+                update_drop_status(db, key, payload).await
             },
-            Some(treasury_events::Event::MintEdition(status)) => {
-                update_collection_mint_status(k, status, db).await
+            Some(treasury_events::Event::DropMinted(payload)) => {
+                update_collection_mint_status(db, key, payload).await
             },
-            None => Ok(()),
+            None | Some(_) => Ok(()),
         },
     }
 }
@@ -31,8 +34,12 @@ pub async fn process(msg: Services, db: Connection) -> Result<()> {
 ///
 /// # Errors
 /// This function fails if .
-pub async fn update_drop_status(k: TreasuryEventKey, status: i32, db: Connection) -> Result<()> {
-    let drop_id = Uuid::from_str(&k.id)?;
+pub async fn update_drop_status(
+    db: Connection,
+    key: TreasuryEventKey,
+    payload: DropCreated,
+) -> Result<()> {
+    let drop_id = Uuid::from_str(&key.id)?;
 
     let drop = drops::Entity::find_by_id(drop_id)
         .one(db.get())
@@ -42,7 +49,7 @@ pub async fn update_drop_status(k: TreasuryEventKey, status: i32, db: Connection
 
     let mut drops_active_model: drops::ActiveModel = drop.into();
 
-    drops_active_model.creation_status = Set(status.into());
+    drops_active_model.creation_status = Set(payload.status.into());
     drops_active_model.update(db.get()).await?;
 
     debug!("status updated for drop {:?}", drop_id);
@@ -55,11 +62,11 @@ pub async fn update_drop_status(k: TreasuryEventKey, status: i32, db: Connection
 /// # Errors
 /// This function fails if .
 pub async fn update_collection_mint_status(
-    k: TreasuryEventKey,
-    status: i32,
     db: Connection,
+    key: TreasuryEventKey,
+    payload: DropMinted,
 ) -> Result<()> {
-    let collection_mint_id = Uuid::from_str(&k.id)?;
+    let collection_mint_id = Uuid::from_str(&key.id)?;
 
     let collection_mint = collection_mints::Entity::find_by_id(collection_mint_id)
         .one(db.get())
@@ -69,7 +76,7 @@ pub async fn update_collection_mint_status(
 
     let mut collection_mint_active_model: collection_mints::ActiveModel = collection_mint.into();
 
-    collection_mint_active_model.creation_status = Set(status.into());
+    collection_mint_active_model.creation_status = Set(payload.status.into());
     collection_mint_active_model.update(db.get()).await?;
 
     debug!(
