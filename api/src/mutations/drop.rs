@@ -16,7 +16,7 @@ use crate::{
         sea_orm_active_enums::{Blockchain, CreationStatus},
         solana_collections,
     },
-    proto::{self, drop_events, DropEventKey, DropEvents},
+    proto::{self, nft_events, NftEventKey, NftEvents},
     AppContext, UserID,
 };
 
@@ -36,7 +36,7 @@ impl Mutation {
     ) -> Result<drops::Model> {
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let UserID(id) = user_id;
-        let producer = ctx.data::<Producer<DropEvents>>()?;
+        let producer = ctx.data::<Producer<NftEvents>>()?;
         let rpc = &**ctx.data::<Arc<RpcClient>>()?;
         let keypair_bytes = ctx.data::<Vec<u8>>()?;
 
@@ -198,8 +198,8 @@ impl Mutation {
 
         let drop_model = drop.insert(db.get()).await?;
 
-        let event = DropEvents {
-            event: Some(drop_events::Event::CreateDrop(proto::DropTransaction {
+        let event = NftEvents {
+            event: Some(nft_events::Event::CreateDrop(proto::DropTransaction {
                 transaction: Some(proto::Transaction {
                     serialized_message,
                     signed_message_signatures: vec![
@@ -210,7 +210,7 @@ impl Mutation {
                 project_id: input.project_id.to_string(),
             })),
         };
-        let key = DropEventKey {
+        let key = NftEventKey {
             id: drop_model.id.to_string(),
             user_id: user_id.to_string(),
         };

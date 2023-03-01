@@ -25,7 +25,7 @@ use crate::{
         sea_orm_active_enums::CreationStatus,
         solana_collections,
     },
-    proto::{drop_events, DropEventKey, DropEvents, MintTransaction, Transaction},
+    proto::{nft_events, MintTransaction, NftEventKey, NftEvents, Transaction},
     AppContext, UserID,
 };
 
@@ -47,7 +47,7 @@ impl Mutation {
     ) -> Result<MintEditionPayload> {
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let rpc = &**ctx.data::<Arc<RpcClient>>()?;
-        let producer = ctx.data::<Producer<DropEvents>>()?;
+        let producer = ctx.data::<Producer<NftEvents>>()?;
         let keypair_bytes = ctx.data::<Vec<u8>>()?;
 
         let UserID(id) = user_id;
@@ -185,8 +185,8 @@ impl Mutation {
 
         let collection_mint_model = collection_mint_active_model.insert(db.get()).await?;
 
-        let event = DropEvents {
-            event: Some(drop_events::Event::MintDrop(MintTransaction {
+        let event = NftEvents {
+            event: Some(nft_events::Event::MintDrop(MintTransaction {
                 transaction: Some(Transaction {
                     serialized_message,
                     signed_message_signatures: vec![
@@ -198,7 +198,7 @@ impl Mutation {
                 drop_id: drop_model.id.to_string(),
             })),
         };
-        let key = DropEventKey {
+        let key = NftEventKey {
             id: collection_mint_model.id.to_string(),
             user_id: user_id.to_string(),
         };

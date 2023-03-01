@@ -37,7 +37,7 @@ pub fn main() {
                 .context("failed to get database connection")?;
             let rpc = RpcClient::new(solana_endpoint);
             let schema = build_schema();
-            let producer = common.producer_cfg.build::<proto::DropEvents>().await?;
+            let producer = common.producer_cfg.build::<proto::NftEvents>().await?;
             let state = AppState::new(
                 schema,
                 connection.clone(),
