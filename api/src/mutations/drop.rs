@@ -72,7 +72,7 @@ impl Mutation {
         let rent = rpc.get_minimum_balance_for_rent_exemption(len)?;
 
         let create_account_ins = solana_program::system_instruction::create_account(
-            &owner,
+            &payer.pubkey(),
             &mint.pubkey(),
             rent,
             len.try_into()?,
