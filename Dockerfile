@@ -28,8 +28,8 @@ COPY Cargo.* ./
 COPY api api
 COPY migration migration
 
-FROM builder AS builder-hub-nfts
-RUN cargo build --release --bin holaplex-hub-nfts
+FROM builder AS builder-hub-drops
+RUN cargo build --release --bin holaplex-hub-drops
 
 FROM builder AS builder-migration
 RUN cargo build --release --bin migration
@@ -46,9 +46,9 @@ RUN apt-get update -y && \
 
 RUN mkdir -p bin
 
-FROM base AS hub-nfts
-COPY --from=builder-hub-nfts /app/target/release/holaplex-hub-nfts bin
-CMD ["bin/holaplex-hub-nfts"]
+FROM base AS hub-drops
+COPY --from=builder-hub-drops /app/target/release/holaplex-hub-drops bin
+CMD ["bin/holaplex-hub-drops"]
 
 FROM base AS migrator
 COPY --from=builder-migration /app/target/release/migration bin/
