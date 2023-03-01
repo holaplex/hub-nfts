@@ -31,14 +31,14 @@ use solana_client::rpc_client::RpcClient;
 
 #[allow(clippy::pedantic)]
 pub mod proto {
-    include!(concat!(env!("OUT_DIR"), "/drops.proto.rs"));
+    include!(concat!(env!("OUT_DIR"), "/nfts.proto.rs"));
     include!(concat!(env!("OUT_DIR"), "/treasury.proto.rs"));
 }
 
-use proto::DropEvents;
+use proto::NftEvents;
 
-impl hub_core::producer::Message for proto::DropEvents {
-    type Key = proto::DropEventKey;
+impl hub_core::producer::Message for proto::NftEvents {
+    type Key = proto::NftEventKey;
 }
 
 #[derive(Debug)]
@@ -117,7 +117,7 @@ pub struct AppState {
     pub schema: AppSchema,
     pub connection: Connection,
     pub rpc: Arc<RpcClient>,
-    pub producer: Producer<DropEvents>,
+    pub producer: Producer<NftEvents>,
     pub keypair: Vec<u8>,
 }
 
@@ -127,7 +127,7 @@ impl AppState {
         schema: AppSchema,
         connection: Connection,
         rpc: Arc<RpcClient>,
-        producer: Producer<DropEvents>,
+        producer: Producer<NftEvents>,
         path: String,
     ) -> Self {
         let f = File::open(path).expect("unable to locate keypair file");

@@ -1,12 +1,12 @@
 [package]
-name = "holaplex-hub-drops"
+name = "holaplex-hub-nfts"
 version = "0.1.0"
 publish = false
 authors = [
   "Holaplex <engineering@holaplex.com>",
 ]
 edition = "2021"
-description = "Holaplex Hub drops service"
+description = "Holaplex Hub nfts service"
 readme = "./README.md"
 repository = "https://github.com/holaplex/hub-nfts"
 license = "AGPL-3.0-or-later"
