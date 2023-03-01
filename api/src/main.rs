@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use async_graphql::futures_util::StreamExt;
-use holaplex_hub_drops::{
+use holaplex_hub_nfts::{
     build_schema,
     db::Connection,
     events,
@@ -20,7 +20,7 @@ use solana_client::rpc_client::RpcClient;
 
 pub fn main() {
     let opts = hub_core::StartConfig {
-        service_name: "hub-drops",
+        service_name: "hub-nfts",
     };
 
     hub_core::run(opts, |common, args| {

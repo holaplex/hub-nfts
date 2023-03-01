@@ -29,24 +29,24 @@ jobs:
           version: v0.9.1
           endpoint: mycontext
       -
-        name: Build and push hub-drops
+        name: Build and push hub-nfts
         uses: docker/build-push-action@v3
         with:
           context: .
           file: ./Dockerfile
-          target: hub-drops
+          target: hub-nfts
           push: true
-          tags: ${{ vars.DOCKERHUB_ORG }}/hub-drops:${{ github.sha }},${{ vars.DOCKERHUB_ORG }}/hub-drops:latest
+          tags: ${{ vars.DOCKERHUB_ORG }}/hub-nfts:${{ github.sha }},${{ vars.DOCKERHUB_ORG }}/hub-nfts:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
       -
-        name: Build and push hub-drops-migrations
+        name: Build and push hub-nfts-migrations
         uses: docker/build-push-action@v3
         with:
           context: .
           file: ./Dockerfile
           target: migrator
           push: true
-          tags: ${{ vars.DOCKERHUB_ORG }}/hub-drops-migrations:${{ github.sha }},${{ vars.DOCKERHUB_ORG }}/hub-drops-migrations:latest
+          tags: ${{ vars.DOCKERHUB_ORG }}/hub-nfts-migrations:${{ github.sha }},${{ vars.DOCKERHUB_ORG }}/hub-nfts-migrations:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
