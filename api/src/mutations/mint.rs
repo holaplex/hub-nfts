@@ -81,11 +81,12 @@ impl Mutation {
         let master_edition_pubkey: Pubkey = sc.master_edition_address.parse()?;
         let master_edition_mint: Pubkey = sc.mint_pubkey.parse()?;
         let existing_token_account: Pubkey = sc.ata_pubkey.parse()?;
+        let recipient: Pubkey = input.recipient.parse()?;
 
         let token_key = Pubkey::from_str(TOKEN_PROGRAM_PUBKEY)?;
 
         let new_mint_key = Keypair::new();
-        let added_token_account = get_associated_token_address(&owner, &new_mint_key.pubkey());
+        let added_token_account = get_associated_token_address(&recipient, &new_mint_key.pubkey());
         let new_mint_pub = new_mint_key.pubkey();
         let edition_seeds = &[
             PREFIX.as_bytes(),
@@ -104,7 +105,7 @@ impl Mutation {
 
         let mut instructions = vec![
             create_account(
-                &owner,
+                &payer.pubkey(),
                 &new_mint_key.pubkey(),
                 rpc.get_minimum_balance_for_rent_exemption(Mint::LEN)?,
                 Mint::LEN as u64,
@@ -113,7 +114,7 @@ impl Mutation {
             initialize_mint(&token_key, &new_mint_key.pubkey(), &owner, Some(&owner), 0)?,
             create_associated_token_account(
                 &payer.pubkey(),
-                &owner,
+                &recipient,
                 &new_mint_key.pubkey(),
                 &spl_token::ID,
             ),
@@ -137,30 +138,11 @@ impl Mutation {
             payer.pubkey(),
             owner,
             existing_token_account,
-            sc.update_authority.parse()?,
+            owner,
             sc.metadata_pubkey.parse()?,
             master_edition_mint,
             input.edition,
         ));
-
-        let destination_token_account =
-            get_associated_token_address(&input.destination.parse()?, &new_mint_key.pubkey());
-
-        instructions.push(create_associated_token_account(
-            &payer.pubkey(),
-            &input.destination.parse()?,
-            &new_mint_key.pubkey(),
-            &spl_token::ID,
-        ));
-
-        instructions.push(spl_token::instruction::transfer(
-            &spl_token::id(),
-            &added_token_account,
-            &destination_token_account,
-            &owner,
-            &[&owner],
-            1,
-        )?);
 
         let blockhash = rpc.get_latest_blockhash()?;
 
@@ -214,7 +196,7 @@ impl Mutation {
 pub struct MintDropInput {
     drop: Uuid,
     owner_address: String,
-    destination: String,
+    recipient: String,
     edition: u64,
 }
 
