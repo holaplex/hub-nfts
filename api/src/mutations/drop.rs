@@ -5,6 +5,7 @@ use chrono::{DateTime, Local, Utc};
 use hub_core::producer::Producer;
 use mpl_token_metadata::state::Creator;
 use sea_orm::{prelude::*, Set};
+use serde::{Deserialize, Serialize};
 use solana_client::rpc_client::RpcClient;
 use solana_program::program_pack::Pack;
 use solana_sdk::signer::{keypair::Keypair, Signer};
@@ -16,6 +17,7 @@ use crate::{
         sea_orm_active_enums::{Blockchain, CreationStatus},
         solana_collections,
     },
+    nft_storage::NftStorageClient,
     proto::{self, nft_events, NftEventKey, NftEvents},
     AppContext, UserID,
 };
@@ -38,9 +40,12 @@ impl Mutation {
         let UserID(id) = user_id;
         let producer = ctx.data::<Producer<NftEvents>>()?;
         let rpc = &**ctx.data::<Arc<RpcClient>>()?;
+        let nft_storage = ctx.data::<NftStorageClient>()?;
         let keypair_bytes = ctx.data::<Vec<u8>>()?;
 
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+
+        let uri = upload_metadata_json(nft_storage, input.metadata_json.clone()).await?;
 
         let payer = Keypair::from_bytes(keypair_bytes)?;
         let mint = Keypair::new();
@@ -97,12 +102,17 @@ impl Mutation {
         let min_to_ins =
             spl_token::instruction::mint_to(&spl_token::ID, &mint.pubkey(), &ata, &owner, &[], 1)?;
 
-        let creators = input.creators.as_ref().map(|creators| {
-            creators
-                .iter()
-                .map(|creator| creator.clone().try_into().unwrap())
-                .collect()
-        });
+        let creators = input
+            .metadata_json
+            .properties
+            .creators
+            .as_ref()
+            .map(|creators| {
+                creators
+                    .iter()
+                    .map(|creator| creator.clone().try_into().unwrap())
+                    .collect()
+            });
         let create_metadata_account_ins =
             mpl_token_metadata::instruction::create_metadata_accounts_v3(
                 mpl_token_metadata::ID,
@@ -111,11 +121,11 @@ impl Mutation {
                 owner,
                 payer.pubkey(),
                 owner,
-                input.name.clone(),
-                input.symbol.clone(),
-                input.uri.clone(),
+                input.metadata_json.name.clone(),
+                input.metadata_json.symbol.clone(),
+                uri.clone(),
                 creators,
-                input.seller_fee_basis_points,
+                input.metadata_json.seller_fee_basis_points.clone(),
                 input.update_authority_is_signer,
                 input.is_mutable,
                 None,
@@ -157,9 +167,9 @@ impl Mutation {
 
         let collection_active_model = collections::ActiveModel {
             blockchain: Set(input.blockchain),
-            name: Set(input.name),
-            description: Set(input.description),
-            metadata_uri: Set(input.uri),
+            name: Set(input.metadata_json.name.clone()),
+            description: Set(input.metadata_json.description.clone()),
+            metadata_uri: Set(uri),
             royalty_wallet: Set(input.royalty_address.to_string()),
             supply: Set(input.supply.map(|s| s.try_into().unwrap_or_default())),
             creation_status: Set(CreationStatus::Pending),
@@ -171,7 +181,7 @@ impl Mutation {
         let solana_collections_active_model = solana_collections::ActiveModel {
             collection_id: Set(collection.id),
             master_edition_address: Set(master_edition_pubkey.to_string()),
-            seller_fee_basis_points: Set(input.seller_fee_basis_points.try_into()?),
+            seller_fee_basis_points: Set(input.metadata_json.seller_fee_basis_points.try_into()?),
             created_by: Set(user_id),
             created_at: Set(Local::now().naive_utc()),
             ata_pubkey: Set(ata.to_string()),
@@ -221,27 +231,68 @@ impl Mutation {
     }
 }
 
-#[derive(Debug, Clone, InputObject)]
+pub async fn upload_metadata_json(client: &NftStorageClient, data: MetadataJson) -> Result<String> {
+    let response = client.upload(data).await?;
+    let cid = response.value.cid;
+
+    Ok(client.ipfs_endpoint.join(&cid)?.to_string())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct CreateDropInput {
     royalty_address: String,
     owner_address: String,
     project_id: Uuid,
     price: u64,
-    name: String,
-    description: String,
-    symbol: String,
-    uri: String,
-    creators: Option<Vec<MetadataCreator>>,
-    seller_fee_basis_points: u16,
     update_authority_is_signer: bool,
     is_mutable: bool,
     supply: Option<u64>,
     start_time: DateTime<Utc>,
     end_time: DateTime<Utc>,
     blockchain: Blockchain,
+    metadata_json: MetadataJson,
 }
 
-#[derive(Debug, Clone, InputObject)]
+#[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
+pub struct MetadataJson {
+    pub name: String,
+    pub symbol: String,
+    pub description: String,
+    pub seller_fee_basis_points: u16,
+    pub image: String,
+    pub animation_url: Option<String>,
+    pub collection: Option<Collection>,
+    pub attributes: Vec<Attribute>,
+    pub external_url: Option<String>,
+    pub properties: Property,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
+pub struct File {
+    uri: Option<String>,
+    r#type: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
+pub struct Property {
+    files: Option<Vec<File>>,
+    category: Option<String>,
+    creators: Option<Vec<MetadataCreator>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
+pub struct Attribute {
+    trait_type: String,
+    value: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
+pub struct Collection {
+    name: Option<String>,
+    family: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
 pub struct MetadataCreator {
     pub address: String,
     pub verified: bool,
