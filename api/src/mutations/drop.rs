@@ -7,13 +7,15 @@ use mpl_token_metadata::state::Creator;
 use sea_orm::{prelude::*, Set};
 use serde::{Deserialize, Serialize};
 use solana_client::rpc_client::RpcClient;
-use solana_program::program_pack::Pack;
+use solana_program::{program_pack::Pack, pubkey::Pubkey};
 use solana_sdk::signer::{keypair::Keypair, Signer};
 use spl_associated_token_account::get_associated_token_address;
 
 use crate::{
+    db::Connection,
     entities::{
-        collections, drops,
+        collection_attributes, collection_creators, collections, drops, metadata_json_files,
+        metadata_jsons,
         sea_orm_active_enums::{Blockchain, CreationStatus},
         solana_collections,
     },
@@ -45,10 +47,10 @@ impl Mutation {
 
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
 
-        let uri = upload_metadata_json(nft_storage, input.metadata_json.clone()).await?;
-
         let payer = Keypair::from_bytes(keypair_bytes)?;
         let mint = Keypair::new();
+
+        let (uri, cid) = upload_metadata_json(nft_storage, input.metadata_json.clone()).await?;
 
         let owner = input.owner_address.parse()?;
         let ata = get_associated_token_address(&owner, &mint.pubkey());
@@ -102,7 +104,7 @@ impl Mutation {
         let min_to_ins =
             spl_token::instruction::mint_to(&spl_token::ID, &mint.pubkey(), &ata, &owner, &[], 1)?;
 
-        let creators = input.creators.as_ref().map(|creators| {
+        let creators = input.creators.clone().as_ref().map(|creators| {
             creators
                 .iter()
                 .map(|creator| creator.clone().try_into().unwrap())
@@ -120,7 +122,7 @@ impl Mutation {
                 input.metadata_json.symbol.clone(),
                 uri.clone(),
                 creators,
-                input.seller_fee_basis_points.clone(),
+                input.seller_fee_basis_points,
                 input.update_authority_is_signer,
                 input.is_mutable,
                 None,
@@ -160,77 +162,214 @@ impl Mutation {
         let mint_signature = mint.try_sign_message(&message.serialize())?;
         let payer_signature = payer.try_sign_message(&message.serialize())?;
 
-        let collection_active_model = collections::ActiveModel {
-            blockchain: Set(input.blockchain),
-            name: Set(input.metadata_json.name.clone()),
-            description: Set(input.metadata_json.description.clone()),
-            metadata_uri: Set(uri),
-            royalty_wallet: Set(input.royalty_address.to_string()),
-            supply: Set(input.supply.map(|s| s.try_into().unwrap_or_default())),
-            creation_status: Set(CreationStatus::Pending),
-            ..Default::default()
-        };
+        let (collection, _, drop) = index_drop_and_collection(
+            db,
+            input.clone(),
+            uri,
+            user_id,
+            master_edition_pubkey,
+            ata,
+            owner,
+            mint.pubkey(),
+            token_metadata_pubkey,
+        )
+        .await?;
 
-        let collection = collection_active_model.insert(db.get()).await?;
+        index_metadata_json(db, input.metadata_json.clone(), collection.id, cid).await?;
 
-        let solana_collections_active_model = solana_collections::ActiveModel {
-            collection_id: Set(collection.id),
-            master_edition_address: Set(master_edition_pubkey.to_string()),
-            seller_fee_basis_points: Set(input.seller_fee_basis_points.try_into()?),
-            created_by: Set(user_id),
-            created_at: Set(Local::now().naive_utc()),
-            ata_pubkey: Set(ata.to_string()),
-            owner_pubkey: Set(owner.to_string()),
-            update_authority: Set(owner.to_string()),
-            mint_pubkey: Set(mint.pubkey().to_string()),
-            metadata_pubkey: Set(token_metadata_pubkey.to_string()),
-            ..Default::default()
-        };
+        if let Some(creators) = input.creators {
+            index_creators(db, creators, collection.id).await?;
+        }
 
-        solana_collections_active_model.insert(db.get()).await?;
+        emit_drop_transaction_event(
+            producer,
+            drop.id,
+            user_id,
+            serialized_message,
+            vec![payer_signature.to_string(), mint_signature.to_string()],
+            input.project_id,
+        )
+        .await?;
 
-        let drop = drops::ActiveModel {
-            project_id: Set(input.project_id),
-            collection_id: Set(collection.id),
-            creation_status: Set(CreationStatus::Pending),
-            start_time: Set(input.start_time.naive_utc()),
-            end_time: Set(input.end_time.naive_utc()),
-            price: Set(input.price.try_into()?),
-            created_by: Set(user_id),
-            created_at: Set(Local::now().naive_utc()),
-            ..Default::default()
-        };
-
-        let drop_model = drop.insert(db.get()).await?;
-
-        let event = NftEvents {
-            event: Some(nft_events::Event::CreateDrop(proto::DropTransaction {
-                transaction: Some(proto::Transaction {
-                    serialized_message,
-                    signed_message_signatures: vec![
-                        payer_signature.to_string(),
-                        mint_signature.to_string(),
-                    ],
-                }),
-                project_id: input.project_id.to_string(),
-            })),
-        };
-        let key = NftEventKey {
-            id: drop_model.id.to_string(),
-            user_id: user_id.to_string(),
-        };
-
-        producer.send(Some(&event), Some(&key)).await?;
-
-        Ok(drop_model)
+        Ok(drop)
     }
 }
 
-pub async fn upload_metadata_json(client: &NftStorageClient, data: MetadataJson) -> Result<String> {
-    let response = client.upload(data).await?;
+/// This functions emits the drop transaction event
+/// # Errors
+/// This function fails if producer is unable to sent the event
+pub async fn emit_drop_transaction_event(
+    producer: &Producer<NftEvents>,
+    id: Uuid,
+    user_id: Uuid,
+    serialized_message: Vec<u8>,
+    signatures: Vec<String>,
+    project_id: Uuid,
+) -> Result<()> {
+    let event = NftEvents {
+        event: Some(nft_events::Event::CreateDrop(proto::DropTransaction {
+            transaction: Some(proto::Transaction {
+                serialized_message,
+                signed_message_signatures: signatures,
+            }),
+            project_id: project_id.to_string(),
+        })),
+    };
+    let key = NftEventKey {
+        id: id.to_string(),
+        user_id: user_id.to_string(),
+    };
+
+    producer.send(Some(&event), Some(&key)).await?;
+
+    Ok(())
+}
+
+/// This functions indexes the collection, `solana_collection` and drop
+/// # Errors
+/// This function fails if insert fails
+#[allow(clippy::too_many_arguments)]
+pub async fn index_drop_and_collection(
+    db: &Connection,
+    input: CreateDropInput,
+    uri: String,
+    user_id: Uuid,
+    master_edition_pubkey: Pubkey,
+    ata: Pubkey,
+    owner: Pubkey,
+    mint: Pubkey,
+    token_metadata_pubkey: Pubkey,
+) -> Result<(collections::Model, solana_collections::Model, drops::Model)> {
+    let collection_active_model = collections::ActiveModel {
+        blockchain: Set(input.blockchain),
+        name: Set(input.metadata_json.name.clone()),
+        description: Set(input.metadata_json.description.clone()),
+        metadata_uri: Set(uri),
+        royalty_wallet: Set(input.royalty_address.to_string()),
+        supply: Set(input.supply.map(|s| s.try_into().unwrap_or_default())),
+        creation_status: Set(CreationStatus::Pending),
+        ..Default::default()
+    };
+
+    let collection = collection_active_model.insert(db.get()).await?;
+
+    let solana_collections_active_model = solana_collections::ActiveModel {
+        collection_id: Set(collection.id),
+        master_edition_address: Set(master_edition_pubkey.to_string()),
+        seller_fee_basis_points: Set(input.seller_fee_basis_points.try_into()?),
+        created_by: Set(user_id),
+        created_at: Set(Local::now().naive_utc()),
+        ata_pubkey: Set(ata.to_string()),
+        owner_pubkey: Set(owner.to_string()),
+        update_authority: Set(owner.to_string()),
+        mint_pubkey: Set(mint.to_string()),
+        metadata_pubkey: Set(token_metadata_pubkey.to_string()),
+        ..Default::default()
+    };
+
+    let solana_collection = solana_collections_active_model.insert(db.get()).await?;
+
+    let drop_am = drops::ActiveModel {
+        project_id: Set(input.project_id),
+        collection_id: Set(collection.id),
+        creation_status: Set(CreationStatus::Pending),
+        start_time: Set(input.start_time.naive_utc()),
+        end_time: Set(input.end_time.naive_utc()),
+        price: Set(input.price.try_into()?),
+        created_by: Set(user_id),
+        created_at: Set(Local::now().naive_utc()),
+        ..Default::default()
+    };
+
+    let drop = drop_am.insert(db.get()).await?;
+
+    Ok((collection, solana_collection, drop))
+}
+
+/// This functions indexes the creators
+/// # Errors
+/// This function fails if insert fails
+pub async fn index_creators(
+    db: &Connection,
+    creators: Vec<MetadataCreator>,
+    collection: Uuid,
+) -> Result<()> {
+    for creator in creators {
+        let am = collection_creators::ActiveModel {
+            collection_id: Set(collection),
+            address: Set(creator.address),
+            verified: Set(creator.verified),
+            share: Set(creator.share.try_into()?),
+        };
+
+        am.insert(db.get()).await?;
+    }
+
+    Ok(())
+}
+
+/// This functions indexes the metadata json uri data to `metadata_json`, attributes and files tables
+/// # Errors
+/// This function fails if insert fails
+pub async fn index_metadata_json(
+    db: &Connection,
+    data: MetadataJson,
+    collection: Uuid,
+    cid: String,
+) -> Result<()> {
+    let metadata_json_active_model = metadata_jsons::ActiveModel {
+        collection_id: Set(collection),
+        identifier: Set(cid.clone()),
+        name: Set(data.name.clone()),
+        symbol: Set(data.symbol.clone()),
+        description: Set(data.description.clone()),
+        image: Set(data.image.clone()),
+        animation_url: Set(data.animation_url.clone()),
+        external_url: Set(data.external_url.clone()),
+    };
+
+    metadata_json_active_model.insert(db.get()).await?;
+
+    for attribute in data.attributes {
+        let am = collection_attributes::ActiveModel {
+            collection_id: Set(collection),
+            trait_type: Set(attribute.trait_type),
+            value: Set(attribute.value),
+            ..Default::default()
+        };
+
+        am.insert(db.get()).await?;
+    }
+
+    if let Some(files) = data.properties.files {
+        for file in files {
+            let metadata_json_file_am = metadata_json_files::ActiveModel {
+                collection_id: Set(collection),
+                uri: Set(file.uri),
+                file_type: Set(file.file_type),
+                ..Default::default()
+            };
+
+            metadata_json_file_am.insert(db.get()).await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// uploads the metadata json to nft.storage
+/// # Errors
+/// if the upload fails
+pub async fn upload_metadata_json(
+    client: &NftStorageClient,
+    data: MetadataJson,
+) -> Result<(String, String)> {
+    let response = client.upload(data.clone()).await?;
     let cid = response.value.cid;
 
-    Ok(client.ipfs_endpoint.join(&cid)?.to_string())
+    let uri = client.ipfs_endpoint.join(&cid)?.to_string();
+
+    Ok((uri, cid))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
@@ -257,7 +396,7 @@ pub struct MetadataJson {
     pub description: String,
     pub image: String,
     pub animation_url: Option<String>,
-    pub collection: Option<Collection>,
+    pub collection: Option<MetadataJsonCollection>,
     pub attributes: Vec<Attribute>,
     pub external_url: Option<String>,
     pub properties: Property,
@@ -266,7 +405,8 @@ pub struct MetadataJson {
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
 pub struct File {
     uri: Option<String>,
-    r#type: Option<String>,
+    #[serde(rename = "type")]
+    file_type: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
@@ -282,7 +422,7 @@ pub struct Attribute {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
-pub struct Collection {
+pub struct MetadataJsonCollection {
     name: Option<String>,
     family: Option<String>,
 }

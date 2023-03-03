@@ -2,6 +2,8 @@
 
 pub use super::{
     collection_attributes::Entity as CollectionAttributes,
-    collection_mints::Entity as CollectionMints, collections::Entity as Collections,
-    drops::Entity as Drops, solana_collections::Entity as SolanaCollections,
+    collection_creators::Entity as CollectionCreators, collection_mints::Entity as CollectionMints,
+    collections::Entity as Collections, drops::Entity as Drops,
+    metadata_json_files::Entity as MetadataJsonFiles, metadata_jsons::Entity as MetadataJsons,
+    solana_collections::Entity as SolanaCollections,
 };
