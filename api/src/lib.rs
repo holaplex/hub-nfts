@@ -7,6 +7,7 @@ pub mod db;
 pub mod entities;
 pub mod events;
 pub mod handlers;
+pub mod nft_storage;
 pub mod objects;
 
 use std::fs::File;
@@ -30,6 +31,7 @@ use hub_core::{
     uuid::Uuid,
 };
 use mutations::Mutation;
+use nft_storage::NftStorageClient;
 use poem::{async_trait, FromRequest, Request, RequestBody};
 use queries::Query;
 use solana_client::rpc_client::RpcClient;
@@ -89,6 +91,9 @@ pub struct Args {
 
     #[command(flatten)]
     pub db: db::DbArgs,
+
+    #[command(flatten)]
+    pub nft_storage: nft_storage::NftStorageArgs,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -124,6 +129,7 @@ pub struct AppState {
     pub rpc: Arc<RpcClient>,
     pub producer: Producer<NftEvents>,
     pub keypair: Vec<u8>,
+    pub nft_storage: NftStorageClient,
 }
 
 impl AppState {
@@ -134,6 +140,7 @@ impl AppState {
         rpc: Arc<RpcClient>,
         producer: Producer<NftEvents>,
         path: String,
+        nft_storage: NftStorageClient,
     ) -> Self {
         let f = File::open(path).expect("unable to locate keypair file");
         let keypair: Vec<u8> =
@@ -145,6 +152,7 @@ impl AppState {
             rpc,
             producer,
             keypair,
+            nft_storage,
         }
     }
 }
