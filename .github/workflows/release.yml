@@ -50,3 +50,12 @@ jobs:
           tags: ${{ vars.DOCKERHUB_ORG }}/hub-nfts-migrations:${{ github.sha }},${{ vars.DOCKERHUB_ORG }}/hub-nfts-migrations:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - 
+        name: Invoke workflow in hub-kubes repo
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          ref: main
+          token: ${{ secrets.ACTIONS_TOKEN }}
+          workflow: release.yml
+          repo: holaplex/hub-kubes
+          inputs: '{ "service": "nfts", "environment": "stage", "commit_hash": "${{ github.sha }}"}'
