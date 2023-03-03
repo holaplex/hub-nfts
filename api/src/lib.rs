@@ -7,8 +7,8 @@ pub mod db;
 pub mod entities;
 pub mod events;
 pub mod handlers;
-pub mod objects;
 pub mod nft_storage;
+pub mod objects;
 
 use std::fs::File;
 

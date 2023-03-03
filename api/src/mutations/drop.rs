@@ -102,17 +102,12 @@ impl Mutation {
         let min_to_ins =
             spl_token::instruction::mint_to(&spl_token::ID, &mint.pubkey(), &ata, &owner, &[], 1)?;
 
-        let creators = input
-            .metadata_json
-            .properties
-            .creators
-            .as_ref()
-            .map(|creators| {
-                creators
-                    .iter()
-                    .map(|creator| creator.clone().try_into().unwrap())
-                    .collect()
-            });
+        let creators = input.creators.as_ref().map(|creators| {
+            creators
+                .iter()
+                .map(|creator| creator.clone().try_into().unwrap())
+                .collect()
+        });
         let create_metadata_account_ins =
             mpl_token_metadata::instruction::create_metadata_accounts_v3(
                 mpl_token_metadata::ID,
@@ -125,7 +120,7 @@ impl Mutation {
                 input.metadata_json.symbol.clone(),
                 uri.clone(),
                 creators,
-                input.metadata_json.seller_fee_basis_points.clone(),
+                input.seller_fee_basis_points.clone(),
                 input.update_authority_is_signer,
                 input.is_mutable,
                 None,
@@ -181,7 +176,7 @@ impl Mutation {
         let solana_collections_active_model = solana_collections::ActiveModel {
             collection_id: Set(collection.id),
             master_edition_address: Set(master_edition_pubkey.to_string()),
-            seller_fee_basis_points: Set(input.metadata_json.seller_fee_basis_points.try_into()?),
+            seller_fee_basis_points: Set(input.seller_fee_basis_points.try_into()?),
             created_by: Set(user_id),
             created_at: Set(Local::now().naive_utc()),
             ata_pubkey: Set(ata.to_string()),
@@ -246,11 +241,13 @@ pub struct CreateDropInput {
     price: u64,
     update_authority_is_signer: bool,
     is_mutable: bool,
+    metadata_json: MetadataJson,
+    creators: Option<Vec<MetadataCreator>>,
+    pub seller_fee_basis_points: u16,
     supply: Option<u64>,
     start_time: DateTime<Utc>,
     end_time: DateTime<Utc>,
     blockchain: Blockchain,
-    metadata_json: MetadataJson,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
@@ -258,7 +255,6 @@ pub struct MetadataJson {
     pub name: String,
     pub symbol: String,
     pub description: String,
-    pub seller_fee_basis_points: u16,
     pub image: String,
     pub animation_url: Option<String>,
     pub collection: Option<Collection>,
@@ -277,7 +273,6 @@ pub struct File {
 pub struct Property {
     files: Option<Vec<File>>,
     category: Option<String>,
-    creators: Option<Vec<MetadataCreator>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
