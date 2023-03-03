@@ -2,26 +2,31 @@
 #![warn(clippy::pedantic, clippy::cargo)]
 #![allow(clippy::module_name_repetitions)]
 
+pub mod dataloaders;
 pub mod db;
 pub mod entities;
 pub mod events;
 pub mod handlers;
+pub mod objects;
+
 use std::fs::File;
 
 use db::Connection;
 pub mod mutations;
 pub mod queries;
 use async_graphql::{
+    dataloader::DataLoader,
     extensions::{ApolloTracing, Logger},
     EmptySubscription, Schema,
 };
+use dataloaders::{CollectionLoader, ProjectDropsLoader};
 use hub_core::{
     anyhow::{Error, Result},
     clap,
     consumer::RecvError,
     prelude::*,
     producer::Producer,
-    serde_json,
+    serde_json, tokio,
     uuid::Uuid,
 };
 use mutations::Mutation;
@@ -147,12 +152,24 @@ impl AppState {
 pub struct AppContext {
     pub db: Connection,
     user_id: UserID,
+    project_drops_loader: DataLoader<ProjectDropsLoader>,
+    collection_loader: DataLoader<CollectionLoader>,
 }
 
 impl AppContext {
     #[must_use]
     pub fn new(db: Connection, user_id: UserID) -> Self {
-        Self { db, user_id }
+        let project_drops_loader =
+            DataLoader::new(ProjectDropsLoader::new(db.clone()), tokio::spawn);
+
+        let collection_loader = DataLoader::new(CollectionLoader::new(db.clone()), tokio::spawn);
+
+        Self {
+            db,
+            user_id,
+            project_drops_loader,
+            collection_loader,
+        }
     }
 }
 
