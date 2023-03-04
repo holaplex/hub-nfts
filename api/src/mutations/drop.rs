@@ -16,6 +16,8 @@ use crate::{
     entities::{
         collection_attributes, collection_creators, collections, drops, metadata_json_files,
         metadata_jsons,
+        prelude::ProjectWallets,
+        project_wallets,
         sea_orm_active_enums::{Blockchain, CreationStatus},
         solana_collections,
     },
@@ -52,7 +54,25 @@ impl Mutation {
 
         let (uri, cid) = upload_metadata_json(nft_storage, input.metadata_json.clone()).await?;
 
-        let owner = input.owner_address.parse()?;
+        let wallets = ProjectWallets::find()
+            .filter(
+                project_wallets::Column::ProjectId
+                    .eq(input.project_id)
+                    .and(project_wallets::Column::Blockchain.eq(input.blockchain)),
+            )
+            .all(db.get())
+            .await?;
+
+        if wallets.len() > 1 {
+            return Err(Error::new("More than one wallet found"));
+        }
+
+        let owner_address = &wallets
+            .get(0)
+            .ok_or_else(|| Error::new("no wallet found"))?
+            .wallet_address;
+        let owner = owner_address.parse()?;
+
         let ata = get_associated_token_address(&owner, &mint.pubkey());
 
         let (token_metadata_pubkey, _) = solana_program::pubkey::Pubkey::find_program_address(
@@ -375,7 +395,6 @@ pub async fn upload_metadata_json(
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct CreateDropInput {
     royalty_address: String,
-    owner_address: String,
     project_id: Uuid,
     price: u64,
     update_authority_is_signer: bool,
