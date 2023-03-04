@@ -5,4 +5,4 @@ endpoint = "https://schemas.holaplex.tools"
 organization = 1
 nfts = 1
 customer = 1
-treasury = 3
+treasury = 4

@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 )]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "blockchain")]
 pub enum Blockchain {
+    #[sea_orm(string_value = "ethereum")]
+    Ethereum,
     #[sea_orm(string_value = "polygon")]
     Polygon,
     #[sea_orm(string_value = "solana")]
