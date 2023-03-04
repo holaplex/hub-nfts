@@ -3,15 +3,14 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "collection_attributes")]
+#[sea_orm(table_name = "collection_creators")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
     pub collection_id: Uuid,
-    #[sea_orm(column_type = "Text")]
-    pub trait_type: String,
-    #[sea_orm(column_type = "Text")]
-    pub value: String,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub address: String,
+    pub verified: bool,
+    pub share: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -25,10 +25,10 @@ pub struct NftStorageClient {
 }
 
 impl NftStorageClient {
-    /// Res
+    /// Returns the `NftStorage` client
     ///
     /// # Errors
-    /// This function fails if ...
+    /// if http client fails to build or url parsing fails
     pub fn new(args: NftStorageArgs) -> Result<Self> {
         let NftStorageArgs {
             nft_storage_api_endpoint,
@@ -48,6 +48,10 @@ impl NftStorageClient {
         })
     }
 
+    /// Returns the response of the post request to nft.storage api
+    ///
+    /// # Errors
+    /// Post request can fail if the auth token/payload is invalid or the api is down
     pub async fn post(&self, endpoint: String, body: impl Serialize) -> Result<Response> {
         let url = self.api_base_url.join(&endpoint)?;
 
@@ -60,6 +64,10 @@ impl NftStorageClient {
             .context("failed to send post request")
     }
 
+    /// Uploads the json data and returns the response
+    ///
+    /// # Errors
+    /// If the upload fails
     pub async fn upload(&self, data: impl Serialize) -> Result<UploadResponse> {
         self.post("/upload".to_string(), data)
             .await?

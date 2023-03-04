@@ -3,15 +3,17 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "collection_attributes")]
+#[sea_orm(table_name = "metadata_jsons")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
     pub collection_id: Uuid,
-    #[sea_orm(column_type = "Text")]
-    pub trait_type: String,
-    #[sea_orm(column_type = "Text")]
-    pub value: String,
+    pub identifier: String,
+    pub name: String,
+    pub symbol: String,
+    pub description: String,
+    pub image: String,
+    pub animation_url: Option<String>,
+    pub external_url: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
