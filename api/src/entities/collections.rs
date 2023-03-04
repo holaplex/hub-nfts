@@ -12,17 +12,13 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub blockchain: Blockchain,
-    pub name: String,
-    pub description: String,
-    pub metadata_uri: String,
-    pub royalty_wallet: String,
     pub supply: Option<i64>,
     pub creation_status: CreationStatus,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::drops::Entity")]
+    #[sea_orm(has_one = "super::drops::Entity")]
     Drops,
 }
 

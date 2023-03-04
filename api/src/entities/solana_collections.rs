@@ -17,7 +17,6 @@ pub struct Model {
     pub mint_pubkey: String,
     pub metadata_pubkey: String,
     pub seller_fee_basis_points: i16,
-    pub created_by: Uuid,
     pub created_at: DateTime,
 }
 

@@ -9,6 +9,7 @@ pub struct Model {
     pub collection_id: Uuid,
     pub identifier: String,
     pub name: String,
+    pub uri: String,
     pub symbol: String,
     pub description: String,
     pub image: String,

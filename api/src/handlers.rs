@@ -30,9 +30,8 @@ pub async fn graphql_handler(
         .execute(
             req.0
                 .data(context)
-                .data(state.rpc.clone())
                 .data(state.producer.clone())
-                .data(state.keypair.clone())
+                .data(state.solana.clone())
                 .data(state.nft_storage.clone()),
         )
         .await

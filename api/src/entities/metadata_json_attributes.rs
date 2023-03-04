@@ -3,7 +3,7 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "collection_attributes")]
+#[sea_orm(table_name = "metadata_json_attributes")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
@@ -17,18 +17,18 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::collections::Entity",
+        belongs_to = "super::metadata_jsons::Entity",
         from = "Column::CollectionId",
-        to = "super::collections::Column::Id",
+        to = "super::metadata_jsons::Column::CollectionId",
         on_update = "Cascade",
         on_delete = "Cascade"
     )]
-    Collections,
+    MetadadaJsons,
 }
 
 impl Related<super::collections::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Collections.def()
+        Relation::MetadadaJsons.def()
     }
 }
 

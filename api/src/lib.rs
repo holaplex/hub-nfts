@@ -1,40 +1,42 @@
+#![feature(async_fn_in_trait)]
 #![deny(clippy::disallowed_methods, clippy::suspicious, clippy::style)]
 #![warn(clippy::pedantic, clippy::cargo)]
 #![allow(clippy::module_name_repetitions)]
 
+pub mod blockchains;
+pub mod collection;
 pub mod dataloaders;
 pub mod db;
 pub mod entities;
 pub mod events;
 pub mod handlers;
+pub mod metadata_json;
+pub mod mutations;
 pub mod nft_storage;
 pub mod objects;
-
-use std::fs::File;
-
-use db::Connection;
-pub mod mutations;
 pub mod queries;
+
 use async_graphql::{
     dataloader::DataLoader,
     extensions::{ApolloTracing, Logger},
     EmptySubscription, Schema,
 };
+use blockchains::solana::{Solana, SolanaArgs};
 use dataloaders::{CollectionLoader, ProjectDropsLoader};
+use db::Connection;
 use hub_core::{
     anyhow::{Error, Result},
     clap,
     consumer::RecvError,
     prelude::*,
     producer::Producer,
-    serde_json, tokio,
+    tokio,
     uuid::Uuid,
 };
 use mutations::Mutation;
 use nft_storage::NftStorageClient;
 use poem::{async_trait, FromRequest, Request, RequestBody};
 use queries::Query;
-use solana_client::rpc_client::RpcClient;
 
 #[allow(clippy::pedantic)]
 pub mod proto {
@@ -83,17 +85,14 @@ pub struct Args {
     #[arg(short, long, env, default_value_t = 3004)]
     pub port: u16,
 
-    #[arg(short, long, env)]
-    pub solana_endpoint: String,
-
-    #[arg(short, long, env)]
-    pub keypair_path: String,
-
     #[command(flatten)]
     pub db: db::DbArgs,
 
     #[command(flatten)]
     pub nft_storage: nft_storage::NftStorageArgs,
+
+    #[command(flatten)]
+    pub solana: SolanaArgs,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -126,9 +125,8 @@ impl<'a> FromRequest<'a> for UserID {
 pub struct AppState {
     pub schema: AppSchema,
     pub connection: Connection,
-    pub rpc: Arc<RpcClient>,
     pub producer: Producer<NftEvents>,
-    pub keypair: Vec<u8>,
+    pub solana: Solana,
     pub nft_storage: NftStorageClient,
 }
 
@@ -137,21 +135,15 @@ impl AppState {
     pub fn new(
         schema: AppSchema,
         connection: Connection,
-        rpc: Arc<RpcClient>,
         producer: Producer<NftEvents>,
-        path: String,
+        solana: Solana,
         nft_storage: NftStorageClient,
     ) -> Self {
-        let f = File::open(path).expect("unable to locate keypair file");
-        let keypair: Vec<u8> =
-            serde_json::from_reader(f).expect("unable to read keypair bytes from the file");
-
         Self {
             schema,
             connection,
-            rpc,
             producer,
-            keypair,
+            solana,
             nft_storage,
         }
     }
