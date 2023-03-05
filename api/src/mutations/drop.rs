@@ -16,7 +16,7 @@ use crate::{
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
-    objects::{CollectionCreator, MetadataJson as MetadataJsonInput},
+    objects::{CollectionCreator, MetadataJsonInput},
     proto::{self, nft_events, NftEventKey, NftEvents},
     AppContext, NftStorageClient, UserID,
 };

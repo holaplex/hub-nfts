@@ -5,7 +5,7 @@ use crate::{
     db::Connection,
     entities::{metadata_json_attributes, metadata_json_files, metadata_jsons},
     nft_storage::NftStorageClient,
-    objects::MetadataJson as MetadataJsonInput,
+    objects::MetadataJsonInput,
 };
 
 #[derive(Clone, Debug)]

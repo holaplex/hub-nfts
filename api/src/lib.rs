@@ -22,7 +22,10 @@ use async_graphql::{
     EmptySubscription, Schema,
 };
 use blockchains::solana::{Solana, SolanaArgs};
-use dataloaders::{CollectionLoader, ProjectDropsLoader};
+use dataloaders::{
+    CollectionLoader, CollectionMintsLoader, DropLoader, MetadataJsonAttributesLoader,
+    MetadataJsonLoader, ProjectDropsLoader,
+};
 use db::Connection;
 use hub_core::{
     anyhow::{Error, Result},
@@ -154,6 +157,10 @@ pub struct AppContext {
     user_id: UserID,
     project_drops_loader: DataLoader<ProjectDropsLoader>,
     collection_loader: DataLoader<CollectionLoader>,
+    metadata_json_loader: DataLoader<MetadataJsonLoader>,
+    metadata_json_attributes_loader: DataLoader<MetadataJsonAttributesLoader>,
+    collection_mints_loader: DataLoader<CollectionMintsLoader>,
+    drop_loader: DataLoader<DropLoader>,
 }
 
 impl AppContext {
@@ -161,14 +168,24 @@ impl AppContext {
     pub fn new(db: Connection, user_id: UserID) -> Self {
         let project_drops_loader =
             DataLoader::new(ProjectDropsLoader::new(db.clone()), tokio::spawn);
-
         let collection_loader = DataLoader::new(CollectionLoader::new(db.clone()), tokio::spawn);
+        let metadata_json_loader =
+            DataLoader::new(MetadataJsonLoader::new(db.clone()), tokio::spawn);
+        let metadata_json_attributes_loader =
+            DataLoader::new(MetadataJsonAttributesLoader::new(db.clone()), tokio::spawn);
+        let collection_mints_loader =
+            DataLoader::new(CollectionMintsLoader::new(db.clone()), tokio::spawn);
+        let drop_loader = DataLoader::new(DropLoader::new(db.clone()), tokio::spawn);
 
         Self {
             db,
             user_id,
             project_drops_loader,
             collection_loader,
+            metadata_json_loader,
+            metadata_json_attributes_loader,
+            collection_mints_loader,
+            drop_loader,
         }
     }
 }
