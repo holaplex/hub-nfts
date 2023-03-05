@@ -19,4 +19,10 @@ impl Project {
 
         project_drops_loader.load_one(self.id).await
     }
+
+    async fn drop(&self, ctx: &Context<'_>, id: Uuid) -> Result<Option<drops::Model>> {
+        let AppContext { drop_loader, .. } = ctx.data::<AppContext>()?;
+
+        drop_loader.load_one(id).await
+    }
 }

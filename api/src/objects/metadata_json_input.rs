@@ -2,7 +2,7 @@ use async_graphql::InputObject;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
-pub struct MetadataJson {
+pub struct MetadataJsonInput {
     pub name: String,
     pub symbol: String,
     pub description: String,
@@ -15,7 +15,7 @@ pub struct MetadataJson {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
-#[graphql(name = "MetadataJsonFile")]
+#[graphql(name = "MetadataJsonFileInput")]
 pub struct File {
     pub uri: Option<String>,
     #[serde(rename = "type")]
@@ -23,21 +23,21 @@ pub struct File {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
-#[graphql(name = "MetadataJsonProperty")]
+#[graphql(name = "MetadataJsonPropertyInput")]
 pub struct Property {
     pub files: Option<Vec<File>>,
     pub category: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
-#[graphql(name = "MetadataJsonAttribute")]
+#[graphql(name = "MetadataJsonAttributeInput")]
 pub struct Attribute {
     pub trait_type: String,
     pub value: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
-#[graphql(name = "MetadataJsonCollection")]
+#[graphql(name = "MetadataJsonCollectionInput")]
 pub struct Collection {
     pub name: Option<String>,
     pub family: Option<String>,
