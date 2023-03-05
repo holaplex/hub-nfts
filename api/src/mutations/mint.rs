@@ -1,35 +1,23 @@
-use std::{str::FromStr, sync::Arc};
+use std::ops::Add;
 
-use async_graphql::{self, Context, Error, InputObject, Object, Result, SimpleObject};
+use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::producer::Producer;
-use mpl_token_metadata::{
-    instruction::mint_new_edition_from_master_edition_via_token,
-    state::{EDITION, PREFIX},
-};
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
-use solana_client::rpc_client::RpcClient;
-use solana_program::{program_pack::Pack, pubkey::Pubkey, system_instruction::create_account};
-use solana_sdk::signer::{keypair::Keypair, Signer};
-use spl_associated_token_account::{
-    get_associated_token_address, instruction::create_associated_token_account,
-};
-use spl_token::{
-    instruction::{initialize_mint, mint_to},
-    state::Mint,
-};
 
 use crate::{
+    blockchains::{
+        solana::{CreateEditionPayload, Solana},
+        Blockchain, TransactionResponse,
+    },
     entities::{
         collection_mints, drops,
-        prelude::{Collections, Drops, SolanaCollections},
-        sea_orm_active_enums::CreationStatus,
-        solana_collections,
+        prelude::{Collections, Drops},
+        project_wallets,
+        sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     proto::{nft_events, MintTransaction, NftEventKey, NftEvents, Transaction},
     AppContext, UserID,
 };
-
-const TOKEN_PROGRAM_PUBKEY: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
 #[derive(Default)]
 pub struct Mutation;
@@ -46,135 +34,87 @@ impl Mutation {
         input: MintDropInput,
     ) -> Result<MintEditionPayload> {
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
-        let rpc = &**ctx.data::<Arc<RpcClient>>()?;
         let producer = ctx.data::<Producer<NftEvents>>()?;
-        let keypair_bytes = ctx.data::<Vec<u8>>()?;
+        let conn = db.get();
+        let solana = ctx.data::<Solana>()?;
 
         let UserID(id) = user_id;
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
-
-        let payer = Keypair::from_bytes(keypair_bytes)?;
-        let owner = input.owner_address.parse()?;
 
         let drop_model = Drops::find()
             .select_also(Collections)
             .join(JoinType::InnerJoin, drops::Relation::Collections.def())
             .filter(drops::Column::Id.eq(input.drop))
-            .one(db.get())
+            .one(conn)
             .await?;
 
         let (drop_model, collection_model) =
-            drop_model.ok_or_else(|| Error::new("Drop not found in db"))?;
+            drop_model.ok_or_else(|| Error::new("drop not found"))?;
 
-        let collection =
-            collection_model.ok_or_else(|| Error::new("Collection not found in db"))?;
+        let collection = collection_model.ok_or_else(|| Error::new("collection not found"))?;
 
-        let solana_collection_model = SolanaCollections::find()
-            .filter(solana_collections::Column::CollectionId.eq(collection.id))
-            .one(db.get())
+        let edition = collection_mints::Entity::find()
+            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
+            .filter(drops::Column::CollectionId.eq(collection.id))
+            .count(conn)
             .await?;
 
-        let sc =
-            solana_collection_model.ok_or_else(|| Error::new("Solana Collection not found"))?;
+        let wallet = project_wallets::Entity::find()
+            .filter(
+                project_wallets::Column::ProjectId
+                    .eq(drop_model.project_id)
+                    .and(project_wallets::Column::Blockchain.eq(collection.blockchain)),
+            )
+            .one(conn)
+            .await?;
 
-        let program_pubkey = mpl_token_metadata::id();
-        let master_edition_pubkey: Pubkey = sc.master_edition_address.parse()?;
-        let master_edition_mint: Pubkey = sc.mint_pubkey.parse()?;
-        let existing_token_account: Pubkey = sc.ata_pubkey.parse()?;
-        let recipient: Pubkey = input.recipient.parse()?;
+        let owner_address = wallet
+            .ok_or_else(|| {
+                Error::new(format!(
+                    "no project wallet found for {} blockchain",
+                    collection.blockchain
+                ))
+            })?
+            .wallet_address;
 
-        let token_key = Pubkey::from_str(TOKEN_PROGRAM_PUBKEY)?;
-
-        let new_mint_key = Keypair::new();
-        let added_token_account = get_associated_token_address(&recipient, &new_mint_key.pubkey());
-        let new_mint_pub = new_mint_key.pubkey();
-        let edition_seeds = &[
-            PREFIX.as_bytes(),
-            program_pubkey.as_ref(),
-            new_mint_pub.as_ref(),
-            EDITION.as_bytes(),
-        ];
-        let (edition_key, _) = Pubkey::find_program_address(edition_seeds, &program_pubkey);
-
-        let metadata_seeds = &[
-            PREFIX.as_bytes(),
-            program_pubkey.as_ref(),
-            new_mint_pub.as_ref(),
-        ];
-        let (metadata_key, _) = Pubkey::find_program_address(metadata_seeds, &program_pubkey);
-
-        let mut instructions = vec![
-            create_account(
-                &payer.pubkey(),
-                &new_mint_key.pubkey(),
-                rpc.get_minimum_balance_for_rent_exemption(Mint::LEN)?,
-                Mint::LEN as u64,
-                &token_key,
-            ),
-            initialize_mint(&token_key, &new_mint_key.pubkey(), &owner, Some(&owner), 0)?,
-            create_associated_token_account(
-                &payer.pubkey(),
-                &recipient,
-                &new_mint_key.pubkey(),
-                &spl_token::ID,
-            ),
-            mint_to(
-                &token_key,
-                &new_mint_key.pubkey(),
-                &added_token_account,
-                &owner,
-                &[&owner],
-                1,
-            )?,
-        ];
-
-        instructions.push(mint_new_edition_from_master_edition_via_token(
-            program_pubkey,
-            metadata_key,
-            edition_key,
-            master_edition_pubkey,
-            new_mint_key.pubkey(),
-            owner,
-            payer.pubkey(),
-            owner,
-            existing_token_account,
-            owner,
-            sc.metadata_pubkey.parse()?,
-            master_edition_mint,
-            input.edition,
-        ));
-
-        let blockhash = rpc.get_latest_blockhash()?;
-
-        let message = solana_program::message::Message::new_with_blockhash(
-            &instructions,
-            Some(&payer.pubkey()),
-            &blockhash,
-        );
-
-        let serialized_message = message.serialize();
-        let mint_signature = new_mint_key.try_sign_message(&message.serialize())?;
-        let payer_signature = payer.try_sign_message(&message.serialize())?;
+        let (
+            mint_address,
+            TransactionResponse {
+                serialized_message,
+                signed_message_signatures,
+            },
+        ) = match collection.blockchain {
+            BlockchainEnum::Solana => {
+                solana
+                    .edition(CreateEditionPayload {
+                        collection: collection.id,
+                        recipient: input.recipient.clone(),
+                        owner_address,
+                        edition: edition.add(1),
+                    })
+                    .await?
+            },
+            BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
+                return Err(Error::new("blockchain not supported as this time"));
+            },
+        };
 
         let collection_mint_active_model = collection_mints::ActiveModel {
             collection_id: Set(collection.id),
-            address: Set(edition_key.to_string()),
-            owner: Set(owner.to_string()),
+            address: Set(mint_address.to_string()),
+            owner: Set(input.recipient),
             creation_status: Set(CreationStatus::Pending),
             created_by: Set(user_id),
             ..Default::default()
         };
 
-        let collection_mint_model = collection_mint_active_model.insert(db.get()).await?;
+        let collection_mint_model = collection_mint_active_model.insert(conn).await?;
 
         let event = NftEvents {
             event: Some(nft_events::Event::MintDrop(MintTransaction {
                 transaction: Some(Transaction {
                     serialized_message,
-                    signed_message_signatures: vec![
-                        payer_signature.to_string(),
-                        mint_signature.to_string(),
-                    ],
+                    signed_message_signatures,
                 }),
                 project_id: drop_model.project_id.to_string(),
                 drop_id: drop_model.id.to_string(),
@@ -195,9 +135,7 @@ impl Mutation {
 #[derive(Debug, Clone, InputObject)]
 pub struct MintDropInput {
     drop: Uuid,
-    owner_address: String,
     recipient: String,
-    edition: u64,
 }
 
 #[derive(Debug, Clone, SimpleObject)]

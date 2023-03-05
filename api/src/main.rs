@@ -1,9 +1,10 @@
 //!
 
-use std::sync::Arc;
+use std::{fs::File, sync::Arc};
 
 use async_graphql::futures_util::StreamExt;
 use holaplex_hub_nfts::{
+    blockchains::solana::Solana,
     build_schema,
     db::Connection,
     events,
@@ -27,8 +28,7 @@ pub fn main() {
     hub_core::run(opts, |common, args| {
         let Args {
             port,
-            solana_endpoint,
-            keypair_path,
+            solana,
             db,
             nft_storage,
         } = args;
@@ -37,16 +37,24 @@ pub fn main() {
             let connection = Connection::new(db)
                 .await
                 .context("failed to get database connection")?;
-            let rpc = RpcClient::new(solana_endpoint);
+
             let schema = build_schema();
+
             let producer = common.producer_cfg.build::<proto::NftEvents>().await?;
+
             let nft_storage = NftStorageClient::new(nft_storage)?;
+
+            let solana_rpc = Arc::new(RpcClient::new(solana.solana_endpoint));
+            let f = File::open(solana.solana_keypair_path).expect("unable to locate keypair file");
+            let solana_keypair: Vec<u8> =
+                serde_json::from_reader(f).expect("unable to read keypair bytes from the file");
+            let solana_blockchain = Solana::new(solana_rpc, connection.clone(), solana_keypair);
+
             let state = AppState::new(
                 schema,
                 connection.clone(),
-                Arc::new(rpc),
                 producer.clone(),
-                keypair_path,
+                solana_blockchain,
                 nft_storage,
             );
 
