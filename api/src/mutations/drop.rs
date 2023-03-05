@@ -1,5 +1,5 @@
 use async_graphql::{Context, Error, InputObject, Object, Result};
-use chrono::{format, DateTime, Local, Utc};
+use chrono::{DateTime, Local, Utc};
 use hub_core::producer::Producer;
 use mpl_token_metadata::state::Creator;
 use sea_orm::{prelude::*, Set};
@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     blockchains::{
-        solana::{CreateDrop, Solana},
-        Blockchain, Transaction,
+        solana::{CreateDropPayload, Solana},
+        Blockchain, TransactionResponse,
     },
     collection::Collection,
     entities::{
@@ -16,10 +16,9 @@ use crate::{
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
-    nft_storage::NftStorageClient,
     objects::{CollectionCreator, MetadataJson as MetadataJsonInput},
     proto::{self, nft_events, NftEventKey, NftEvents},
-    AppContext, UserID,
+    AppContext, NftStorageClient, UserID,
 };
 
 #[derive(Default)]
@@ -44,17 +43,6 @@ impl Mutation {
 
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
 
-        let collection = Collection::new(input.clone().try_into()?)
-            .creators(input.creators.clone())
-            .save(db)
-            .await?;
-
-        let metadata_json_model = MetadataJson::new(collection.id, input.metadata_json)
-            .upload(nft_storage)
-            .await?
-            .save(db)
-            .await?;
-
         let wallet = project_wallets::Entity::find()
             .filter(
                 project_wallets::Column::ProjectId
@@ -67,34 +55,48 @@ impl Mutation {
         let owner_address = wallet
             .ok_or_else(|| {
                 Error::new(format!(
-                    "no project wallet found for the {} blockchain",
+                    "no project wallet found for {} blockchain",
                     input.blockchain
                 ))
             })?
             .wallet_address;
 
-        let Transaction {
+        let collection = Collection::new(collections::ActiveModel {
+            blockchain: Set(input.blockchain),
+            supply: Set(input.supply.map(|s| s.try_into().unwrap_or_default())),
+            creation_status: Set(CreationStatus::Pending),
+            ..Default::default()
+        })
+        .creators(input.creators.clone())
+        .save(db)
+        .await?;
+
+        let metadata_json_model = MetadataJson::new(collection.id, input.metadata_json)
+            .upload(nft_storage)
+            .await?
+            .save(db)
+            .await?;
+
+        let TransactionResponse {
             serialized_message,
             signed_message_signatures,
         } = match input.blockchain {
             BlockchainEnum::Solana => {
                 solana
-                    .drop(
-                        CreateDrop {
-                            owner_address,
-                            creators: input
-                                .creators
-                                .into_iter()
-                                .map(TryInto::try_into)
-                                .collect::<Result<Vec<Creator>>>()?,
-                            name: metadata_json_model.name,
-                            symbol: metadata_json_model.symbol,
-                            seller_fee_basis_points: input.seller_fee_basis_points,
-                            supply: input.supply,
-                            metadata_json_uri: metadata_json_model.uri,
-                        },
-                        collection.id,
-                    )
+                    .drop(CreateDropPayload {
+                        owner_address,
+                        creators: input
+                            .creators
+                            .into_iter()
+                            .map(TryInto::try_into)
+                            .collect::<Result<Vec<Creator>>>()?,
+                        name: metadata_json_model.name,
+                        symbol: metadata_json_model.symbol,
+                        seller_fee_basis_points: input.seller_fee_basis_points,
+                        supply: input.supply,
+                        metadata_json_uri: metadata_json_model.uri,
+                        collection: collection.id,
+                    })
                     .await?
             },
             BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
@@ -103,7 +105,7 @@ impl Mutation {
         };
 
         let drop = drops::ActiveModel {
-            project_id: Set(input.project_id.clone()),
+            project_id: Set(input.project_id),
             collection_id: Set(collection.id),
             creation_status: Set(CreationStatus::Pending),
             start_time: Set(input.start_time.naive_utc()),
@@ -171,23 +173,6 @@ pub struct CreateDropInput {
     pub blockchain: BlockchainEnum,
     pub creators: Vec<CollectionCreator>,
     pub metadata_json: MetadataJsonInput,
-}
-
-impl TryFrom<CreateDropInput> for collections::ActiveModel {
-    type Error = Error;
-
-    fn try_from(
-        CreateDropInput {
-            supply, blockchain, ..
-        }: CreateDropInput,
-    ) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            blockchain: Set(blockchain),
-            supply: Set(supply.map(|s| s.try_into().unwrap_or_default())),
-            creation_status: Set(CreationStatus::Pending),
-            ..Default::default()
-        })
-    }
 }
 
 impl TryFrom<CollectionCreator> for Creator {

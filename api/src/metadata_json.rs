@@ -17,6 +17,7 @@ pub struct MetadataJson {
 }
 
 impl MetadataJson {
+    #[must_use]
     pub fn new(collection: Uuid, metadata_json: MetadataJsonInput) -> Self {
         Self {
             metadata_json,
@@ -26,6 +27,10 @@ impl MetadataJson {
         }
     }
 
+    /// Res
+    ///
+    /// # Errors
+    /// This function fails if unable to upload `metadata_json` to nft.storage
     pub async fn upload(&mut self, nft_storage: &NftStorageClient) -> Result<&Self> {
         let response = nft_storage.upload(self.metadata_json.clone()).await?;
         let cid = response.value.cid;
@@ -38,9 +43,13 @@ impl MetadataJson {
         Ok(self)
     }
 
+    /// Res
+    ///
+    /// # Errors
+    /// This function fails if unable to save `metadata_json` to the db
     pub async fn save(&self, db: &Connection) -> Result<metadata_jsons::Model> {
         let conn = db.get();
-        let collection = self.collection.clone();
+        let collection = self.collection;
         let payload = self.metadata_json.clone();
         let identifier = self
             .identifier

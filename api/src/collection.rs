@@ -17,6 +17,7 @@ pub struct Collection {
 }
 
 impl Collection {
+    #[must_use]
     pub fn new(collection: ActiveModel) -> Self {
         Self {
             collection,
@@ -30,12 +31,16 @@ impl Collection {
         self
     }
 
+    /// Res
+    ///
+    /// # Errors
+    /// This function fails if unable to save `collection`   or `collection_creators` to the db
     pub async fn save(&self, db: &Connection) -> Result<Model> {
         let conn = db.get();
 
         let collection = self.collection.clone().insert(conn).await?;
 
-        let creators = self.creators.clone().unwrap_or_else(Vec::new);
+        let creators = self.creators.clone().unwrap_or_default();
 
         for creator in creators {
             let am = CollectionCreatorActiveModel {
