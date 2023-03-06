@@ -19,6 +19,7 @@ pub struct Model {
     pub creation_status: CreationStatus,
     #[sea_orm(column_type = "Text")]
     pub address: Option<String>,
+    pub total_mints: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, SimpleObject)]
@@ -29,6 +30,7 @@ pub struct Collection {
     pub supply: Option<i64>,
     pub creation_status: CreationStatus,
     pub address: Option<String>,
+    pub total_mints: i64,
 }
 
 #[ComplexObject]
@@ -63,6 +65,7 @@ impl From<Model> for Collection {
             supply,
             creation_status,
             address,
+            total_mints,
         }: Model,
     ) -> Self {
         Self {
@@ -71,6 +74,7 @@ impl From<Model> for Collection {
             supply,
             creation_status,
             address,
+            total_mints,
         }
     }
 }

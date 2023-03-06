@@ -10,7 +10,7 @@ use crate::{
         Blockchain, TransactionResponse,
     },
     entities::{
-        collection_mints, drops,
+        collection_mints, collections, drops,
         prelude::{Collections, Drops},
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
@@ -42,8 +42,8 @@ impl Mutation {
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
 
         let drop_model = Drops::find()
-            .select_also(Collections)
             .join(JoinType::InnerJoin, drops::Relation::Collections.def())
+            .select_also(Collections)
             .filter(drops::Column::Id.eq(input.drop))
             .one(conn)
             .await?;
@@ -53,11 +53,13 @@ impl Mutation {
 
         let collection = collection_model.ok_or_else(|| Error::new("collection not found"))?;
 
-        let edition = collection_mints::Entity::find()
-            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-            .filter(drops::Column::CollectionId.eq(collection.id))
-            .count(conn)
-            .await?;
+        let edition = collection.total_mints.add(1);
+
+        let mut collection_am = collections::ActiveModel::from(collection.clone());
+
+        collection_am.total_mints = Set(edition);
+
+        collection_am.update(conn).await?;
 
         let wallet = project_wallets::Entity::find()
             .filter(
@@ -90,7 +92,7 @@ impl Mutation {
                         collection: collection.id,
                         recipient: input.recipient.clone(),
                         owner_address,
-                        edition: edition.add(1),
+                        edition: edition.try_into()?,
                     })
                     .await?
             },
