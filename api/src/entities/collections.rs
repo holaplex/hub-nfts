@@ -18,7 +18,7 @@ pub struct Model {
     pub supply: Option<i64>,
     pub creation_status: CreationStatus,
     #[sea_orm(column_type = "Text")]
-    pub address: String,
+    pub address: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, SimpleObject)]
@@ -28,7 +28,7 @@ pub struct Collection {
     pub blockchain: Blockchain,
     pub supply: Option<i64>,
     pub creation_status: CreationStatus,
-    pub address: String,
+    pub address: Option<String>,
 }
 
 #[ComplexObject]

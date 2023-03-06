@@ -110,7 +110,7 @@ impl Mutation {
 
         let mut collection_am: collections::ActiveModel = collection.clone().into();
 
-        collection_am.address = Set(collection_address.to_string());
+        collection_am.address = Set(Some(collection_address.to_string()));
 
         collection_am.update(conn).await?;
 
