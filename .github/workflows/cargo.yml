@@ -5,7 +5,7 @@ jobs:
 
   clippy:
     name: clippy/check/doc
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
         run: |
