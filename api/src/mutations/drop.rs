@@ -37,6 +37,7 @@ impl Mutation {
     ) -> Result<drops::Model> {
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let UserID(id) = user_id;
+        let conn = db.get();
         let producer = ctx.data::<Producer<NftEvents>>()?;
         let solana = ctx.data::<Solana>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
@@ -49,7 +50,7 @@ impl Mutation {
                     .eq(input.project_id)
                     .and(project_wallets::Column::Blockchain.eq(input.blockchain)),
             )
-            .one(db.get())
+            .one(conn)
             .await?;
 
         let owner_address = wallet
@@ -77,10 +78,13 @@ impl Mutation {
             .save(db)
             .await?;
 
-        let TransactionResponse {
-            serialized_message,
-            signed_message_signatures,
-        } = match input.blockchain {
+        let (
+            collection_address,
+            TransactionResponse {
+                serialized_message,
+                signed_message_signatures,
+            },
+        ) = match input.blockchain {
             BlockchainEnum::Solana => {
                 solana
                     .drop(CreateDropPayload {
@@ -104,6 +108,12 @@ impl Mutation {
             },
         };
 
+        let mut collection_am: collections::ActiveModel = collection.clone().into();
+
+        collection_am.address = Set(collection_address.to_string());
+
+        collection_am.update(conn).await?;
+
         let drop = drops::ActiveModel {
             project_id: Set(input.project_id),
             collection_id: Set(collection.id),
@@ -116,7 +126,7 @@ impl Mutation {
             ..Default::default()
         };
 
-        let drop_model = drop.insert(db.get()).await?;
+        let drop_model = drop.insert(conn).await?;
 
         emit_drop_transaction_event(
             producer,

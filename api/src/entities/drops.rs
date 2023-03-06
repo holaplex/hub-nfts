@@ -25,7 +25,7 @@ pub struct Model {
 
 #[ComplexObject]
 impl Model {
-    async fn collection(&self, ctx: &Context<'_>) -> Result<Option<collections::Model>> {
+    async fn collection(&self, ctx: &Context<'_>) -> Result<Option<collections::Collection>> {
         let AppContext {
             collection_loader, ..
         } = ctx.data::<AppContext>()?;

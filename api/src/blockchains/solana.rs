@@ -65,12 +65,12 @@ impl Solana {
     }
 }
 
-impl Blockchain<CreateDropPayload, CreateEditionPayload> for Solana {
+impl Blockchain<CreateDropPayload, CreateEditionPayload, Pubkey> for Solana {
     /// Res
     ///
     /// # Errors
     /// This function fails if unable to assemble or save solana drop
-    async fn drop(&self, payload: CreateDropPayload) -> Result<TransactionResponse> {
+    async fn drop(&self, payload: CreateDropPayload) -> Result<(Pubkey, TransactionResponse)> {
         let CreateDropPayload {
             creators,
             owner_address,
@@ -206,13 +206,13 @@ impl Blockchain<CreateDropPayload, CreateEditionPayload> for Solana {
 
         solana_collections_active_model.insert(conn).await?;
 
-        Ok(TransactionResponse {
+        Ok((mint.pubkey(), TransactionResponse {
             serialized_message,
             signed_message_signatures: vec![
                 payer_signature.to_string(),
                 mint_signature.to_string(),
             ],
-        })
+        }))
     }
 
     /// Res

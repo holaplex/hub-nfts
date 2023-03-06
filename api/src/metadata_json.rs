@@ -85,7 +85,7 @@ impl MetadataJson {
             am.insert(conn).await?;
         }
 
-        if let Some(files) = payload.properties.files {
+        if let Some(files) = payload.properties.unwrap_or_default().files {
             for file in files {
                 let metadata_json_file_am = metadata_json_files::ActiveModel {
                     collection_id: Set(collection),

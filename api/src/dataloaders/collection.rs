@@ -21,7 +21,7 @@ impl Loader {
 #[async_trait]
 impl DataLoader<Uuid> for Loader {
     type Error = FieldError;
-    type Value = collections::Model;
+    type Value = collections::Collection;
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let collections = collections::Entity::find()
@@ -31,7 +31,7 @@ impl DataLoader<Uuid> for Loader {
 
         Ok(collections
             .into_iter()
-            .map(|collection| (collection.id, collection))
+            .map(|collection| (collection.id, collection.into()))
             .collect())
     }
 }
