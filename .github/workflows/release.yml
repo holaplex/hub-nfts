@@ -3,6 +3,8 @@ on:
   push:
     branches:
       - main
+      - mpw/use-github-runners
+
 jobs:
   release:
     runs-on: ubuntu-latest
