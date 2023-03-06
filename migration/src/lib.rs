@@ -14,6 +14,7 @@ mod m20230304_001527_add_ethereum_to_blockchain_type;
 mod m20230304_112047_rename_collection_attributes_to_metadata_json_attributes;
 mod m20230304_121614_move_collections_columns_to_metadata_jsons;
 mod m20230305_154732_drop_created_by_on_solana_collections;
+mod m20230306_100027_add_address_to_collections;
 
 pub struct Migrator;
 
@@ -35,6 +36,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20230304_112047_rename_collection_attributes_to_metadata_json_attributes::Migration),
             Box::new(m20230304_121614_move_collections_columns_to_metadata_jsons::Migration),
             Box::new(m20230305_154732_drop_created_by_on_solana_collections::Migration),
+            Box::new(m20230306_100027_add_address_to_collections::Migration),
         ]
     }
 }

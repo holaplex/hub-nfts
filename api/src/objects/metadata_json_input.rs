@@ -11,7 +11,7 @@ pub struct MetadataJsonInput {
     pub collection: Option<Collection>,
     pub attributes: Vec<Attribute>,
     pub external_url: Option<String>,
-    pub properties: Property,
+    pub properties: Option<Property>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
@@ -22,7 +22,7 @@ pub struct File {
     pub file_type: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
+#[derive(Clone, Debug, Serialize, Deserialize, InputObject, Default)]
 #[graphql(name = "MetadataJsonPropertyInput")]
 pub struct Property {
     pub files: Option<Vec<File>>,

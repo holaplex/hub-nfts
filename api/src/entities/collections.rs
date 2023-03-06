@@ -9,19 +9,30 @@ use super::{
 };
 use crate::AppContext;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "collections")]
-#[graphql(complex, concrete(name = "Collection", params()))]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub blockchain: Blockchain,
     pub supply: Option<i64>,
     pub creation_status: CreationStatus,
+    #[sea_orm(column_type = "Text")]
+    pub address: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, SimpleObject)]
+#[graphql(complex)]
+pub struct Collection {
+    pub id: Uuid,
+    pub blockchain: Blockchain,
+    pub supply: Option<i64>,
+    pub creation_status: CreationStatus,
+    pub address: String,
 }
 
 #[ComplexObject]
-impl Model {
+impl Collection {
     async fn metadata_json(&self, ctx: &Context<'_>) -> Result<Option<metadata_jsons::Model>> {
         let AppContext {
             metadata_json_loader,
@@ -31,13 +42,36 @@ impl Model {
         metadata_json_loader.load_one(self.id).await
     }
 
-    async fn mints(&self, ctx: &Context<'_>) -> Result<Option<Vec<collection_mints::Model>>> {
+    async fn mints(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<Vec<collection_mints::CollectionMint>>> {
         let AppContext {
             collection_mints_loader,
             ..
         } = ctx.data::<AppContext>()?;
 
         collection_mints_loader.load_one(self.id).await
+    }
+}
+
+impl From<Model> for Collection {
+    fn from(
+        Model {
+            id,
+            blockchain,
+            supply,
+            creation_status,
+            address,
+        }: Model,
+    ) -> Self {
+        Self {
+            id,
+            blockchain,
+            supply,
+            creation_status,
+            address,
+        }
     }
 }
 
