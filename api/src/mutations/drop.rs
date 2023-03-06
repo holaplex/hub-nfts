@@ -120,7 +120,7 @@ impl Mutation {
             creation_status: Set(CreationStatus::Pending),
             start_time: Set(input.start_time.map(|start_date| start_date.naive_utc())),
             end_time: Set(input.end_time.map(|end_date| end_date.naive_utc())),
-            price: Set(input.price.unwrap_or(0).try_into()?),
+            price: Set(input.price.unwrap_or_default().try_into()?),
             created_by: Set(user_id),
             created_at: Set(Local::now().naive_utc()),
             ..Default::default()
