@@ -37,7 +37,7 @@ pub struct Solana {
     payer_keypair: Vec<u8>,
 }
 
-pub struct CreateDropPayload {
+pub struct CreateDropRequest {
     pub creators: Vec<Creator>,
     pub owner_address: String,
     pub name: String,
@@ -48,7 +48,7 @@ pub struct CreateDropPayload {
     pub collection: Uuid,
 }
 
-pub struct CreateEditionPayload {
+pub struct CreateEditionRequest {
     pub collection: Uuid,
     pub recipient: String,
     pub owner_address: String,
@@ -65,13 +65,13 @@ impl Solana {
     }
 }
 
-impl Blockchain<CreateDropPayload, CreateEditionPayload, Pubkey> for Solana {
+impl Blockchain<CreateDropRequest, CreateEditionRequest, Pubkey> for Solana {
     /// Res
     ///
     /// # Errors
     /// This function fails if unable to assemble or save solana drop
-    async fn drop(&self, payload: CreateDropPayload) -> Result<(Pubkey, TransactionResponse)> {
-        let CreateDropPayload {
+    async fn drop(&self, request: CreateDropRequest) -> Result<(Pubkey, TransactionResponse)> {
+        let CreateDropRequest {
             creators,
             owner_address,
             name,
@@ -80,7 +80,7 @@ impl Blockchain<CreateDropPayload, CreateEditionPayload, Pubkey> for Solana {
             supply,
             metadata_json_uri,
             collection,
-        } = payload;
+        } = request;
         let rpc = &self.rpc_client;
         let conn = self.db.get();
 
@@ -221,16 +221,16 @@ impl Blockchain<CreateDropPayload, CreateEditionPayload, Pubkey> for Solana {
     /// This function fails if unable to assemble solana mint transaction
     async fn edition(
         &self,
-        payload: CreateEditionPayload,
+        request: CreateEditionRequest,
     ) -> Result<(Pubkey, TransactionResponse)> {
         let conn = self.db.get();
         let rpc = &self.rpc_client;
-        let CreateEditionPayload {
+        let CreateEditionRequest {
             collection,
             recipient,
             owner_address,
             edition,
-        } = payload;
+        } = request;
 
         let payer = Keypair::from_bytes(&self.payer_keypair)?;
         let owner = owner_address.parse()?;

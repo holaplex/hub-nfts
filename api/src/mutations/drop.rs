@@ -1,4 +1,4 @@
-use async_graphql::{Context, Error, InputObject, Object, Result};
+use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use chrono::{DateTime, Local, Utc};
 use hub_core::producer::Producer;
 use mpl_token_metadata::state::Creator;
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     blockchains::{
-        solana::{CreateDropPayload, Solana},
+        solana::{CreateDropRequest, Solana},
         Blockchain, TransactionResponse,
     },
     collection::Collection,
@@ -34,7 +34,7 @@ impl Mutation {
         &self,
         ctx: &Context<'_>,
         input: CreateDropInput,
-    ) -> Result<drops::Model> {
+    ) -> Result<CreateDropPayload> {
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let UserID(id) = user_id;
         let conn = db.get();
@@ -47,7 +47,7 @@ impl Mutation {
         let wallet = project_wallets::Entity::find()
             .filter(
                 project_wallets::Column::ProjectId
-                    .eq(input.project_id)
+                    .eq(input.project)
                     .and(project_wallets::Column::Blockchain.eq(input.blockchain)),
             )
             .one(conn)
@@ -87,7 +87,7 @@ impl Mutation {
         ) = match input.blockchain {
             BlockchainEnum::Solana => {
                 solana
-                    .drop(CreateDropPayload {
+                    .drop(CreateDropRequest {
                         owner_address,
                         creators: input
                             .creators
@@ -96,7 +96,7 @@ impl Mutation {
                             .collect::<Result<Vec<Creator>>>()?,
                         name: metadata_json_model.name,
                         symbol: metadata_json_model.symbol,
-                        seller_fee_basis_points: input.seller_fee_basis_points,
+                        seller_fee_basis_points: input.seller_fee_basis_points.unwrap_or_default(),
                         supply: input.supply,
                         metadata_json_uri: metadata_json_model.uri,
                         collection: collection.id,
@@ -115,12 +115,12 @@ impl Mutation {
         collection_am.update(conn).await?;
 
         let drop = drops::ActiveModel {
-            project_id: Set(input.project_id),
+            project_id: Set(input.project),
             collection_id: Set(collection.id),
             creation_status: Set(CreationStatus::Pending),
-            start_time: Set(input.start_time.naive_utc()),
-            end_time: Set(input.end_time.naive_utc()),
-            price: Set(input.price.try_into()?),
+            start_time: Set(input.start_time.map(|start_date| start_date.naive_utc())),
+            end_time: Set(input.end_time.map(|end_date| end_date.naive_utc())),
+            price: Set(input.price.unwrap_or(0).try_into()?),
             created_by: Set(user_id),
             created_at: Set(Local::now().naive_utc()),
             ..Default::default()
@@ -134,11 +134,11 @@ impl Mutation {
             user_id,
             serialized_message,
             signed_message_signatures,
-            input.project_id,
+            input.project,
         )
         .await?;
 
-        Ok(drop_model)
+        Ok(CreateDropPayload { drop: drop_model })
     }
 }
 
@@ -172,14 +172,19 @@ async fn emit_drop_transaction_event(
     Ok(())
 }
 
+#[derive(Debug, Clone, SimpleObject)]
+pub struct CreateDropPayload {
+    drop: drops::Model,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct CreateDropInput {
-    pub project_id: Uuid,
-    pub price: u64,
-    pub seller_fee_basis_points: u16,
+    pub project: Uuid,
+    pub price: Option<u64>,
+    pub seller_fee_basis_points: Option<u16>,
     pub supply: Option<u64>,
-    pub start_time: DateTime<Utc>,
-    pub end_time: DateTime<Utc>,
+    pub start_time: Option<DateTime<Utc>>,
+    pub end_time: Option<DateTime<Utc>>,
     pub blockchain: BlockchainEnum,
     pub creators: Vec<CollectionCreator>,
     pub metadata_json: MetadataJsonInput,

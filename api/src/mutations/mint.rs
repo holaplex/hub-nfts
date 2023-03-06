@@ -6,7 +6,7 @@ use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 
 use crate::{
     blockchains::{
-        solana::{CreateEditionPayload, Solana},
+        solana::{CreateEditionRequest, Solana},
         Blockchain, TransactionResponse,
     },
     entities::{
@@ -86,7 +86,7 @@ impl Mutation {
         ) = match collection.blockchain {
             BlockchainEnum::Solana => {
                 solana
-                    .edition(CreateEditionPayload {
+                    .edition(CreateEditionRequest {
                         collection: collection.id,
                         recipient: input.recipient.clone(),
                         owner_address,
