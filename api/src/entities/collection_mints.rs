@@ -3,8 +3,8 @@
 use async_graphql::{ComplexObject, Context, Result, SimpleObject};
 use sea_orm::entity::prelude::*;
 
-use super::{collections, sea_orm_active_enums::CreationStatus};
-use crate::AppContext;
+use super::sea_orm_active_enums::CreationStatus;
+use crate::{objects::Collection, AppContext};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
 #[sea_orm(table_name = "collection_mints")]
@@ -35,7 +35,7 @@ pub struct CollectionMint {
 
 #[ComplexObject]
 impl CollectionMint {
-    async fn collection(&self, ctx: &Context<'_>) -> Result<Option<collections::Collection>> {
+    async fn collection(&self, ctx: &Context<'_>) -> Result<Option<Collection>> {
         let AppContext {
             collection_loader, ..
         } = ctx.data::<AppContext>()?;

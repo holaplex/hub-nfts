@@ -1,7 +1,7 @@
 use async_graphql::{ComplexObject, Context, Result, SimpleObject};
 use hub_core::uuid::Uuid;
 
-use crate::{entities::drops, AppContext};
+use crate::{objects::Drop, AppContext};
 
 #[derive(SimpleObject, Debug, Clone)]
 #[graphql(complex)]
@@ -11,7 +11,7 @@ pub struct Project {
 
 #[ComplexObject]
 impl Project {
-    async fn drops(&self, ctx: &Context<'_>) -> Result<Option<Vec<drops::Model>>> {
+    async fn drops(&self, ctx: &Context<'_>) -> Result<Option<Vec<Drop>>> {
         let AppContext {
             project_drops_loader,
             ..
@@ -20,7 +20,7 @@ impl Project {
         project_drops_loader.load_one(self.id).await
     }
 
-    async fn drop(&self, ctx: &Context<'_>, id: Uuid) -> Result<Option<drops::Model>> {
+    async fn drop(&self, ctx: &Context<'_>, id: Uuid) -> Result<Option<Drop>> {
         let AppContext { drop_loader, .. } = ctx.data::<AppContext>()?;
 
         drop_loader.load_one(id).await

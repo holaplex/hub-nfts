@@ -4,7 +4,7 @@ use async_graphql::{dataloader::Loader as DataLoader, FieldError, Result};
 use poem::async_trait;
 use sea_orm::prelude::*;
 
-use crate::{db::Connection, entities::collections};
+use crate::{db::Connection, entities::collections, objects::Collection};
 
 #[derive(Debug, Clone)]
 pub struct Loader {
@@ -21,7 +21,7 @@ impl Loader {
 #[async_trait]
 impl DataLoader<Uuid> for Loader {
     type Error = FieldError;
-    type Value = collections::Collection;
+    type Value = Collection;
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let collections = collections::Entity::find()
