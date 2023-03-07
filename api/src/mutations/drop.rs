@@ -16,7 +16,7 @@ use crate::{
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
-    objects::{CollectionCreator, MetadataJsonInput},
+    objects::{CollectionCreator, Drop, MetadataJsonInput},
     proto::{self, nft_events, NftEventKey, NftEvents},
     AppContext, NftStorageClient, UserID,
 };
@@ -112,7 +112,7 @@ impl Mutation {
 
         collection_am.address = Set(Some(collection_address.to_string()));
 
-        collection_am.update(conn).await?;
+        let collection = collection_am.update(conn).await?;
 
         let drop = drops::ActiveModel {
             project_id: Set(input.project),
@@ -138,7 +138,9 @@ impl Mutation {
         )
         .await?;
 
-        Ok(CreateDropPayload { drop: drop_model })
+        Ok(CreateDropPayload {
+            drop: Drop::new(drop_model, collection),
+        })
     }
 }
 
@@ -174,7 +176,7 @@ async fn emit_drop_transaction_event(
 
 #[derive(Debug, Clone, SimpleObject)]
 pub struct CreateDropPayload {
-    drop: drops::Model,
+    drop: Drop,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
