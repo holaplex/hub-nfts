@@ -65,7 +65,7 @@ impl Drop {
             .supply
             .map(|supply| supply == self.collection.total_mints);
 
-        match (scheduled, expired, minted, self.collection.creation_status) {
+        match (scheduled, expired, minted, self.drop.creation_status) {
             (_, _, _, CreationStatus::Pending) => Ok(DropStatus::Creating),
             (Some(true), ..) => Ok(DropStatus::Scheduled),
             (_, Some(true), ..) => Ok(DropStatus::Expired),
