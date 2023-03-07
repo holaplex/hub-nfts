@@ -3,7 +3,7 @@ use sea_orm::entity::prelude::*;
 
 use crate::{
     entities::{
-        collection_mints,
+        collection_creators, collection_mints,
         collections::Model,
         metadata_jsons,
         sea_orm_active_enums::{Blockchain, CreationStatus},
@@ -43,6 +43,14 @@ impl Collection {
         } = ctx.data::<AppContext>()?;
 
         collection_mints_loader.load_one(self.id).await
+    }
+
+    async fn creators(&self, ctx: &Context<'_>) -> Result<Option<Vec<collection_creators::Model>>> {
+        let AppContext {
+            creators_loader, ..
+        } = ctx.data::<AppContext>()?;
+
+        creators_loader.load_one(self.id).await
     }
 }
 
