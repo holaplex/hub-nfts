@@ -19,8 +19,16 @@ pub enum Blockchain {
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Enum, Copy)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "creation_status")]
 pub enum CreationStatus {
+    #[sea_orm(string_value = "blocked")]
+    Blocked,
+    #[sea_orm(string_value = "canceled")]
+    Canceled,
     #[sea_orm(string_value = "created")]
     Created,
+    #[sea_orm(string_value = "failed")]
+    Failed,
     #[sea_orm(string_value = "pending")]
     Pending,
+    #[sea_orm(string_value = "rejected")]
+    Rejected,
 }

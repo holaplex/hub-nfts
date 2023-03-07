@@ -1,3 +1,5 @@
+#![allow(clippy::unused_async)]
+
 use async_graphql::{Enum, FieldError, Object, Result};
 use chrono::Utc;
 use sea_orm::entity::prelude::*;

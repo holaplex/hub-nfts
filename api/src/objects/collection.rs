@@ -20,6 +20,7 @@ pub struct Collection {
     pub creation_status: CreationStatus,
     pub address: Option<String>,
     pub total_mints: i64,
+    pub signature: Option<String>,
 }
 
 #[ComplexObject]
@@ -63,6 +64,7 @@ impl From<Model> for Collection {
             creation_status,
             address,
             total_mints,
+            signature,
         }: Model,
     ) -> Self {
         Self {
@@ -72,6 +74,7 @@ impl From<Model> for Collection {
             creation_status,
             address,
             total_mints,
+            signature,
         }
     }
 }

@@ -61,7 +61,6 @@ impl Mutation {
                 ))
             })?
             .wallet_address;
-
         let collection = Collection::new(collections::ActiveModel {
             blockchain: Set(input.blockchain),
             supply: Set(input.supply.map(|s| s.try_into().unwrap_or_default())),
@@ -135,6 +134,7 @@ impl Mutation {
             serialized_message,
             signed_message_signatures,
             input.project,
+            input.blockchain,
         )
         .await?;
 
@@ -154,12 +154,16 @@ async fn emit_drop_transaction_event(
     serialized_message: Vec<u8>,
     signatures: Vec<String>,
     project_id: Uuid,
+    blockchain: BlockchainEnum,
 ) -> Result<()> {
+    let proto_blockchain_enum: proto::Blockchain = blockchain.into();
+
     let event = NftEvents {
         event: Some(nft_events::Event::CreateDrop(proto::DropTransaction {
             transaction: Some(proto::Transaction {
                 serialized_message,
                 signed_message_signatures: signatures,
+                blockchain: proto_blockchain_enum as i32,
             }),
             project_id: project_id.to_string(),
         })),
@@ -207,5 +211,15 @@ impl TryFrom<CollectionCreator> for Creator {
             verified: verified.unwrap_or_default(),
             share,
         })
+    }
+}
+
+impl From<BlockchainEnum> for proto::Blockchain {
+    fn from(v: BlockchainEnum) -> Self {
+        match v {
+            BlockchainEnum::Ethereum => Self::Ethereum,
+            BlockchainEnum::Polygon => Self::Polygon,
+            BlockchainEnum::Solana => Self::Solana,
+        }
     }
 }

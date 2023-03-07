@@ -101,6 +101,7 @@ pub enum Collections {
     RoyaltyWallet,
     Supply,
     CreationStatus,
+    Signature,
 }
 
 pub enum Blockchain {

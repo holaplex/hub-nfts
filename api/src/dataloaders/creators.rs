@@ -28,7 +28,10 @@ impl DataLoader<Uuid> for Loader {
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let collections = collections::Entity::find()
-            .join(JoinType::InnerJoin, collections::Relation::Creators.def())
+            .join(
+                JoinType::InnerJoin,
+                collections::Relation::CollectionCreators.def(),
+            )
             .select_with(collection_creators::Entity)
             .filter(collections::Column::Id.is_in(keys.iter().map(ToOwned::to_owned)))
             .all(self.db.get())
