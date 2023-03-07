@@ -23,8 +23,8 @@ use async_graphql::{
 };
 use blockchains::solana::{Solana, SolanaArgs};
 use dataloaders::{
-    CollectionLoader, CollectionMintsLoader, CollectionMintsOwnerLoader, DropLoader,
-    MetadataJsonAttributesLoader, MetadataJsonLoader, ProjectDropsLoader,
+    CollectionLoader, CollectionMintsLoader, CollectionMintsOwnerLoader, CreatorsLoader,
+    DropLoader, MetadataJsonAttributesLoader, MetadataJsonLoader, ProjectDropsLoader,
 };
 use db::Connection;
 use hub_core::{
@@ -162,6 +162,7 @@ pub struct AppContext {
     collection_mints_loader: DataLoader<CollectionMintsLoader>,
     collection_mints_owner_loader: DataLoader<CollectionMintsOwnerLoader>,
     drop_loader: DataLoader<DropLoader>,
+    creators_loader: DataLoader<CreatorsLoader>,
 }
 
 impl AppContext {
@@ -179,6 +180,7 @@ impl AppContext {
         let collection_mints_owner_loader =
             DataLoader::new(CollectionMintsOwnerLoader::new(db.clone()), tokio::spawn);
         let drop_loader = DataLoader::new(DropLoader::new(db.clone()), tokio::spawn);
+        let creators_loader = DataLoader::new(CreatorsLoader::new(db.clone()), tokio::spawn);
 
         Self {
             db,
@@ -190,6 +192,7 @@ impl AppContext {
             collection_mints_loader,
             collection_mints_owner_loader,
             drop_loader,
+            creators_loader,
         }
     }
 }
