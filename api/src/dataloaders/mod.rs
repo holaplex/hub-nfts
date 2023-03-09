@@ -3,6 +3,7 @@ mod collection_mints;
 mod creators;
 mod drop;
 mod drops;
+mod holders;
 mod metadata_json;
 
 pub use collection::Loader as CollectionLoader;
@@ -12,6 +13,7 @@ pub use collection_mints::{
 pub use creators::Loader as CreatorsLoader;
 pub use drop::Loader as DropLoader;
 pub use drops::ProjectLoader as ProjectDropsLoader;
+pub use holders::Loader as HoldersLoader;
 pub use metadata_json::{
     AttributesLoader as MetadataJsonAttributesLoader, Loader as MetadataJsonLoader,
 };
