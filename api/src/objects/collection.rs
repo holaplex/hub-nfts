@@ -1,6 +1,7 @@
 use async_graphql::{ComplexObject, Context, Result, SimpleObject};
 use sea_orm::entity::prelude::*;
 
+use super::Holder;
 use crate::{
     entities::{
         collection_creators, collection_mints,
@@ -51,6 +52,12 @@ impl Collection {
         } = ctx.data::<AppContext>()?;
 
         creators_loader.load_one(self.id).await
+    }
+
+    async fn holders(&self, ctx: &Context<'_>) -> Result<Option<Vec<Holder>>> {
+        let AppContext { holders_loader, .. } = ctx.data::<AppContext>()?;
+
+        holders_loader.load_one(self.id).await
     }
 }
 
