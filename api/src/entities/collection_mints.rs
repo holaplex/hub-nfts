@@ -6,7 +6,7 @@ use sea_orm::entity::prelude::*;
 use super::sea_orm_active_enums::CreationStatus;
 use crate::{objects::Collection, AppContext};
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "collection_mints")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
@@ -22,7 +22,7 @@ pub struct Model {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, SimpleObject)]
-#[graphql(complex, concrete(name = "CollectionMint", params()))]
+#[graphql(complex)]
 pub struct CollectionMint {
     pub id: Uuid,
     pub collection_id: Uuid,

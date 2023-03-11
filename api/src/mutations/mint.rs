@@ -130,7 +130,7 @@ impl Mutation {
         producer.send(Some(&event), Some(&key)).await?;
 
         Ok(MintEditionPayload {
-            collection_mint: collection_mint_model,
+            collection_mint: collection_mint_model.into(),
         })
     }
 }
@@ -142,5 +142,5 @@ pub struct MintDropInput {
 
 #[derive(Debug, Clone, SimpleObject)]
 pub struct MintEditionPayload {
-    collection_mint: collection_mints::Model,
+    collection_mint: collection_mints::CollectionMint,
 }
