@@ -22,7 +22,7 @@ pub struct Model {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, SimpleObject)]
-#[graphql(complex)]
+#[graphql(complex, concrete(name = "CollectionMint", params()))]
 pub struct CollectionMint {
     pub id: Uuid,
     pub collection_id: Uuid,
