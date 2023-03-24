@@ -1,10 +1,11 @@
 use async_graphql::{Enum, FieldError, Object, Result};
-use chrono::Utc;
+use hub_core::chrono::Utc;
 use sea_orm::entity::prelude::*;
 
 use super::Collection;
 use crate::entities::{collections, drops, sea_orm_active_enums::CreationStatus};
 
+/// An NFT campaign that controls the minting rules for a collection, such as its start date and end date.
 #[derive(Clone, Debug)]
 pub struct Drop {
     pub drop: drops::Model,
@@ -20,41 +21,48 @@ impl Drop {
 
 #[Object]
 impl Drop {
+    /// The unique identifier for the drop.
     async fn id(&self) -> Uuid {
         self.drop.id
     }
 
+    /// The identifier of the project to which the drop is associated.
     async fn project_id(&self) -> Uuid {
         self.drop.project_id
     }
 
+    /// The creation status of the drop.
     async fn creation_status(&self) -> CreationStatus {
         self.drop.creation_status
     }
 
+    /// The date and time in UTC when the drop is eligible for minting. A value of `null` means the drop can be minted immediately.
     async fn start_time(&self) -> Option<DateTime> {
         self.drop.start_time
     }
 
+    /// The end date and time in UTC for the drop. A value of `null` means the drop does not end until it is fully minted.
     async fn end_time(&self) -> Option<DateTime> {
         self.drop.end_time
     }
 
+    /// The cost to mint the drop in US dollars. When purchasing with crypto the user will be charged at the current conversion rate for the blockchain's native coin at the time of minting.
     async fn price(&self) -> i64 {
         self.drop.price
     }
 
+    /// The user id of the person who created the drop.
     async fn created_by_id(&self) -> Uuid {
         self.drop.created_by
     }
 
+    /// The date and time in UTC when the drop was created.
     async fn created_at(&self) -> DateTime {
         self.drop.created_at
     }
 
     // The paused_at field represents the date and time in UTC when the drop was paused.
     // If it is null, the drop is currently not paused.
-
     async fn paused_at(&self) -> Option<DateTime> {
         self.drop.paused_at
     }
@@ -65,10 +73,12 @@ impl Drop {
         self.drop.shutdown_at
     }
 
+    /// The collection for which the drop is managing mints.
     async fn collection(&self) -> Collection {
         self.collection.clone().into()
     }
 
+    /// The current status of the drop.
     async fn status(&self) -> Result<DropStatus> {
         let now = Utc::now().naive_utc();
         let scheduled = self.drop.start_time.map(|start_time| now < start_time);
@@ -101,12 +111,18 @@ impl Drop {
     }
 }
 
+/// The different phases of a drop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Enum)]
 enum DropStatus {
+    /// Actively minting.
     Minting,
+    /// The minting process for the collection is complete.
     Minted,
+    /// The drop is scheduled for minting.
     Scheduled,
+    /// The drop has expired and its end time has passed.
     Expired,
+    /// The drop is still being created and is not ready to mint.
     Creating,
     Paused,
     Shutdown,

@@ -1,6 +1,8 @@
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use chrono::{DateTime, Local, Utc};
-use hub_core::producer::Producer;
+use hub_core::{
+    chrono::{DateTime, Utc},
+    producer::Producer,
+};
 use mpl_token_metadata::state::Creator;
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 use serde::{Deserialize, Serialize};
@@ -28,10 +30,9 @@ pub struct Mutation;
 
 #[Object(name = "DropMutation")]
 impl Mutation {
-    /// Res
-    ///
-    /// # Errors
-    /// This function fails if ...
+    /// This mutation creates a new NFT drop and its associated collection. The drop returns immediately with a creation status of CREATING. You can [set up a webhook](https://docs.holaplex.dev/hub/For%20Developers/webhooks-overview) to receive a notification when the drop is ready to be minted.
+    /// Error
+    /// If the drop cannot be saved to the database or fails to be emitted for submission to the desired blockchain, the mutation will result in an error.
     pub async fn create_drop(
         &self,
         ctx: &Context<'_>,
@@ -124,7 +125,7 @@ impl Mutation {
             end_time: Set(input.end_time.map(|end_date| end_date.naive_utc())),
             price: Set(input.price.unwrap_or_default().try_into()?),
             created_by: Set(user_id),
-            created_at: Set(Local::now().naive_utc()),
+            created_at: Set(Utc::now().naive_utc()),
             ..Default::default()
         };
 
