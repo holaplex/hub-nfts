@@ -56,6 +56,13 @@ impl Drop {
         self.collection.clone().into()
     }
 
+    // The paused_at field represents the date and time in UTC when the drop was paused.
+    // If it is null, the drop is currently not paused.
+
+    async fn paused_at(&self) -> Option<DateTime> {
+        self.drop.paused_at
+    }
+
     async fn status(&self) -> Result<DropStatus> {
         let now = Utc::now().naive_utc();
         let scheduled = self.drop.start_time.map(|start_time| now < start_time);
