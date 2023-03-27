@@ -145,10 +145,7 @@ impl Mutation {
         })
     }
 
-    /// Res
-    ///
-    /// # Errors
-    /// This function fails if ...
+    /// This mutation allows for the temporary blocking of the minting of editions and can be resumed by calling the resumeDrop mutation.
     pub async fn pause_drop(
         &self,
         ctx: &Context<'_>,
@@ -160,18 +157,17 @@ impl Mutation {
         let (drop, collection) = Drops::find()
             .join(JoinType::InnerJoin, drops::Relation::Collections.def())
             .select_also(Collections)
-            .filter(drops::Column::Id.eq(input.drop_id))
+            .filter(drops::Column::Id.eq(input.drop))
             .one(conn)
             .await?
             .ok_or_else(|| Error::new("drop not found"))?;
 
         let collection_model = collection
-            .ok_or_else(|| Error::new(format!("no collection found for drop {}", input.drop_id)))?;
+            .ok_or_else(|| Error::new(format!("no collection found for drop {}", input.drop)))?;
 
         let mut drops_active_model: drops::ActiveModel = drop.into();
 
         drops_active_model.paused_at = Set(Some(Utc::now().naive_utc()));
-        drops_active_model.creation_status = Set(CreationStatus::Paused);
         let drop_model = drops_active_model.update(db.get()).await?;
 
         Ok(PauseDropPayload {
@@ -179,10 +175,7 @@ impl Mutation {
         })
     }
 
-    /// Res
-    ///
-    /// # Errors
-    /// This function fails if ...
+    /// This mutation resumes a paused drop, allowing minting of editions to be restored
     pub async fn resume_drop(
         &self,
         ctx: &Context<'_>,
@@ -194,13 +187,13 @@ impl Mutation {
         let (drop, collection) = Drops::find()
             .join(JoinType::InnerJoin, drops::Relation::Collections.def())
             .select_also(Collections)
-            .filter(drops::Column::Id.eq(input.drop_id))
+            .filter(drops::Column::Id.eq(input.drop))
             .one(conn)
             .await?
             .ok_or_else(|| Error::new("drop not found"))?;
 
         let collection_model = collection
-            .ok_or_else(|| Error::new(format!("no collection found for drop {}", input.drop_id)))?;
+            .ok_or_else(|| Error::new(format!("no collection found for drop {}", input.drop)))?;
 
         let mut drops_active_model: drops::ActiveModel = drop.into();
 
@@ -280,22 +273,25 @@ impl TryFrom<CollectionCreator> for Creator {
     }
 }
 
+/// Represents input fields for pausing a drop.
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct PauseDropInput {
-    pub drop_id: Uuid,
+    pub drop: Uuid,
 }
-
+/// Represents the result of a successful pause drop mutation.
 #[derive(Debug, Clone, SimpleObject)]
 pub struct PauseDropPayload {
+    /// The drop that has been paused.
     drop: Drop,
 }
-
+/// Represents input fields for resuming a paused drop.
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct ResumeDropInput {
-    pub drop_id: Uuid,
+    pub drop: Uuid,
 }
-
+/// Represents the result of a successful resume drop mutation.
 #[derive(Debug, Clone, SimpleObject)]
 pub struct ResumeDropPayload {
+    /// The drop that has been resumed.
     drop: Drop,
 }

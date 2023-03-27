@@ -60,18 +60,26 @@ impl Drop {
         let now = Utc::now().naive_utc();
         let scheduled = self.drop.start_time.map(|start_time| now < start_time);
         let expired = self.drop.end_time.map(|end_time| now > end_time);
+        let paused_at = self.drop.paused_at;
+
         let minted = self
             .collection
             .supply
             .map(|supply| supply == self.collection.total_mints);
 
-        match (scheduled, expired, minted, self.drop.creation_status) {
-            (_, _, _, CreationStatus::Paused) => Ok(DropStatus::Paused),
-            (_, _, _, CreationStatus::Pending) => Ok(DropStatus::Creating),
+        match (
+            scheduled,
+            expired,
+            minted,
+            paused_at,
+            self.drop.creation_status,
+        ) {
+            (_, _, _, Some(_), _) => Ok(DropStatus::Paused),
+            (_, _, _, _, CreationStatus::Pending) => Ok(DropStatus::Creating),
             (Some(true), ..) => Ok(DropStatus::Scheduled),
             (_, Some(true), ..) => Ok(DropStatus::Expired),
-            (_, _, Some(true), _) => Ok(DropStatus::Minted),
-            (_, _, Some(false), _) => Ok(DropStatus::Minting),
+            (_, _, Some(true), ..) => Ok(DropStatus::Minted),
+            (_, _, Some(false), ..) => Ok(DropStatus::Minting),
             _ => Err(FieldError::new("unsupported drop status")),
         }
     }
