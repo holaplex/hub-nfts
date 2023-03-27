@@ -198,7 +198,7 @@ impl Mutation {
         let mut drops_active_model: drops::ActiveModel = drop.into();
 
         drops_active_model.paused_at = Set(None);
-        drops_active_model.creation_status = Set(CreationStatus::Created);
+
         let drop_model = drops_active_model.update(db.get()).await?;
 
         Ok(ResumeDropPayload {
