@@ -21,6 +21,8 @@ pub enum Blockchain {
 pub enum CreationStatus {
     #[sea_orm(string_value = "created")]
     Created,
+    #[sea_orm(string_value = "paused")]
+    Paused,
     #[sea_orm(string_value = "pending")]
     Pending,
 }

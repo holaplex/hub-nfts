@@ -20,6 +20,8 @@ mod m20230306_132259_default_start_time_on_drops;
 mod m20230306_151630_start_time_nullable_on_drops;
 mod m20230306_154554_drop_unique_identifier_index_on_metadata_jsons;
 mod m20230306_160517_add_total_mints_to_collections;
+mod m20230327_114558_add_paused_at_column_to_drops;
+mod m20230327_122414_add_paused_to_drop_status;
 
 pub struct Migrator;
 
@@ -47,6 +49,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20230306_151630_start_time_nullable_on_drops::Migration),
             Box::new(m20230306_154554_drop_unique_identifier_index_on_metadata_jsons::Migration),
             Box::new(m20230306_160517_add_total_mints_to_collections::Migration),
+            Box::new(m20230327_114558_add_paused_at_column_to_drops::Migration),
+            Box::new(m20230327_122414_add_paused_to_drop_status::Migration),
         ]
     }
 }

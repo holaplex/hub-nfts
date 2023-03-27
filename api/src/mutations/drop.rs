@@ -2,7 +2,7 @@ use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use chrono::{DateTime, Local, Utc};
 use hub_core::producer::Producer;
 use mpl_token_metadata::state::Creator;
-use sea_orm::{prelude::*, Set};
+use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -12,7 +12,9 @@ use crate::{
     },
     collection::Collection,
     entities::{
-        collections, drops, project_wallets,
+        collections, drops,
+        prelude::{Collections, Drops},
+        project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
@@ -142,6 +144,74 @@ impl Mutation {
             drop: Drop::new(drop_model, collection),
         })
     }
+
+    /// Res
+    ///
+    /// # Errors
+    /// This function fails if ...
+    pub async fn pause_drop(
+        &self,
+        ctx: &Context<'_>,
+        input: PauseDropInput,
+    ) -> Result<PauseDropPayload> {
+        let AppContext { db, .. } = ctx.data::<AppContext>()?;
+        let conn = db.get();
+
+        let (drop, collection) = Drops::find()
+            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
+            .select_also(Collections)
+            .filter(drops::Column::Id.eq(input.drop_id))
+            .one(conn)
+            .await?
+            .ok_or_else(|| Error::new("drop not found"))?;
+
+        let collection_model = collection
+            .ok_or_else(|| Error::new(format!("no collection found for drop {}", input.drop_id)))?;
+
+        let mut drops_active_model: drops::ActiveModel = drop.into();
+
+        drops_active_model.paused_at = Set(Some(Utc::now().naive_utc()));
+        drops_active_model.creation_status = Set(CreationStatus::Paused);
+        let drop_model = drops_active_model.update(db.get()).await?;
+
+        Ok(PauseDropPayload {
+            drop: Drop::new(drop_model, collection_model),
+        })
+    }
+
+    /// Res
+    ///
+    /// # Errors
+    /// This function fails if ...
+    pub async fn resume_drop(
+        &self,
+        ctx: &Context<'_>,
+        input: ResumeDropInput,
+    ) -> Result<ResumeDropPayload> {
+        let AppContext { db, .. } = ctx.data::<AppContext>()?;
+        let conn = db.get();
+
+        let (drop, collection) = Drops::find()
+            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
+            .select_also(Collections)
+            .filter(drops::Column::Id.eq(input.drop_id))
+            .one(conn)
+            .await?
+            .ok_or_else(|| Error::new("drop not found"))?;
+
+        let collection_model = collection
+            .ok_or_else(|| Error::new(format!("no collection found for drop {}", input.drop_id)))?;
+
+        let mut drops_active_model: drops::ActiveModel = drop.into();
+
+        drops_active_model.paused_at = Set(None);
+        drops_active_model.creation_status = Set(CreationStatus::Created);
+        let drop_model = drops_active_model.update(db.get()).await?;
+
+        Ok(ResumeDropPayload {
+            drop: Drop::new(drop_model, collection_model),
+        })
+    }
 }
 
 /// This functions emits the drop transaction event
@@ -208,4 +278,24 @@ impl TryFrom<CollectionCreator> for Creator {
             share,
         })
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
+pub struct PauseDropInput {
+    pub drop_id: Uuid,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct PauseDropPayload {
+    drop: Drop,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
+pub struct ResumeDropInput {
+    pub drop_id: Uuid,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct ResumeDropPayload {
+    drop: Drop,
 }
