@@ -6,7 +6,6 @@ use super::sea_orm_active_enums::CreationStatus;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "drops")]
-
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
@@ -18,6 +17,7 @@ pub struct Model {
     pub price: i64,
     pub created_by: Uuid,
     pub created_at: DateTime,
+    pub paused_at: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

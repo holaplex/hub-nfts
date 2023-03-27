@@ -70,6 +70,7 @@ impl Blockchain<CreateDropRequest, CreateEditionRequest, Pubkey> for Solana {
     ///
     /// # Errors
     /// This function fails if unable to assemble or save solana drop
+    #[allow(clippy::too_many_lines)]
     async fn drop(&self, request: CreateDropRequest) -> Result<(Pubkey, TransactionResponse)> {
         let CreateDropRequest {
             creators,
