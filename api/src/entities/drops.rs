@@ -18,6 +18,7 @@ pub struct Model {
     pub created_by: Uuid,
     pub created_at: DateTime,
     pub paused_at: Option<DateTime>,
+    pub shutdown_at: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
