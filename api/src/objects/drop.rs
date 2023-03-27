@@ -52,10 +52,6 @@ impl Drop {
         self.drop.created_at
     }
 
-    async fn collection(&self) -> Collection {
-        self.collection.clone().into()
-    }
-
     // The paused_at field represents the date and time in UTC when the drop was paused.
     // If it is null, the drop is currently not paused.
 
@@ -63,11 +59,22 @@ impl Drop {
         self.drop.paused_at
     }
 
+    /// The shutdown_at field represents the date and time in UTC when the drop was shutdown
+    /// If it is null, the drop is currently not shutdown
+    async fn shutdown_at(&self) -> Option<DateTime> {
+        self.drop.shutdown_at
+    }
+
+    async fn collection(&self) -> Collection {
+        self.collection.clone().into()
+    }
+
     async fn status(&self) -> Result<DropStatus> {
         let now = Utc::now().naive_utc();
         let scheduled = self.drop.start_time.map(|start_time| now < start_time);
         let expired = self.drop.end_time.map(|end_time| now > end_time);
         let paused_at = self.drop.paused_at;
+        let shutdown_at = self.drop.shutdown_at;
 
         let minted = self
             .collection
@@ -79,10 +86,12 @@ impl Drop {
             expired,
             minted,
             paused_at,
+            shutdown_at,
             self.drop.creation_status,
         ) {
-            (_, _, _, Some(_), _) => Ok(DropStatus::Paused),
-            (_, _, _, _, CreationStatus::Pending) => Ok(DropStatus::Creating),
+            (_, _, _, Some(_), ..) => Ok(DropStatus::Paused),
+            (_, _, _, _, Some(_), _) => Ok(DropStatus::Shutdown),
+            (_, _, _, _, _, CreationStatus::Pending) => Ok(DropStatus::Creating),
             (Some(true), ..) => Ok(DropStatus::Scheduled),
             (_, Some(true), ..) => Ok(DropStatus::Expired),
             (_, _, Some(true), ..) => Ok(DropStatus::Minted),
@@ -100,4 +109,5 @@ enum DropStatus {
     Expired,
     Creating,
     Paused,
+    Shutdown,
 }

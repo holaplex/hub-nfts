@@ -205,6 +205,41 @@ impl Mutation {
             drop: Drop::new(drop_model, collection_model),
         })
     }
+
+    /// Shuts down a drop by writing the current UTC timestamp to the shutdown_at field of drop record.
+    /// Returns the `Drop` object on success.
+    ///
+    /// # Errors
+    /// Fails if the drop or collection is not found, or if updating the drop record fails.
+    pub async fn shutdown_drop(
+        &self,
+        ctx: &Context<'_>,
+        input: ShutdownDropInput,
+    ) -> Result<ShutdownDropPayload> {
+        let AppContext { db, .. } = ctx.data::<AppContext>()?;
+        let conn = db.get();
+
+        let (drop, collection) = Drops::find()
+            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
+            .select_also(Collections)
+            .filter(drops::Column::Id.eq(input.drop))
+            .one(conn)
+            .await?
+            .ok_or_else(|| Error::new("drop not found"))?;
+
+        let collection_model = collection
+            .ok_or_else(|| Error::new(format!("no collection found for drop {}", input.drop)))?;
+
+        let mut drops_active_model: drops::ActiveModel = drop.into();
+
+        drops_active_model.shutdown_at = Set(Some(Utc::now().naive_utc()));
+
+        let drop_model = drops_active_model.update(db.get()).await?;
+
+        Ok(ShutdownDropPayload {
+            drop: Drop::new(drop_model, collection_model),
+        })
+    }
 }
 
 /// This functions emits the drop transaction event
@@ -293,5 +328,18 @@ pub struct ResumeDropInput {
 #[derive(Debug, Clone, SimpleObject)]
 pub struct ResumeDropPayload {
     /// The drop that has been resumed.
+    drop: Drop,
+}
+
+/// Represents the input fields for shutting down a drop
+#[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
+pub struct ShutdownDropInput {
+    pub drop: Uuid,
+}
+
+/// Represents the result of a successful shutdown drop mutation
+#[derive(Debug, Clone, SimpleObject)]
+pub struct ShutdownDropPayload {
+    /// Drop that has been shutdown
     drop: Drop,
 }
