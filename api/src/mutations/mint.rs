@@ -1,6 +1,7 @@
 use std::ops::Add;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
+use chrono::Utc;
 use hub_core::producer::Producer;
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 
@@ -50,6 +51,25 @@ impl Mutation {
 
         let (drop_model, collection_model) =
             drop_model.ok_or_else(|| Error::new("drop not found"))?;
+
+        // Checks that drop is currently running
+        drop_model
+            .paused_at
+            .map_or(Ok(()), |_| Err(Error::new("Drop status is paused")))?;
+
+        drop_model
+            .shutdown_at
+            .map_or(Ok(()), |_| Err(Error::new("Drop status is shutdown")))?;
+
+        drop_model
+            .start_time
+            .filter(|&start_time| start_time <= Utc::now().naive_utc())
+            .ok_or_else(|| Error::new("Drop has not yet started"))?;
+
+        drop_model
+            .end_time
+            .filter(|&end_time| end_time > Utc::now().naive_utc())
+            .ok_or_else(|| Error::new("Drop has already ended"))?;
 
         let collection = collection_model.ok_or_else(|| Error::new("collection not found"))?;
 
