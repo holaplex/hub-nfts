@@ -7,7 +7,7 @@ use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 use crate::{
     blockchains::{
         solana::{CreateEditionRequest, Solana},
-        Blockchain, TransactionResponse,
+        Edition, TransactionResponse,
     },
     entities::{
         collection_mints, collections, drops,
@@ -15,7 +15,7 @@ use crate::{
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
-    proto::{nft_events, MintTransaction, NftEventKey, NftEvents, Transaction},
+    proto::{self, nft_events, MintTransaction, NftEventKey, NftEvents, Transaction},
     AppContext, UserID,
 };
 
@@ -112,7 +112,8 @@ impl Mutation {
         ) = match collection.blockchain {
             BlockchainEnum::Solana => {
                 solana
-                    .edition(CreateEditionRequest {
+                    .edition()
+                    .mint(CreateEditionRequest {
                         collection: collection.id,
                         recipient: input.recipient.clone(),
                         owner_address,
@@ -135,12 +136,14 @@ impl Mutation {
         };
 
         let collection_mint_model = collection_mint_active_model.insert(conn).await?;
+        let proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
 
         let event = NftEvents {
             event: Some(nft_events::Event::MintDrop(MintTransaction {
                 transaction: Some(Transaction {
                     serialized_message,
                     signed_message_signatures,
+                    blockchain: proto_blockchain_enum as i32,
                 }),
                 project_id: drop_model.project_id.to_string(),
                 drop_id: drop_model.id.to_string(),

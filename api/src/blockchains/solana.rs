@@ -1,7 +1,7 @@
 use hub_core::{anyhow::Result, chrono::Utc, clap, prelude::*};
 use mpl_token_metadata::{
-    instruction::mint_new_edition_from_master_edition_via_token,
-    state::{Creator, EDITION, PREFIX},
+    instruction::{mint_new_edition_from_master_edition_via_token, update_metadata_accounts_v2},
+    state::{Creator, DataV2, EDITION, PREFIX},
 };
 use sea_orm::{prelude::*, Set};
 use solana_client::rpc_client::RpcClient;
@@ -15,7 +15,7 @@ use spl_token::{
     state,
 };
 
-use super::{Blockchain, TransactionResponse};
+use super::{Edition, TransactionResponse};
 use crate::{db::Connection, entities::solana_collections};
 
 const TOKEN_PROGRAM_PUBKEY: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -42,7 +42,7 @@ pub struct CreateDropRequest {
     pub name: String,
     pub symbol: String,
     pub seller_fee_basis_points: u16,
-    pub supply: Option<u64>,
+    pub supply: u64,
     pub metadata_json_uri: String,
     pub collection: Uuid,
 }
@@ -54,6 +54,12 @@ pub struct CreateEditionRequest {
     pub edition: u64,
 }
 
+pub struct UpdateEditionRequest {
+    pub collection: Uuid,
+    pub owner_address: String,
+    pub data: DataV2,
+}
+
 impl Solana {
     pub fn new(rpc_client: Arc<RpcClient>, db: Connection, payer_keypair: Vec<u8>) -> Self {
         Self {
@@ -62,15 +68,24 @@ impl Solana {
             payer_keypair,
         }
     }
+
+    #[must_use]
+    pub fn edition(
+        &self,
+    ) -> impl Edition<CreateDropRequest, CreateEditionRequest, UpdateEditionRequest, Pubkey> {
+        self.clone()
+    }
 }
 
-impl Blockchain<CreateDropRequest, CreateEditionRequest, Pubkey> for Solana {
+#[async_trait::async_trait]
+
+impl Edition<CreateDropRequest, CreateEditionRequest, UpdateEditionRequest, Pubkey> for Solana {
     /// Res
     ///
     /// # Errors
     /// This function fails if unable to assemble or save solana drop
     #[allow(clippy::too_many_lines)]
-    async fn drop(&self, request: CreateDropRequest) -> Result<(Pubkey, TransactionResponse)> {
+    async fn create(&self, request: CreateDropRequest) -> Result<(Pubkey, TransactionResponse)> {
         let CreateDropRequest {
             creators,
             owner_address,
@@ -167,7 +182,7 @@ impl Blockchain<CreateDropRequest, CreateEditionRequest, Pubkey> for Solana {
             owner,
             token_metadata_pubkey,
             payer.pubkey(),
-            supply,
+            Some(supply),
         );
 
         let blockhash = rpc.get_latest_blockhash()?;
@@ -219,10 +234,7 @@ impl Blockchain<CreateDropRequest, CreateEditionRequest, Pubkey> for Solana {
     ///
     /// # Errors
     /// This function fails if unable to assemble solana mint transaction
-    async fn edition(
-        &self,
-        request: CreateEditionRequest,
-    ) -> Result<(Pubkey, TransactionResponse)> {
+    async fn mint(&self, request: CreateEditionRequest) -> Result<(Pubkey, TransactionResponse)> {
         let conn = self.db.get();
         let rpc = &self.rpc_client;
         let CreateEditionRequest {
@@ -327,6 +339,50 @@ impl Blockchain<CreateDropRequest, CreateEditionRequest, Pubkey> for Solana {
                 payer_signature.to_string(),
                 mint_signature.to_string(),
             ],
+        }))
+    }
+
+    async fn update(&self, request: UpdateEditionRequest) -> Result<(Pubkey, TransactionResponse)> {
+        let conn = self.db.get();
+        let rpc = &self.rpc_client;
+        let UpdateEditionRequest {
+            collection,
+            owner_address,
+            data,
+        } = request;
+
+        let payer = Keypair::from_bytes(&self.payer_keypair)?;
+        let solana_collection_model = solana_collections::Entity::find()
+            .filter(solana_collections::Column::CollectionId.eq(collection))
+            .one(conn)
+            .await?;
+        let sc = solana_collection_model.ok_or_else(|| anyhow!("solana collection not found"))?;
+        let program_pubkey = mpl_token_metadata::id();
+
+        let ins = update_metadata_accounts_v2(
+            program_pubkey,
+            sc.metadata_pubkey.parse()?,
+            owner_address.parse()?,
+            None,
+            Some(data),
+            None,
+            None,
+        );
+
+        let blockhash = rpc.get_latest_blockhash()?;
+
+        let message = solana_program::message::Message::new_with_blockhash(
+            &[ins],
+            Some(&payer.pubkey()),
+            &blockhash,
+        );
+
+        let serialized_message = message.serialize();
+        let payer_signature = payer.try_sign_message(&message.serialize())?;
+
+        Ok((sc.mint_pubkey.parse()?, TransactionResponse {
+            serialized_message,
+            signed_message_signatures: vec![payer_signature.to_string()],
         }))
     }
 }

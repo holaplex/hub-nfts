@@ -28,12 +28,12 @@ pub enum Relation {
         on_update = "Cascade",
         on_delete = "Cascade"
     )]
-    MetadadaJsons,
+    MetadataJsons,
 }
 
-impl Related<super::collections::Entity> for Entity {
+impl Related<super::metadata_jsons::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::MetadadaJsons.def()
+        Relation::MetadataJsons.def()
     }
 }
 

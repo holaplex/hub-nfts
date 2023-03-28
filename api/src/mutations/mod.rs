@@ -1,4 +1,5 @@
 #![allow(clippy::too_many_lines)]
+#![allow(clippy::unused_async)]
 pub mod drop;
 pub mod mint;
 
