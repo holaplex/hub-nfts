@@ -244,10 +244,9 @@ impl Mutation {
         })
     }
 
-    /// Res
-    ///
-    /// # Errors
-    /// This function fails if ...
+    /// This mutation allows updating a drop and it's associated collection by ID.
+    /// It returns an error if it fails to reach the database, emit update events or assemble the on-chain transaction.
+    /// Returns the `CreateDropPayload` object on success.
     pub async fn edit_drop(
         &self,
         ctx: &Context<'_>,
@@ -485,13 +484,20 @@ impl TryFrom<CollectionCreator> for Creator {
     }
 }
 
+/// Input object for editing a drop and associated collection by ID
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct EditDropInput {
+    /// The unique identifier of the drop
     pub drop: Uuid,
+    /// The new price for the drop in the native token of the blockchain
     pub price: Option<u64>,
+    /// The new start time for the drop in UTC
     pub start_time: Option<DateTime<Utc>>,
+    /// The new end time for the drop in UTC
     pub end_time: Option<DateTime<Utc>>,
+    /// The new seller fee basis points for the drop
     pub seller_fee_basis_points: Option<u16>,
+    /// The new metadata JSON for the drop
     pub metadata_json: Option<MetadataJsonInput>,
 }
 

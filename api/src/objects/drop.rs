@@ -102,6 +102,17 @@ impl Drop {
             (_, _, _, Some(_), ..) => Ok(DropStatus::Paused),
             (_, _, _, _, Some(_), _) => Ok(DropStatus::Shutdown),
             (_, _, _, _, _, CreationStatus::Pending) => Ok(DropStatus::Creating),
+            (
+                _,
+                _,
+                _,
+                _,
+                _,
+                CreationStatus::Blocked
+                | CreationStatus::Canceled
+                | CreationStatus::Failed
+                | CreationStatus::Rejected,
+            ) => Ok(DropStatus::Failed),
             (Some(true), ..) => Ok(DropStatus::Scheduled),
             (_, Some(true), ..) => Ok(DropStatus::Expired),
             (_, _, Some(true), ..) => Ok(DropStatus::Minted),
@@ -124,6 +135,10 @@ enum DropStatus {
     Expired,
     /// The drop is still being created and is not ready to mint.
     Creating,
+    /// The drop is temporarily paused and cannot be minted at the moment.
     Paused,
+    ///  The drop is permanently shut down and can no longer be minted.
     Shutdown,
+    /// The creation process for the drop has failed
+    Failed,
 }

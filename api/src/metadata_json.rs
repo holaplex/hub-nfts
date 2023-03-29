@@ -90,7 +90,7 @@ impl MetadataJson {
                         MetadataJsonColumn::AnimationUrl,
                         MetadataJsonColumn::ExternalUrl,
                     ])
-                    .to_owned(),
+                    .clone(),
             )
             .exec_with_returning(db.get())
             .await?;
