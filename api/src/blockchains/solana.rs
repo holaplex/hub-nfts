@@ -1,5 +1,4 @@
-use chrono::Local;
-use hub_core::{anyhow::Result, clap, prelude::*};
+use hub_core::{anyhow::Result, chrono::Utc, clap, prelude::*};
 use mpl_token_metadata::{
     instruction::mint_new_edition_from_master_edition_via_token,
     state::{Creator, EDITION, PREFIX},
@@ -196,7 +195,7 @@ impl Blockchain<CreateDropRequest, CreateEditionRequest, Pubkey> for Solana {
             collection_id: Set(collection),
             master_edition_address: Set(master_edition_pubkey.to_string()),
             seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
-            created_at: Set(Local::now().naive_utc()),
+            created_at: Set(Utc::now().naive_utc()),
             ata_pubkey: Set(ata.to_string()),
             owner_pubkey: Set(owner.to_string()),
             update_authority: Set(owner.to_string()),

@@ -3,6 +3,7 @@
 use async_graphql::SimpleObject;
 use sea_orm::entity::prelude::*;
 
+/// An attribute of the NFT.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
 #[sea_orm(table_name = "metadata_json_attributes")]
 #[graphql(concrete(name = "MetadataJsonAttribute", params()))]
@@ -11,7 +12,9 @@ pub struct Model {
     pub id: Uuid,
     pub collection_id: Uuid,
     #[sea_orm(column_type = "Text")]
+    /// The name of the attribute.
     pub trait_type: String,
+    /// The value of the attribute.
     #[sea_orm(column_type = "Text")]
     pub value: String,
 }

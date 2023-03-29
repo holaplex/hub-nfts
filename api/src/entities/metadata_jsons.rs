@@ -6,6 +6,9 @@ use sea_orm::entity::prelude::*;
 use super::metadata_json_attributes;
 use crate::AppContext;
 
+/// The collection's associated metadata JSON.
+/// ## References
+/// [Metaplex v1.1.0 Standard](https://docs.metaplex.com/programs/token-metadata/token-standard)
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
 #[sea_orm(table_name = "metadata_jsons")]
 #[graphql(complex, concrete(name = "MetadataJson", params()))]
@@ -13,17 +16,25 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub collection_id: Uuid,
     pub identifier: String,
+    /// The assigned name of the NFT.
     pub name: String,
+    /// The URI for the complete metadata JSON.
     pub uri: String,
+    /// The symbol of the NFT.
     pub symbol: String,
+    /// The description of the NFT.
     pub description: String,
+    /// The image URI for the NFT.
     pub image: String,
+    /// An optional animated version of the NFT art.
     pub animation_url: Option<String>,
+    /// An optional URL where viewers can find more information on the NFT, such as the collection's homepage or Twitter page.
     pub external_url: Option<String>,
 }
 
 #[ComplexObject]
 impl Model {
+    // The NFT's associated attributes.
     async fn attributes(
         &self,
         ctx: &Context<'_>,

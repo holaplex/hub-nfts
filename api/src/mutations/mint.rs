@@ -1,8 +1,7 @@
 use std::ops::Add;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use chrono::Utc;
-use hub_core::producer::Producer;
+use hub_core::{chrono::Utc, producer::Producer};
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 
 use crate::{
@@ -25,10 +24,9 @@ pub struct Mutation;
 
 #[Object(name = "MintMutation")]
 impl Mutation {
-    /// Res
-    ///
+    /// This mutation mints an NFT edition for a specific drop ID. The mint returns immediately with a creation status of CREATING. You can [set up a webhook](https://docs.holaplex.dev/hub/For%20Developers/webhooks-overview) to receive a notification when the mint is accepted by the blockchain.
     /// # Errors
-    /// This function fails if ...
+    /// If the mint cannot be saved to the database or fails to be emitted for submission to the desired blockchain, the mutation will result in an error.
     pub async fn mint_edition(
         &self,
         ctx: &Context<'_>,

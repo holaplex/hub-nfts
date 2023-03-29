@@ -34,7 +34,7 @@ impl Collection {
     /// Res
     ///
     /// # Errors
-    /// This function fails if unable to save `collection`   or `collection_creators` to the db
+    /// This function fails if unable to save `collection` or `collection_creators` to the db
     pub async fn save(&self, db: &Connection) -> Result<Model> {
         let conn = db.get();
 

@@ -4,16 +4,21 @@ use sea_orm::FromQueryResult;
 
 use crate::AppContext;
 
+/// The holder of a collection.
 #[derive(SimpleObject, Debug, Clone, FromQueryResult)]
 #[graphql(complex)]
 pub struct Holder {
+    /// The collection ID that the holder owns.
     pub collection_id: Uuid,
+    /// The wallet address of the holder.
     pub address: String,
+    /// The number of NFTs that the holder owns in the collection.
     pub owns: i64,
 }
 
 #[ComplexObject]
 impl Holder {
+    /// The specific mints from the collection that the holder owns.
     async fn mints(&self, ctx: &Context<'_>) -> Result<Vec<String>> {
         let AppContext {
             collection_mints_loader,
