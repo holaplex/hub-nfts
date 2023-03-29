@@ -1,6 +1,6 @@
 use hub_core::{anyhow::Result, prelude::anyhow, uuid::Uuid};
 use metadata_jsons::Column as MetadataJsonColumn;
-use sea_orm::{prelude::*, sea_query::OnConflict, Set};
+use sea_orm::{prelude::*, sea_query::OnConflict, Set, TransactionTrait};
 
 use crate::{
     db::Connection,
@@ -51,7 +51,6 @@ impl MetadataJson {
     /// # Errors
     /// This function fails if unable to save `metadata_json` to the db
     pub async fn save(&self, db: &Connection) -> Result<metadata_jsons::Model> {
-        let conn = db.get();
         let collection = self.collection;
         let payload = self.metadata_json.clone();
         let identifier = self
@@ -95,9 +94,11 @@ impl MetadataJson {
             .exec_with_returning(db.get())
             .await?;
 
+        let tx = db.get().clone().begin().await?;
+
         MetadataJsonAttributes::delete_many()
             .filter(metadata_json_attributes::Column::CollectionId.eq(collection))
-            .exec(db.get())
+            .exec(&tx)
             .await?;
 
         for attribute in payload.attributes {
@@ -108,13 +109,17 @@ impl MetadataJson {
                 ..Default::default()
             };
 
-            am.insert(conn).await?;
+            am.insert(&tx).await?;
         }
 
+        tx.commit().await?;
+
         if let Some(files) = payload.properties.unwrap_or_default().files {
+            let tx = db.get().clone().begin().await?;
+
             MetadataJsonFiles::delete_many()
                 .filter(metadata_json_files::Column::CollectionId.eq(collection))
-                .exec(db.get())
+                .exec(&tx)
                 .await?;
 
             for file in files {
@@ -125,8 +130,10 @@ impl MetadataJson {
                     ..Default::default()
                 };
 
-                metadata_json_file_am.insert(conn).await?;
+                metadata_json_file_am.insert(&tx).await?;
             }
+
+            tx.commit().await?;
         }
 
         Ok(metadata_json)
