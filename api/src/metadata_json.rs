@@ -1,13 +1,16 @@
 use hub_core::{anyhow::Result, prelude::anyhow, uuid::Uuid};
-use sea_orm::{prelude::*, Set};
+use metadata_jsons::Column as MetadataJsonColumn;
+use sea_orm::{prelude::*, sea_query::OnConflict, Set};
 
 use crate::{
     db::Connection,
-    entities::{metadata_json_attributes, metadata_json_files, metadata_jsons},
+    entities::{
+        metadata_json_attributes, metadata_json_files, metadata_jsons,
+        prelude::{MetadataJsonAttributes, MetadataJsonFiles, MetadataJsons},
+    },
     nft_storage::NftStorageClient,
     objects::MetadataJsonInput,
 };
-
 #[derive(Clone, Debug)]
 pub struct MetadataJson {
     metadata_json: MetadataJsonInput,
@@ -72,7 +75,30 @@ impl MetadataJson {
             external_url: Set(payload.external_url),
         };
 
-        let metadata_json = metadata_json_active_model.insert(conn).await?;
+        // let metadata_json = metadata_json_active_model.insert(conn).await?;
+
+        let metadata_json = MetadataJsons::insert(metadata_json_active_model)
+            .on_conflict(
+                OnConflict::column(MetadataJsonColumn::CollectionId)
+                    .update_columns([
+                        MetadataJsonColumn::Identifier,
+                        MetadataJsonColumn::Name,
+                        MetadataJsonColumn::Uri,
+                        MetadataJsonColumn::Symbol,
+                        MetadataJsonColumn::Description,
+                        MetadataJsonColumn::Image,
+                        MetadataJsonColumn::AnimationUrl,
+                        MetadataJsonColumn::ExternalUrl,
+                    ])
+                    .to_owned(),
+            )
+            .exec_with_returning(db.get())
+            .await?;
+
+        MetadataJsonAttributes::delete_many()
+            .filter(metadata_json_attributes::Column::CollectionId.eq(collection))
+            .exec(db.get())
+            .await?;
 
         for attribute in payload.attributes {
             let am = metadata_json_attributes::ActiveModel {
@@ -86,6 +112,11 @@ impl MetadataJson {
         }
 
         if let Some(files) = payload.properties.unwrap_or_default().files {
+            MetadataJsonFiles::delete_many()
+                .filter(metadata_json_files::Column::CollectionId.eq(collection))
+                .exec(db.get())
+                .await?;
+
             for file in files {
                 let metadata_json_file_am = metadata_json_files::ActiveModel {
                     collection_id: Set(collection),

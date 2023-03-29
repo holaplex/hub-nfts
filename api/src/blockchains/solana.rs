@@ -16,7 +16,10 @@ use spl_token::{
 };
 
 use super::{Edition, TransactionResponse};
-use crate::{db::Connection, entities::solana_collections};
+use crate::{
+    db::Connection,
+    entities::{collection_creators, prelude::CollectionCreators, solana_collections},
+};
 
 const TOKEN_PROGRAM_PUBKEY: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
@@ -36,6 +39,7 @@ pub struct Solana {
     payer_keypair: Vec<u8>,
 }
 
+#[derive(Clone)]
 pub struct CreateDropRequest {
     pub creators: Vec<Creator>,
     pub owner_address: String,
@@ -47,6 +51,7 @@ pub struct CreateDropRequest {
     pub collection: Uuid,
 }
 
+#[derive(Clone)]
 pub struct CreateEditionRequest {
     pub collection: Uuid,
     pub recipient: String,
@@ -54,9 +59,11 @@ pub struct CreateEditionRequest {
     pub edition: u64,
 }
 
+#[derive(Clone)]
 pub struct UpdateEditionRequest {
     pub collection: Uuid,
     pub owner_address: String,
+    pub seller_fee_basis_points: Option<u16>,
     pub data: DataV2,
 }
 
@@ -342,14 +349,18 @@ impl Edition<CreateDropRequest, CreateEditionRequest, UpdateEditionRequest, Pubk
         }))
     }
 
-    async fn update(&self, request: UpdateEditionRequest) -> Result<(Pubkey, TransactionResponse)> {
+    async fn update(
+        &self,
+        mut request: UpdateEditionRequest,
+    ) -> Result<(Pubkey, TransactionResponse)> {
         let conn = self.db.get();
         let rpc = &self.rpc_client;
         let UpdateEditionRequest {
             collection,
             owner_address,
+            seller_fee_basis_points,
             data,
-        } = request;
+        } = request.clone();
 
         let payer = Keypair::from_bytes(&self.payer_keypair)?;
         let solana_collection_model = solana_collections::Entity::find()
@@ -357,6 +368,28 @@ impl Edition<CreateDropRequest, CreateEditionRequest, UpdateEditionRequest, Pubk
             .one(conn)
             .await?;
         let sc = solana_collection_model.ok_or_else(|| anyhow!("solana collection not found"))?;
+        let mut solana_collection_am = solana_collections::ActiveModel::from(sc.clone());
+
+        if let Some(seller_fee_basis_points) = seller_fee_basis_points {
+            solana_collection_am.seller_fee_basis_points = Set(seller_fee_basis_points.try_into()?);
+            solana_collection_am.update(conn).await?;
+        }
+
+        request.data.seller_fee_basis_points =
+            seller_fee_basis_points.unwrap_or(sc.seller_fee_basis_points.try_into()?);
+
+        let creators = CollectionCreators::find()
+            .filter(collection_creators::Column::CollectionId.eq(collection))
+            .all(conn)
+            .await?;
+
+        request.data.creators = Some(
+            creators
+                .iter()
+                .map(|c| c.clone().try_into())
+                .collect::<Result<Vec<_>>>()?,
+        );
+
         let program_pubkey = mpl_token_metadata::id();
 
         let ins = update_metadata_accounts_v2(
@@ -384,5 +417,24 @@ impl Edition<CreateDropRequest, CreateEditionRequest, UpdateEditionRequest, Pubk
             serialized_message,
             signed_message_signatures: vec![payer_signature.to_string()],
         }))
+    }
+}
+
+impl TryFrom<collection_creators::Model> for Creator {
+    type Error = Error;
+
+    fn try_from(
+        collection_creators::Model {
+            address,
+            verified,
+            share,
+            ..
+        }: collection_creators::Model,
+    ) -> Result<Self> {
+        Ok(Self {
+            address: address.parse()?,
+            verified,
+            share: share.try_into()?,
+        })
     }
 }
