@@ -15,9 +15,8 @@ env:
   APOLLO_PROJECT: hub-dev@current
 
 jobs:
-  release:
+  schema-update:
     runs-on: ubuntu-latest
-    environment: release
     steps:
       -
         name: Checkout
@@ -57,10 +56,9 @@ jobs:
           done
       - 
         name: Setup Solana tools
-        env:
-          PATH: "/home/runner/.local/share/solana/install/active_release/bin:$PATH"
         run: |
           sh -c "$(curl -sSfL https://release.solana.com/v1.15.2/install)"
+          export PATH="/home/runner/.local/share/solana/install/active_release/bin:$PATH"
           #Create keypair.json
           solana-keygen new --silent --outfile keypair.json --no-bip39-passphrase
       - 
@@ -97,10 +95,10 @@ jobs:
         name: Retrieve and push schema to Apollo Studio
         env:
           APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
-          PATH: "/home/runner/.rover/bin:$PATH"
         run: |
           # install rover CLI
           curl -sSL https://rover.apollo.dev/nix/latest | sh
+          export PATH="/home/runner/.rover/bin:$PATH"
           # Retrieve and push schema
           rover subgraph introspect http://localhost:$APP_PORT/graphql | \
           rover subgraph publish $APOLLO_PROJECT \
