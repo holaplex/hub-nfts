@@ -1,14 +1,13 @@
-name: Update schema in Apollo Studio
+name: Update GraphQL schema in Apollo Studio
 on:
   push:
     branches:
-      - mpw/apollo-studio-ci
+      - main
 
 env:
   APP_NAME: ${{ github.event.repository.name }}
   APP_PORT: "3000"
-  APP_IMAGE_TAG: latest 
-  #APP_IMAGE_TAG: ${{ github.sha }}
+  APP_IMAGE_TAG: ${{ github.sha }}
   DOCKER_NETWORK: ci
   DATABASE_URL: "postgres://postgres:holaplex@db:5432/hub_nfts"
   KAFKA_BROKERS: "redpanda:9092"
@@ -61,7 +60,15 @@ jobs:
           export PATH="/home/runner/.local/share/solana/install/active_release/bin:$PATH"
           #Create keypair.json
           solana-keygen new --silent --outfile keypair.json --no-bip39-passphrase
-
+      - 
+        name: Wait for release workflow to succeed
+        uses: lewagon/wait-on-check-action@v1.3.1
+        with:
+          ref: ${{ github.ref }}
+          check-name: release
+          repo-token: ${{ secrets.ACTIONS_TOKEN }}
+          wait-interval: 10
+          allowed-conclusions: success
       - 
         name: Start ${{ github.event.repository.name }} container
         run: |
@@ -83,18 +90,25 @@ jobs:
             docker logs $APP_NAME
             sleep 3
           done
-
       - 
-        name: Retrieve and push schema to Apollo Studio
+        name: Retrieve GraphQL schema and push to Apollo Studio
         env:
           APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
         run: |
           # install rover CLI
           curl -sSL https://rover.apollo.dev/nix/latest | sh
           export PATH="/home/runner/.rover/bin:$PATH"
-          # Retrieve and push schema
+          # Instrospect Graphql Server and push schema
           rover subgraph introspect http://localhost:$APP_PORT/graphql | \
           rover subgraph publish $APOLLO_PROJECT \
             --name $APP_NAME \
             --schema - \
             --routing-url http://$APP_NAME/graphql
+      - 
+        name: Invoke workflow in hub-permissions repo
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          ref: main
+          token: ${{ secrets.ACTIONS_TOKEN }}
+          workflow: opa.yml
+          repo: holaplex/hub-permissions
