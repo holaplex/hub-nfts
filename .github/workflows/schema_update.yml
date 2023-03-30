@@ -72,14 +72,15 @@ jobs:
           --env-file .env \
           -e PORT=$APP_PORT \
           -e NFT_STORAGE_AUTH_TOKEN="" \
-          -e KAFKA_BROKERS=$KAFKA_BROKERS \
-          -e DATABASE_URL=$DATABASE_URL  \
-          holaplex/${{ github.event.repository.name }}:$APP_IMAGE_TAG
+          -e KAFKA_BROKERS="$KAFKA_BROKERS" \
+          -e DATABASE_URL="$DATABASE_URL"  \
+          holaplex/$APP_NAME:$APP_IMAGE_TAG
 
           # wait for the container to be up
           while :; do
             ! curl --silent 'http://localhost:$APP_PORT/graphql' || break
             echo 'waiting for container'
+            docker logs $APP_NAME
             sleep 3
           done
 
