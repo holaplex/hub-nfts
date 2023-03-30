@@ -246,13 +246,13 @@ impl Mutation {
 
     /// This mutation allows updating a drop and it's associated collection by ID.
     /// It returns an error if it fails to reach the database, emit update events or assemble the on-chain transaction.
-    /// Returns the `CreateDropPayload` object on success.
-    pub async fn edit_drop(
+    /// Returns the `PatchDropPayload` object on success.
+    pub async fn patch_drop(
         &self,
         ctx: &Context<'_>,
-        input: EditDropInput,
-    ) -> Result<CreateDropPayload> {
-        let EditDropInput {
+        input: PatchDropInput,
+    ) -> Result<PatchDropPayload> {
+        let PatchDropInput {
             drop,
             price,
             start_time,
@@ -339,7 +339,6 @@ impl Mutation {
                         .update(UpdateEditionRequest {
                             collection: collection.id,
                             owner_address,
-
                             seller_fee_basis_points,
                             data: DataV2 {
                                 name: metadata_json.name.clone(),
@@ -371,7 +370,7 @@ impl Mutation {
             .await?;
         }
 
-        Ok(CreateDropPayload {
+        Ok(PatchDropPayload {
             drop: Drop::new(drop_model, collection),
         })
     }
@@ -484,9 +483,9 @@ impl TryFrom<CollectionCreator> for Creator {
     }
 }
 
-/// Input object for editing a drop and associated collection by ID
+/// Input object for patching a drop and associated collection by ID
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
-pub struct EditDropInput {
+pub struct PatchDropInput {
     /// The unique identifier of the drop
     pub drop: Uuid,
     /// The new price for the drop in the native token of the blockchain
@@ -499,6 +498,13 @@ pub struct EditDropInput {
     pub seller_fee_basis_points: Option<u16>,
     /// The new metadata JSON for the drop
     pub metadata_json: Option<MetadataJsonInput>,
+}
+
+/// Represents the result of a successful patch drop mutation.
+#[derive(Debug, Clone, SimpleObject)]
+pub struct PatchDropPayload {
+    /// The drop that has been patched.
+    drop: Drop,
 }
 
 /// Represents input fields for pausing a drop.
