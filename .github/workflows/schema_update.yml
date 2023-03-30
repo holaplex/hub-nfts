@@ -78,7 +78,7 @@ jobs:
 
           # wait for the container to be up
           while :; do
-            ! curl --silent 'http://localhost:$APP_PORT/graphql' || break
+            ! curl --silent "http://localhost:$APP_PORT/graphql" || break
             echo 'waiting for container'
             docker logs $APP_NAME
             sleep 3
