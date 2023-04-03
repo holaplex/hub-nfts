@@ -1,3 +1,5 @@
+#![allow(clippy::unused_async)]
+
 mod collection;
 mod collection_creator;
 mod drop;

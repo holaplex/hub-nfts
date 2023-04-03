@@ -22,6 +22,8 @@ mod m20230306_154554_drop_unique_identifier_index_on_metadata_jsons;
 mod m20230306_160517_add_total_mints_to_collections;
 mod m20230327_114558_add_paused_at_column_to_drops;
 mod m20230327_194951_add_shutdown_at_column_to_drops_table;
+mod m20230328_212141_add_signature_column_to_collections_n_mints;
+mod m20230328_213529_add_more_creation_status_events;
 
 pub struct Migrator;
 
@@ -51,6 +53,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20230306_160517_add_total_mints_to_collections::Migration),
             Box::new(m20230327_114558_add_paused_at_column_to_drops::Migration),
             Box::new(m20230327_194951_add_shutdown_at_column_to_drops_table::Migration),
+            Box::new(m20230328_212141_add_signature_column_to_collections_n_mints::Migration),
+            Box::new(m20230328_213529_add_more_creation_status_events::Migration),
         ]
     }
 }

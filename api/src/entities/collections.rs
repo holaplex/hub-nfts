@@ -12,17 +12,38 @@ pub struct Model {
     pub blockchain: Blockchain,
     pub supply: Option<i64>,
     pub creation_status: CreationStatus,
-    #[sea_orm(column_type = "Text")]
+    #[sea_orm(column_type = "Text", nullable)]
     pub address: Option<String>,
     pub total_mints: i64,
+    pub signature: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_one = "super::drops::Entity")]
-    Drops,
     #[sea_orm(has_many = "super::collection_creators::Entity")]
-    Creators,
+    CollectionCreators,
+    #[sea_orm(has_many = "super::collection_mints::Entity")]
+    CollectionMints,
+    #[sea_orm(has_many = "super::drops::Entity")]
+    Drops,
+    #[sea_orm(has_many = "super::metadata_json_files::Entity")]
+    MetadataJsonFiles,
+    #[sea_orm(has_many = "super::metadata_jsons::Entity")]
+    MetadataJsons,
+    #[sea_orm(has_many = "super::solana_collections::Entity")]
+    SolanaCollections,
+}
+
+impl Related<super::collection_creators::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::CollectionCreators.def()
+    }
+}
+
+impl Related<super::collection_mints::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::CollectionMints.def()
+    }
 }
 
 impl Related<super::drops::Entity> for Entity {
@@ -31,9 +52,21 @@ impl Related<super::drops::Entity> for Entity {
     }
 }
 
-impl Related<super::collection_creators::Entity> for Entity {
+impl Related<super::metadata_json_files::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Creators.def()
+        Relation::MetadataJsonFiles.def()
+    }
+}
+
+impl Related<super::metadata_jsons::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MetadataJsons.def()
+    }
+}
+
+impl Related<super::solana_collections::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SolanaCollections.def()
     }
 }
 

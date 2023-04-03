@@ -28,6 +28,7 @@ pub struct Collection {
     pub address: Option<String>,
     /// The current number of NFTs minted from the collection.
     pub total_mints: i64,
+    pub signature: Option<String>,
 }
 
 #[ComplexObject]
@@ -83,6 +84,7 @@ impl From<Model> for Collection {
             creation_status,
             address,
             total_mints,
+            signature,
         }: Model,
     ) -> Self {
         Self {
@@ -92,6 +94,7 @@ impl From<Model> for Collection {
             creation_status,
             address,
             total_mints,
+            signature,
         }
     }
 }

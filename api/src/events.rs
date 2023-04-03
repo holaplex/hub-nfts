@@ -1,15 +1,16 @@
 use hub_core::{prelude::*, uuid::Uuid};
-use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, EntityTrait, JoinType, QuerySelect, RelationTrait, Set};
 
 use crate::{
     db::Connection,
     entities::{
-        collection_mints, drops, project_wallets,
+        collection_mints, collections, drops, project_wallets,
         sea_orm_active_enums::{Blockchain, CreationStatus},
     },
     proto::{
         treasury_events::{
             Blockchain as ProtoBlockchainEnum, DropCreated, DropMinted, Event, ProjectWallet,
+            TransactionStatus,
         },
         TreasuryEventKey,
     },
@@ -73,17 +74,31 @@ pub async fn update_drop_status(
     key: TreasuryEventKey,
     payload: DropCreated,
 ) -> Result<()> {
+    let DropCreated {
+        status,
+        tx_signature,
+        ..
+    } = payload;
+
+    let tx_status = TransactionStatus::from_i32(status).context("failed to parse the status")?;
     let drop_id = Uuid::from_str(&key.id)?;
 
-    let drop = drops::Entity::find_by_id(drop_id)
+    let (drop, collection_model) = drops::Entity::find_by_id(drop_id)
+        .select_also(collections::Entity)
+        .join(JoinType::InnerJoin, drops::Relation::Collections.def())
         .one(db.get())
         .await
         .context("failed to load drop from db")?
         .context("drop not found in db")?;
 
+    let collection = collection_model.context("failed to get collection from db")?;
+    let mut collection_active_model: collections::ActiveModel = collection.into();
+    collection_active_model.signature = Set(Some(tx_signature));
+    collection_active_model.update(db.get()).await?;
+
     let mut drops_active_model: drops::ActiveModel = drop.into();
 
-    drops_active_model.creation_status = Set(payload.status.into());
+    drops_active_model.creation_status = Set(tx_status.try_into()?);
     drops_active_model.update(db.get()).await?;
 
     debug!("status updated for drop {:?}", drop_id);
@@ -100,7 +115,14 @@ pub async fn update_collection_mint_status(
     key: TreasuryEventKey,
     payload: DropMinted,
 ) -> Result<()> {
+    let DropMinted {
+        status,
+        tx_signature,
+        ..
+    } = payload;
+
     let collection_mint_id = Uuid::from_str(&key.id)?;
+    let tx_status = TransactionStatus::from_i32(status).context("failed to parse the status")?;
 
     let collection_mint = collection_mints::Entity::find_by_id(collection_mint_id)
         .one(db.get())
@@ -110,7 +132,8 @@ pub async fn update_collection_mint_status(
 
     let mut collection_mint_active_model: collection_mints::ActiveModel = collection_mint.into();
 
-    collection_mint_active_model.creation_status = Set(payload.status.into());
+    collection_mint_active_model.creation_status = Set(tx_status.try_into()?);
+    collection_mint_active_model.signature = Set(Some(tx_signature));
     collection_mint_active_model.update(db.get()).await?;
 
     debug!(
@@ -134,11 +157,18 @@ impl TryFrom<ProtoBlockchainEnum> for Blockchain {
     }
 }
 
-impl From<i32> for CreationStatus {
-    fn from(i: i32) -> Self {
+impl TryFrom<TransactionStatus> for CreationStatus {
+    type Error = Error;
+
+    fn try_from(i: TransactionStatus) -> Result<Self> {
         match i {
-            10 => Self::Created,
-            _ => Self::Pending,
+            TransactionStatus::Unspecified => Err(anyhow!("Invalid enum variant")),
+            TransactionStatus::Blocked => Ok(Self::Blocked),
+            TransactionStatus::Failed => Ok(Self::Failed),
+            TransactionStatus::Confirming => Ok(Self::Created),
+            TransactionStatus::Cancelled => Ok(Self::Canceled),
+            TransactionStatus::Rejected => Ok(Self::Rejected),
+            _ => Ok(Self::Pending),
         }
     }
 }
