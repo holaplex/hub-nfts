@@ -46,7 +46,7 @@ pub struct CreateDropRequest {
     pub name: String,
     pub symbol: String,
     pub seller_fee_basis_points: u16,
-    pub supply: u64,
+    pub supply: Option<u64>,
     pub metadata_json_uri: String,
     pub collection: Uuid,
 }
@@ -189,7 +189,7 @@ impl Edition<CreateDropRequest, CreateEditionRequest, UpdateEditionRequest, Pubk
             owner,
             token_metadata_pubkey,
             payer.pubkey(),
-            Some(supply),
+            supply,
         );
 
         let blockhash = rpc.get_latest_blockhash()?;

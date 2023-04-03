@@ -67,7 +67,7 @@ impl Mutation {
 
         let collection = Collection::new(collections::ActiveModel {
             blockchain: Set(input.blockchain),
-            supply: Set(Some(input.supply.try_into()?)),
+            supply: Set(input.supply.try_into()?),
             creation_status: Set(CreationStatus::Pending),
             ..Default::default()
         })
@@ -457,7 +457,7 @@ pub struct CreateDropInput {
     pub project: Uuid,
     pub price: Option<u64>,
     pub seller_fee_basis_points: Option<u16>,
-    pub supply: u64,
+    pub supply: Option<u64>,
     pub start_time: Option<DateTime<Utc>>,
     pub end_time: Option<DateTime<Utc>>,
     pub blockchain: BlockchainEnum,
