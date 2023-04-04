@@ -1,10 +1,11 @@
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{
+    anyhow,
     chrono::{DateTime, Utc},
     producer::Producer,
 };
-use mpl_token_metadata::state::{Creator, DataV2};
-use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
+use mpl_token_metadata::state::Creator;
+use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
     },
     collection::Collection,
     entities::{
-        collections, drops,
+        collection_creators, collections, drops, metadata_jsons,
         prelude::{Collections, Drops},
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
@@ -253,12 +254,13 @@ impl Mutation {
         input: PatchDropInput,
     ) -> Result<PatchDropPayload> {
         let PatchDropInput {
-            drop,
+            id,
             price,
             start_time,
             end_time,
             seller_fee_basis_points,
             metadata_json,
+            creators,
         } = input;
 
         if price.is_none()
@@ -266,28 +268,35 @@ impl Mutation {
             && end_time.is_none()
             && seller_fee_basis_points.is_none()
             && metadata_json.is_none()
+            && creators.is_none()
         {
-            return Err(Error::new("please select atleast one field to update"));
+            return Err(Error::new("please select at least one field to update"));
         }
 
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
-        let UserID(id) = user_id;
         let conn = db.get();
         let producer = ctx.data::<Producer<NftEvents>>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
         let solana = ctx.data::<Solana>()?;
 
-        let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+        let user_id = user_id
+            .0
+            .ok_or_else(|| Error::new("X-USER-ID header not found"))?;
 
         let (drop_model, collection_model) = Drops::find()
             .join(JoinType::InnerJoin, drops::Relation::Collections.def())
             .select_also(Collections)
-            .filter(drops::Column::Id.eq(drop))
+            .filter(drops::Column::Id.eq(id))
             .one(conn)
             .await?
             .ok_or_else(|| Error::new("drop not found"))?;
 
         let collection = collection_model.ok_or_else(|| Error::new("collection not found"))?;
+
+        let current_creators = collection_creators::Entity::find()
+            .filter(collection_creators::Column::CollectionId.eq(collection.id))
+            .all(conn)
+            .await?;
 
         let mut drop_am = drops::ActiveModel::from(drop_model.clone());
 
@@ -306,6 +315,38 @@ impl Mutation {
             };
         }
 
+        if creators.clone().is_some() {
+            let creators = creators
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|creator| {
+                    Ok(collection_creators::ActiveModel {
+                        collection_id: Set(collection.id),
+                        address: Set(creator.address),
+                        verified: Set(creator.verified.unwrap_or_default()),
+                        share: Set(creator.share.try_into()?),
+                    })
+                })
+                .collect::<anyhow::Result<Vec<collection_creators::ActiveModel>>>()?;
+
+            conn.transaction::<_, (), DbErr>(|txn| {
+                Box::pin(async move {
+                    collection_creators::Entity::delete_many()
+                        .filter(collection_creators::Column::CollectionId.eq(collection.id))
+                        .exec(txn)
+                        .await?;
+
+                    collection_creators::Entity::insert_many(creators)
+                        .exec(txn)
+                        .await?;
+
+                    Ok(())
+                })
+            })
+            .await?;
+        }
+
         drop_am.update(conn).await?;
 
         let owner_address = project_wallets::Entity::find()
@@ -319,56 +360,74 @@ impl Mutation {
             .ok_or_else(|| Error::new("no project wallet found"))?
             .wallet_address;
 
-        if let Some(metadata_json) = metadata_json {
-            let metadata_json_model = MetadataJson::new(collection.id, metadata_json.clone())
+        let metadata_json_model = metadata_jsons::Entity::find()
+            .filter(metadata_jsons::Column::CollectionId.eq(collection.id))
+            .one(conn)
+            .await?
+            .ok_or_else(|| Error::new("metadata json not found"))?;
+
+        let metadata_json_model = if let Some(metadata_json) = metadata_json {
+            metadata_json_model.clone().delete(conn).await?;
+
+            MetadataJson::new(collection.id, metadata_json.clone())
                 .upload(nft_storage)
                 .await?
                 .save(db)
-                .await?;
+                .await?
+        } else {
+            metadata_json_model
+        };
 
-            let (
-                _,
-                TransactionResponse {
-                    serialized_message,
-                    signed_message_signatures,
-                },
-            ) = match collection.blockchain {
-                BlockchainEnum::Solana => {
-                    solana
-                        .edition()
-                        .update(UpdateEditionRequest {
-                            collection: collection.id,
-                            owner_address,
-                            seller_fee_basis_points,
-                            data: DataV2 {
-                                name: metadata_json.name.clone(),
-                                symbol: metadata_json.symbol,
-                                uri: metadata_json_model.uri,
-                                seller_fee_basis_points: 0,
-                                creators: None,
-                                collection: None,
-                                uses: None,
-                            },
-                        })
-                        .await?
-                },
-                _ => {
-                    return Err(Error::new("blockchain not supported yet"));
-                },
-            };
-
-            emit_update_metadata_transaction_event(
-                producer,
-                collection.id,
-                user_id,
+        let (
+            _,
+            TransactionResponse {
                 serialized_message,
                 signed_message_signatures,
-                drop_model.id,
-                drop_model.project_id,
-                collection.blockchain,
-            )
-            .await?;
-        }
+            },
+        ) = match collection.blockchain {
+            BlockchainEnum::Solana => {
+                let creators = if creators.clone().is_some() {
+                    creators
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|creator| creator.try_into())
+                        .collect::<Result<Vec<Creator>, _>>()?
+                } else {
+                    current_creators
+                        .into_iter()
+                        .map(|creator| creator.try_into())
+                        .collect::<Result<Vec<Creator>, _>>()?
+                };
+
+                solana
+                    .edition()
+                    .update(UpdateEditionRequest {
+                        collection: collection.id,
+                        owner_address,
+                        seller_fee_basis_points,
+                        name: metadata_json_model.name,
+                        symbol: metadata_json_model.symbol,
+                        uri: metadata_json_model.uri,
+                        creators,
+                    })
+                    .await?
+            },
+            _ => {
+                return Err(Error::new("blockchain not supported yet"));
+            },
+        };
+
+        emit_update_metadata_transaction_event(
+            producer,
+            collection.id,
+            user_id,
+            serialized_message,
+            signed_message_signatures,
+            drop_model.id,
+            drop_model.project_id,
+            collection.blockchain,
+        )
+        .await?;
 
         Ok(PatchDropPayload {
             drop: Drop::new(drop_model, collection),
@@ -487,7 +546,7 @@ impl TryFrom<CollectionCreator> for Creator {
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct PatchDropInput {
     /// The unique identifier of the drop
-    pub drop: Uuid,
+    pub id: Uuid,
     /// The new price for the drop in the native token of the blockchain
     pub price: Option<u64>,
     /// The new start time for the drop in UTC
@@ -498,6 +557,8 @@ pub struct PatchDropInput {
     pub seller_fee_basis_points: Option<u16>,
     /// The new metadata JSON for the drop
     pub metadata_json: Option<MetadataJsonInput>,
+    /// The creators of the drop
+    pub creators: Option<Vec<CollectionCreator>>,
 }
 
 /// Represents the result of a successful patch drop mutation.

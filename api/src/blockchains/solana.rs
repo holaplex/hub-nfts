@@ -18,7 +18,7 @@ use spl_token::{
 use super::{Edition, TransactionResponse};
 use crate::{
     db::Connection,
-    entities::{collection_creators, prelude::CollectionCreators, solana_collections},
+    entities::{collection_creators, solana_collections},
 };
 
 const TOKEN_PROGRAM_PUBKEY: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -64,7 +64,10 @@ pub struct UpdateEditionRequest {
     pub collection: Uuid,
     pub owner_address: String,
     pub seller_fee_basis_points: Option<u16>,
-    pub data: DataV2,
+    pub name: String,
+    pub symbol: String,
+    pub uri: String,
+    pub creators: Vec<Creator>,
 }
 
 impl Solana {
@@ -349,17 +352,17 @@ impl Edition<CreateDropRequest, CreateEditionRequest, UpdateEditionRequest, Pubk
         }))
     }
 
-    async fn update(
-        &self,
-        mut request: UpdateEditionRequest,
-    ) -> Result<(Pubkey, TransactionResponse)> {
+    async fn update(&self, request: UpdateEditionRequest) -> Result<(Pubkey, TransactionResponse)> {
         let conn = self.db.get();
         let rpc = &self.rpc_client;
         let UpdateEditionRequest {
             collection,
             owner_address,
             seller_fee_basis_points,
-            data,
+            name,
+            symbol,
+            uri,
+            creators,
         } = request.clone();
 
         let payer = Keypair::from_bytes(&self.payer_keypair)?;
@@ -375,21 +378,6 @@ impl Edition<CreateDropRequest, CreateEditionRequest, UpdateEditionRequest, Pubk
             solana_collection_am.update(conn).await?;
         }
 
-        request.data.seller_fee_basis_points =
-            seller_fee_basis_points.unwrap_or(sc.seller_fee_basis_points.try_into()?);
-
-        let creators = CollectionCreators::find()
-            .filter(collection_creators::Column::CollectionId.eq(collection))
-            .all(conn)
-            .await?;
-
-        request.data.creators = Some(
-            creators
-                .iter()
-                .map(|c| c.clone().try_into())
-                .collect::<Result<Vec<_>>>()?,
-        );
-
         let program_pubkey = mpl_token_metadata::id();
 
         let ins = update_metadata_accounts_v2(
@@ -397,7 +385,16 @@ impl Edition<CreateDropRequest, CreateEditionRequest, UpdateEditionRequest, Pubk
             sc.metadata_pubkey.parse()?,
             owner_address.parse()?,
             None,
-            Some(data),
+            Some(DataV2 {
+                name,
+                symbol,
+                uri,
+                seller_fee_basis_points: seller_fee_basis_points
+                    .unwrap_or(sc.seller_fee_basis_points.try_into()?),
+                creators: Some(creators),
+                collection: None,
+                uses: None,
+            }),
             None,
             None,
         );

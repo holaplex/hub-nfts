@@ -74,8 +74,6 @@ impl MetadataJson {
             external_url: Set(payload.external_url),
         };
 
-        // let metadata_json = metadata_json_active_model.insert(conn).await?;
-
         let metadata_json = MetadataJsons::insert(metadata_json_active_model)
             .on_conflict(
                 OnConflict::column(MetadataJsonColumn::CollectionId)
