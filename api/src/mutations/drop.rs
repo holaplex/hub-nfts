@@ -390,12 +390,12 @@ impl Mutation {
                     creators
                         .unwrap_or_default()
                         .into_iter()
-                        .map(|creator| creator.try_into())
+                        .map(TryInto::try_into)
                         .collect::<Result<Vec<Creator>, _>>()?
                 } else {
                     current_creators
                         .into_iter()
-                        .map(|creator| creator.try_into())
+                        .map(TryInto::try_into)
                         .collect::<Result<Vec<Creator>, _>>()?
                 };
 
