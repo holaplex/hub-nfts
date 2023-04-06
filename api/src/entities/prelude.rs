@@ -5,5 +5,6 @@ pub use super::{
     collections::Entity as Collections, drops::Entity as Drops,
     metadata_json_attributes::Entity as MetadataJsonAttributes,
     metadata_json_files::Entity as MetadataJsonFiles, metadata_jsons::Entity as MetadataJsons,
-    project_wallets::Entity as ProjectWallets, solana_collections::Entity as SolanaCollections,
+    project_wallets::Entity as ProjectWallets, purchases::Entity as Purchases,
+    solana_collections::Entity as SolanaCollections,
 };
