@@ -94,7 +94,7 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Collections,
-    #[sea_orm(has_many = "super::metadata_jsons::Entity")]
+    #[sea_orm(has_one = "super::metadata_jsons::Entity")]
     MetadataJsons,
 }
 
