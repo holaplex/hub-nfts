@@ -10,7 +10,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    pub collection_id: Uuid,
+    pub metadata_json_id: Uuid,
     #[sea_orm(column_type = "Text")]
     /// The name of the attribute.
     pub trait_type: String,
@@ -23,8 +23,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::metadata_jsons::Entity",
-        from = "Column::CollectionId",
-        to = "super::metadata_jsons::Column::CollectionId",
+        from = "Column::MetadataJsonId",
+        to = "super::metadata_jsons::Column::Id",
         on_update = "Cascade",
         on_delete = "Cascade"
     )]

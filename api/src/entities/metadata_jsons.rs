@@ -14,7 +14,7 @@ use crate::AppContext;
 #[graphql(complex, concrete(name = "MetadataJson", params()))]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub collection_id: Uuid,
+    pub id: Uuid,
     pub identifier: String,
     /// The assigned name of the NFT.
     pub name: String,
@@ -44,17 +44,23 @@ impl Model {
             ..
         } = ctx.data::<AppContext>()?;
 
-        metadata_json_attributes_loader
-            .load_one(self.collection_id)
-            .await
+        metadata_json_attributes_loader.load_one(self.id).await
     }
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
+        belongs_to = "super::collection_mints::Entity",
+        from = "Column::Id",
+        to = "super::collection_mints::Column::Id",
+        on_update = "Cascade",
+        on_delete = "Cascade"
+    )]
+    CollectionMints,
+    #[sea_orm(
         belongs_to = "super::collections::Entity",
-        from = "Column::CollectionId",
+        from = "Column::Id",
         to = "super::collections::Column::Id",
         on_update = "Cascade",
         on_delete = "Cascade"
@@ -62,6 +68,14 @@ pub enum Relation {
     Collections,
     #[sea_orm(has_many = "super::metadata_json_attributes::Entity")]
     MetadataJsonAttributes,
+    #[sea_orm(has_many = "super::metadata_json_files::Entity")]
+    MetadataJsonFiles,
+}
+
+impl Related<super::collection_mints::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::CollectionMints.def()
+    }
 }
 
 impl Related<super::collections::Entity> for Entity {
@@ -73,6 +87,12 @@ impl Related<super::collections::Entity> for Entity {
 impl Related<super::metadata_json_attributes::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::MetadataJsonAttributes.def()
+    }
+}
+
+impl Related<super::metadata_json_files::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MetadataJsonFiles.def()
     }
 }
 

@@ -15,6 +15,7 @@ use crate::{
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
+    metadata_json::MetadataJson,
     proto::{self, nft_events, MintTransaction, NftEventKey, NftEvents, Transaction},
     AppContext, UserID,
 };
@@ -136,7 +137,13 @@ impl Mutation {
         };
 
         let collection_mint_model = collection_mint_active_model.insert(conn).await?;
+
         let proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
+
+        MetadataJson::fetch(collection_mint_model.id, db)
+            .await?
+            .save(db)
+            .await?;
 
         let event = NftEvents {
             event: Some(nft_events::Event::MintDrop(MintTransaction {

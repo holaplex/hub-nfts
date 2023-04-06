@@ -82,11 +82,19 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Collections,
+    #[sea_orm(has_many = "super::metadata_jsons::Entity")]
+    MetadataJsons,
 }
 
 impl Related<super::collections::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Collections.def()
+    }
+}
+
+impl Related<super::metadata_jsons::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MetadataJsons.def()
     }
 }
 

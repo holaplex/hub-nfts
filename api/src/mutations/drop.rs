@@ -76,7 +76,7 @@ impl Mutation {
         .save(db)
         .await?;
 
-        let metadata_json_model = MetadataJson::new(collection.id, input.metadata_json)
+        let metadata_json_model = MetadataJson::new(collection.id, input.metadata_json, None, None)
             .upload(nft_storage)
             .await?
             .save(db)
@@ -361,7 +361,7 @@ impl Mutation {
             .wallet_address;
 
         let metadata_json_model = metadata_jsons::Entity::find()
-            .filter(metadata_jsons::Column::CollectionId.eq(collection.id))
+            .filter(metadata_jsons::Column::Id.eq(collection.id))
             .one(conn)
             .await?
             .ok_or_else(|| Error::new("metadata json not found"))?;
@@ -369,7 +369,7 @@ impl Mutation {
         let metadata_json_model = if let Some(metadata_json) = metadata_json {
             metadata_json_model.clone().delete(conn).await?;
 
-            MetadataJson::new(collection.id, metadata_json.clone())
+            MetadataJson::new(collection.id, metadata_json.clone(), None, None)
                 .upload(nft_storage)
                 .await?
                 .save(db)
@@ -390,12 +390,12 @@ impl Mutation {
                     creators
                         .unwrap_or_default()
                         .into_iter()
-                        .map(|creator| creator.try_into())
+                        .map(TryInto::try_into)
                         .collect::<Result<Vec<Creator>, _>>()?
                 } else {
                     current_creators
                         .into_iter()
-                        .map(|creator| creator.try_into())
+                        .map(TryInto::try_into)
                         .collect::<Result<Vec<Creator>, _>>()?
                 };
 

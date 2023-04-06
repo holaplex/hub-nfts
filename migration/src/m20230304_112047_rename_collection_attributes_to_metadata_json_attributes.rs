@@ -80,7 +80,7 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(Iden)]
-enum MetadataJsonAttributes {
+pub enum MetadataJsonAttributes {
     Table,
     CollectionId,
 }
