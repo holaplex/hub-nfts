@@ -14,24 +14,17 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct MetadataJson {
     metadata_json: MetadataJsonInput,
-    id: Uuid,
     uri: Option<String>,
     identifier: Option<String>,
 }
 
 impl MetadataJson {
     #[must_use]
-    pub fn new(
-        id: Uuid,
-        metadata_json: MetadataJsonInput,
-        uri: Option<String>,
-        identifier: Option<String>,
-    ) -> Self {
+    pub fn new(metadata_json: MetadataJsonInput) -> Self {
         Self {
             metadata_json,
-            id,
-            uri,
-            identifier,
+            uri: None,
+            identifier: None,
         }
     }
 
@@ -64,7 +57,6 @@ impl MetadataJson {
 
         Ok(Self {
             metadata_json,
-            id,
             uri: Some(metadata_json_model.uri.clone()),
             identifier: Some(metadata_json_model.identifier),
         })
@@ -90,8 +82,7 @@ impl MetadataJson {
     ///
     /// # Errors
     /// This function fails if unable to save `metadata_json` to the db
-    pub async fn save(&self, db: &Connection) -> Result<metadata_jsons::Model> {
-        let id = self.id;
+    pub async fn save(&self, id: Uuid, db: &Connection) -> Result<metadata_jsons::Model> {
         let payload = self.metadata_json.clone();
         let identifier = self
             .identifier

@@ -3,7 +3,7 @@
 use async_graphql::{ComplexObject, Context, Result, SimpleObject};
 use sea_orm::entity::prelude::*;
 
-use super::sea_orm_active_enums::CreationStatus;
+use super::{metadata_jsons, sea_orm_active_enums::CreationStatus};
 use crate::{objects::Collection, AppContext};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
@@ -43,6 +43,18 @@ impl CollectionMint {
         } = ctx.data::<AppContext>()?;
 
         collection_loader.load_one(self.collection_id).await
+    }
+
+    /// The metadata json associated to the collection.
+    /// ## References
+    /// [Metaplex v1.1.0 Standard](https://docs.metaplex.com/programs/token-metadata/token-standard)
+    async fn metadata_json(&self, ctx: &Context<'_>) -> Result<Option<metadata_jsons::Model>> {
+        let AppContext {
+            metadata_json_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        metadata_json_loader.load_one(self.id).await
     }
 }
 

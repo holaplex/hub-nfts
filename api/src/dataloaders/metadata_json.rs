@@ -58,7 +58,10 @@ impl DataLoader<Uuid> for AttributesLoader {
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let metadata_json_attributes = metadata_json_attributes::Entity::find()
-            .filter(metadata_json_attributes::Column::Id.is_in(keys.iter().map(ToOwned::to_owned)))
+            .filter(
+                metadata_json_attributes::Column::MetadataJsonId
+                    .is_in(keys.iter().map(ToOwned::to_owned)),
+            )
             .all(self.db.get())
             .await?;
 

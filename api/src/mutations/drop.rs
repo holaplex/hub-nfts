@@ -76,10 +76,10 @@ impl Mutation {
         .save(db)
         .await?;
 
-        let metadata_json_model = MetadataJson::new(collection.id, input.metadata_json, None, None)
+        let metadata_json_model = MetadataJson::new(input.metadata_json)
             .upload(nft_storage)
             .await?
-            .save(db)
+            .save(collection.id, db)
             .await?;
 
         let (
@@ -369,10 +369,10 @@ impl Mutation {
         let metadata_json_model = if let Some(metadata_json) = metadata_json {
             metadata_json_model.clone().delete(conn).await?;
 
-            MetadataJson::new(collection.id, metadata_json.clone(), None, None)
+            MetadataJson::new(metadata_json.clone())
                 .upload(nft_storage)
                 .await?
-                .save(db)
+                .save(collection.id, db)
                 .await?
         } else {
             metadata_json_model
