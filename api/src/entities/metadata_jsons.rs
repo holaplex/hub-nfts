@@ -50,38 +50,10 @@ impl Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::collection_mints::Entity",
-        from = "Column::Id",
-        to = "super::collection_mints::Column::Id",
-        on_update = "Cascade",
-        on_delete = "Cascade"
-    )]
-    CollectionMints,
-    #[sea_orm(
-        belongs_to = "super::collections::Entity",
-        from = "Column::Id",
-        to = "super::collections::Column::Id",
-        on_update = "Cascade",
-        on_delete = "Cascade"
-    )]
-    Collections,
     #[sea_orm(has_many = "super::metadata_json_attributes::Entity")]
     MetadataJsonAttributes,
     #[sea_orm(has_many = "super::metadata_json_files::Entity")]
     MetadataJsonFiles,
-}
-
-impl Related<super::collection_mints::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::CollectionMints.def()
-    }
-}
-
-impl Related<super::collections::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Collections.def()
-    }
 }
 
 impl Related<super::metadata_json_attributes::Entity> for Entity {
