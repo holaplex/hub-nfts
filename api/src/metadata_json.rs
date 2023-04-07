@@ -14,20 +14,52 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct MetadataJson {
     metadata_json: MetadataJsonInput,
-    collection: Uuid,
     uri: Option<String>,
     identifier: Option<String>,
 }
 
 impl MetadataJson {
     #[must_use]
-    pub fn new(collection: Uuid, metadata_json: MetadataJsonInput) -> Self {
+    pub fn new(metadata_json: MetadataJsonInput) -> Self {
         Self {
             metadata_json,
-            collection,
             uri: None,
             identifier: None,
         }
+    }
+
+    /// Fetches metadata from the database and constructs a `Self` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The ID of the metadata to fetch.
+    /// * `db` - The database connection to use.
+    ///
+    /// # Errors
+    ///
+    /// This function fails if there is no matching `metadata_json` entry in the database
+    /// or if it is unable to fetch related data from the database
+    pub async fn fetch(id: Uuid, db: &Connection) -> Result<Self> {
+        let (metadata_json_model, attributes) = metadata_jsons::Entity::find_by_id(id)
+            .find_with_related(MetadataJsonAttributes)
+            .all(db.get())
+            .await?
+            .first()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| anyhow!("no metadata_json entry found in db"))?;
+
+        let files = metadata_json_files::Entity::find()
+            .filter(metadata_json_files::Column::MetadataJsonId.eq(id))
+            .all(db.get())
+            .await?;
+
+        let metadata_json = (metadata_json_model.clone(), attributes, Some(files)).into();
+
+        Ok(Self {
+            metadata_json,
+            uri: Some(metadata_json_model.uri.clone()),
+            identifier: Some(metadata_json_model.identifier),
+        })
     }
 
     /// Res
@@ -50,8 +82,7 @@ impl MetadataJson {
     ///
     /// # Errors
     /// This function fails if unable to save `metadata_json` to the db
-    pub async fn save(&self, db: &Connection) -> Result<metadata_jsons::Model> {
-        let collection = self.collection;
+    pub async fn save(&self, id: Uuid, db: &Connection) -> Result<metadata_jsons::Model> {
         let payload = self.metadata_json.clone();
         let identifier = self
             .identifier
@@ -63,7 +94,7 @@ impl MetadataJson {
             .ok_or_else(|| anyhow!("no uri. call #upload before #save"))?;
 
         let metadata_json_active_model = metadata_jsons::ActiveModel {
-            collection_id: Set(collection),
+            id: Set(id),
             identifier: Set(identifier),
             name: Set(payload.name),
             uri: Set(uri),
@@ -76,7 +107,7 @@ impl MetadataJson {
 
         let metadata_json = MetadataJsons::insert(metadata_json_active_model)
             .on_conflict(
-                OnConflict::column(MetadataJsonColumn::CollectionId)
+                OnConflict::column(MetadataJsonColumn::Id)
                     .update_columns([
                         MetadataJsonColumn::Identifier,
                         MetadataJsonColumn::Name,
@@ -95,13 +126,13 @@ impl MetadataJson {
         let tx = db.get().clone().begin().await?;
 
         MetadataJsonAttributes::delete_many()
-            .filter(metadata_json_attributes::Column::CollectionId.eq(collection))
+            .filter(metadata_json_attributes::Column::MetadataJsonId.eq(metadata_json.id))
             .exec(&tx)
             .await?;
 
         for attribute in payload.attributes {
             let am = metadata_json_attributes::ActiveModel {
-                collection_id: Set(collection),
+                metadata_json_id: Set(metadata_json.id),
                 trait_type: Set(attribute.trait_type),
                 value: Set(attribute.value),
                 ..Default::default()
@@ -116,13 +147,13 @@ impl MetadataJson {
             let tx = db.get().clone().begin().await?;
 
             MetadataJsonFiles::delete_many()
-                .filter(metadata_json_files::Column::CollectionId.eq(collection))
+                .filter(metadata_json_files::Column::MetadataJsonId.eq(metadata_json.id))
                 .exec(&tx)
                 .await?;
 
             for file in files {
                 let metadata_json_file_am = metadata_json_files::ActiveModel {
-                    collection_id: Set(collection),
+                    metadata_json_id: Set(metadata_json.id),
                     uri: Set(file.uri),
                     file_type: Set(file.file_type),
                     ..Default::default()

@@ -28,13 +28,13 @@ impl DataLoader<Uuid> for Loader {
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let metadata_jsons = metadata_jsons::Entity::find()
-            .filter(metadata_jsons::Column::CollectionId.is_in(keys.iter().map(ToOwned::to_owned)))
+            .filter(metadata_jsons::Column::Id.is_in(keys.iter().map(ToOwned::to_owned)))
             .all(self.db.get())
             .await?;
 
         Ok(metadata_jsons
             .into_iter()
-            .map(|metadata_json| (metadata_json.collection_id, metadata_json))
+            .map(|metadata_json| (metadata_json.id, metadata_json))
             .collect())
     }
 }
@@ -59,7 +59,7 @@ impl DataLoader<Uuid> for AttributesLoader {
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let metadata_json_attributes = metadata_json_attributes::Entity::find()
             .filter(
-                metadata_json_attributes::Column::CollectionId
+                metadata_json_attributes::Column::MetadataJsonId
                     .is_in(keys.iter().map(ToOwned::to_owned)),
             )
             .all(self.db.get())
@@ -68,10 +68,10 @@ impl DataLoader<Uuid> for AttributesLoader {
         Ok(metadata_json_attributes.into_iter().fold(
             HashMap::new(),
             |mut acc, metadata_json_attribute| {
-                acc.entry(metadata_json_attribute.collection_id)
+                acc.entry(metadata_json_attribute.id)
                     .or_insert_with(Vec::new);
 
-                acc.entry(metadata_json_attribute.collection_id)
+                acc.entry(metadata_json_attribute.id)
                     .and_modify(|attributes| attributes.push(metadata_json_attribute));
 
                 acc

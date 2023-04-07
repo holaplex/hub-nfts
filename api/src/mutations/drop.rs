@@ -76,10 +76,10 @@ impl Mutation {
         .save(db)
         .await?;
 
-        let metadata_json_model = MetadataJson::new(collection.id, input.metadata_json)
+        let metadata_json_model = MetadataJson::new(input.metadata_json)
             .upload(nft_storage)
             .await?
-            .save(db)
+            .save(collection.id, db)
             .await?;
 
         let (
@@ -361,7 +361,7 @@ impl Mutation {
             .wallet_address;
 
         let metadata_json_model = metadata_jsons::Entity::find()
-            .filter(metadata_jsons::Column::CollectionId.eq(collection.id))
+            .filter(metadata_jsons::Column::Id.eq(collection.id))
             .one(conn)
             .await?
             .ok_or_else(|| Error::new("metadata json not found"))?;
@@ -369,10 +369,10 @@ impl Mutation {
         let metadata_json_model = if let Some(metadata_json) = metadata_json {
             metadata_json_model.clone().delete(conn).await?;
 
-            MetadataJson::new(collection.id, metadata_json.clone())
+            MetadataJson::new(metadata_json.clone())
                 .upload(nft_storage)
                 .await?
-                .save(db)
+                .save(collection.id, db)
                 .await?
         } else {
             metadata_json_model

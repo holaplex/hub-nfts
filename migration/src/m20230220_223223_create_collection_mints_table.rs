@@ -93,7 +93,7 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(Iden)]
-enum CollectionMints {
+pub enum CollectionMints {
     Table,
     Id,
     CollectionId,

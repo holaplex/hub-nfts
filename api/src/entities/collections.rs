@@ -26,8 +26,6 @@ pub enum Relation {
     CollectionMints,
     #[sea_orm(has_many = "super::drops::Entity")]
     Drops,
-    #[sea_orm(has_many = "super::metadata_json_files::Entity")]
-    MetadataJsonFiles,
     #[sea_orm(has_many = "super::metadata_jsons::Entity")]
     MetadataJsons,
     #[sea_orm(has_many = "super::solana_collections::Entity")]
@@ -49,12 +47,6 @@ impl Related<super::collection_mints::Entity> for Entity {
 impl Related<super::drops::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Drops.def()
-    }
-}
-
-impl Related<super::metadata_json_files::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::MetadataJsonFiles.def()
     }
 }
 
