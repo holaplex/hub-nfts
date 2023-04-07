@@ -12,7 +12,7 @@ use crate::{
     entities::{
         collection_mints, collections, drops,
         prelude::{Collections, Drops},
-        project_wallets,
+        project_wallets, purchases,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
@@ -51,30 +51,8 @@ impl Mutation {
         let (drop_model, collection_model) =
             drop_model.ok_or_else(|| Error::new("drop not found"))?;
 
-        // Checks that drop is currently running
-        drop_model
-            .paused_at
-            .map_or(Ok(()), |_| Err(Error::new("Drop status is paused")))?;
-
-        drop_model
-            .shutdown_at
-            .map_or(Ok(()), |_| Err(Error::new("Drop status is shutdown")))?;
-
-        drop_model.start_time.map_or(Ok(()), |start_time| {
-            if start_time <= Utc::now().naive_utc() {
-                Ok(())
-            } else {
-                Err(Error::new("Drop has not yet started"))
-            }
-        })?;
-
-        drop_model.end_time.map_or(Ok(()), |end_time| {
-            if end_time > Utc::now().naive_utc() {
-                Ok(())
-            } else {
-                Err(Error::new("Drop has already ended"))
-            }
-        })?;
+        // Call check_drop_status to check that drop is currently running
+        check_drop_status(&drop_model).await?;
 
         let collection = collection_model.ok_or_else(|| Error::new("collection not found"))?;
 
@@ -86,6 +64,7 @@ impl Mutation {
 
         collection_am.update(conn).await?;
 
+        // Fetch the project wallet address which will sign the transaction by hub-treasuries
         let wallet = project_wallets::Entity::find()
             .filter(
                 project_wallets::Column::ProjectId
@@ -127,10 +106,11 @@ impl Mutation {
             },
         };
 
+        // insert a collection mint record into database
         let collection_mint_active_model = collection_mints::ActiveModel {
             collection_id: Set(collection.id),
             address: Set(mint_address.to_string()),
-            owner: Set(input.recipient),
+            owner: Set(input.recipient.clone()),
             creation_status: Set(CreationStatus::Pending),
             created_by: Set(user_id),
             ..Default::default()
@@ -145,6 +125,21 @@ impl Mutation {
             .save(collection_mint_model.id, db)
             .await?;
 
+        // inserts a purchase record in the database
+        let purchase_am = purchases::ActiveModel {
+            mint_id: Set(collection_mint_model.id),
+            wallet: Set(input.recipient),
+            spent: Set(drop_model.price),
+            drop_id: Set(Some(drop_model.id)),
+            tx_signature: Set(None),
+            status: Set(CreationStatus::Pending),
+            created_at: Set(Utc::now().naive_utc()),
+            ..Default::default()
+        };
+
+        purchase_am.insert(conn).await?;
+
+        // emit `MintDrop` event
         let event = NftEvents {
             event: Some(nft_events::Event::MintDrop(MintTransaction {
                 transaction: Some(Transaction {
@@ -168,6 +163,40 @@ impl Mutation {
         })
     }
 }
+
+/// Checks the status of a drop by verifying if it is currently running based on its start time, end time, and pause/shutdown status.
+/// # Errors
+///
+/// This function returns an error if the drop is paused,
+/// shutdown, has not yet started, or has already ended based
+async fn check_drop_status(drop_model: &drops::Model) -> Result<(), Error> {
+    drop_model
+        .paused_at
+        .map_or(Ok(()), |_| Err(Error::new("Drop status is paused")))?;
+
+    drop_model
+        .shutdown_at
+        .map_or(Ok(()), |_| Err(Error::new("Drop status is shutdown")))?;
+
+    drop_model.start_time.map_or(Ok(()), |start_time| {
+        if start_time <= Utc::now().naive_utc() {
+            Ok(())
+        } else {
+            Err(Error::new("Drop has not yet started"))
+        }
+    })?;
+
+    drop_model.end_time.map_or(Ok(()), |end_time| {
+        if end_time > Utc::now().naive_utc() {
+            Ok(())
+        } else {
+            Err(Error::new("Drop has already ended"))
+        }
+    })?;
+
+    Ok(())
+}
+
 #[derive(Debug, Clone, InputObject)]
 pub struct MintDropInput {
     drop: Uuid,

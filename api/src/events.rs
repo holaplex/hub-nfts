@@ -1,10 +1,15 @@
 use hub_core::{prelude::*, uuid::Uuid};
-use sea_orm::{ActiveModelTrait, EntityTrait, JoinType, QuerySelect, RelationTrait, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait,
+    Set,
+};
 
 use crate::{
     db::Connection,
     entities::{
-        collection_mints, collections, drops, project_wallets,
+        collection_mints, collections, drops,
+        prelude::Purchases,
+        project_wallets, purchases,
         sea_orm_active_enums::{Blockchain, CreationStatus},
     },
     proto::{
@@ -17,18 +22,16 @@ use crate::{
     Services,
 };
 
-/// Res
+/// Process the given message for various services.
 ///
 /// # Errors
-/// This function fails if ...
+/// This functioncan return an error if it fails to process any event
 pub async fn process(msg: Services, db: Connection) -> Result<()> {
     // match topics
     match msg {
         Services::Treasuries(key, e) => match e.event {
-            Some(Event::DropCreated(payload)) => update_drop_status(db, key, payload).await,
-            Some(Event::DropMinted(payload)) => {
-                update_collection_mint_status(db, key, payload).await
-            },
+            Some(Event::DropCreated(payload)) => process_drop_created_event(db, key, payload).await,
+            Some(Event::DropMinted(payload)) => process_drop_minted_event(db, key, payload).await,
             Some(Event::ProjectWalletCreated(payload)) => {
                 process_project_wallet_created_event(db, payload).await
             },
@@ -37,10 +40,13 @@ pub async fn process(msg: Services, db: Connection) -> Result<()> {
     }
 }
 
-/// Res
+/// Process a project wallet created event.
 ///
 /// # Errors
-/// This function fails if .
+/// This function can return an error in the following cases:
+/// - Failed to parse UUID from string
+/// - Failed to get blockchain enum variant
+/// - Failed to insert project wallet into the database
 pub async fn process_project_wallet_created_event(
     db: Connection,
     payload: ProjectWallet,
@@ -65,11 +71,15 @@ pub async fn process_project_wallet_created_event(
     Ok(())
 }
 
-/// Res
+/// Process a drop created event.
 ///
 /// # Errors
-/// This function fails if .
-pub async fn update_drop_status(
+/// This function can return an error in the following cases:
+/// - Failed to parse transaction status from i32
+/// - Failed to parse UUID from string
+/// - Failed to load drop from the database
+/// - Failed to update collection in the database
+pub async fn process_drop_created_event(
     db: Connection,
     key: TreasuryEventKey,
     payload: DropCreated,
@@ -106,11 +116,14 @@ pub async fn update_drop_status(
     Ok(())
 }
 
-/// Res
+/// Process a drop minted event.
 ///
 /// # Errors
-/// This function fails if .
-pub async fn update_collection_mint_status(
+/// This function can return an error in the following cases:
+/// - Failed to parse UUID from string
+/// - Failed to parse transaction status from i32
+/// - Failed to load or update collection mint or purchase from the database
+pub async fn process_drop_minted_event(
     db: Connection,
     key: TreasuryEventKey,
     payload: DropMinted,
@@ -133,13 +146,21 @@ pub async fn update_collection_mint_status(
     let mut collection_mint_active_model: collection_mints::ActiveModel = collection_mint.into();
 
     collection_mint_active_model.creation_status = Set(tx_status.try_into()?);
-    collection_mint_active_model.signature = Set(Some(tx_signature));
+    collection_mint_active_model.signature = Set(Some(tx_signature.clone()));
     collection_mint_active_model.update(db.get()).await?;
 
-    debug!(
-        "status updated for collection mint {:?}",
-        collection_mint_id
-    );
+    let purchase = Purchases::find()
+        .filter(purchases::Column::MintId.eq(collection_mint_id))
+        .one(db.get())
+        .await
+        .context("failed to load purchase from db")?
+        .context("purchase not found in db")?;
+
+    let mut purchase_am: purchases::ActiveModel = purchase.into();
+
+    purchase_am.status = Set(tx_status.try_into()?);
+    purchase_am.tx_signature = Set(Some(tx_signature));
+    purchase_am.update(db.get()).await?;
 
     Ok(())
 }
