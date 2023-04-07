@@ -24,6 +24,7 @@ impl MigrationTrait for Migration {
                             .extra("default gen_random_uuid()".to_string()),
                     )
                     .col(ColumnDef::new(Purchases::MintId).uuid().not_null())
+                    .col(ColumnDef::new(Purchases::DropId).uuid())
                     .col(ColumnDef::new(Purchases::Wallet).text().not_null())
                     .col(ColumnDef::new(Purchases::Spent).big_integer().not_null())
                     .col(ColumnDef::new(Purchases::TxSignature).text())
@@ -75,6 +76,17 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 IndexCreateStatement::new()
+                    .name("purchases-customer_id_idx")
+                    .table(Purchases::Table)
+                    .col(Purchases::DropId)
+                    .index_type(IndexType::Hash)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                IndexCreateStatement::new()
                     .name("purchases-created-at_idx")
                     .table(Purchases::Table)
                     .col(Purchases::CreatedAt)
@@ -95,6 +107,7 @@ impl MigrationTrait for Migration {
 enum Purchases {
     Table,
     Id,
+    DropId,
     MintId,
     Wallet,
     TxSignature,

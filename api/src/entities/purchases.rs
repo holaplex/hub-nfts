@@ -8,16 +8,26 @@ use super::sea_orm_active_enums::CreationStatus;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
 #[sea_orm(table_name = "purchases")]
 #[graphql(concrete(name = "Purchase", params()))]
+/// Represents the purchase of an NFT.
 pub struct Model {
+    /// The ID of the purchase.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
+    /// The ID of the NFT being purchased.
     pub mint_id: Uuid,
+    /// The ID of the drop that facilitated the purchase, if any.
+    pub drop_id: Option<Uuid>,
+    /// The wallet address of the buyer.
     #[sea_orm(column_type = "Text")]
     pub wallet: String,
+    /// The amount spent on the purchase.
     pub spent: i64,
+    /// The signature of the transaction, if any.
     #[sea_orm(column_type = "Text", nullable)]
     pub tx_signature: Option<String>,
+    /// The status of the creation of the NFT.
     pub status: CreationStatus,
+    /// The date and time when the purchase was created.
     pub created_at: DateTime,
 }
 
@@ -31,11 +41,23 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     CollectionMints,
+    #[sea_orm(
+        belongs_to = "super::drops::Entity",
+        from = "Column::DropId",
+        to = "super::drops::Column::Id"
+    )]
+    Drop,
 }
 
 impl Related<super::collection_mints::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::CollectionMints.def()
+    }
+}
+
+impl Related<super::drops::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Drop.def()
     }
 }
 

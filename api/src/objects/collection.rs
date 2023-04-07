@@ -6,7 +6,7 @@ use crate::{
     entities::{
         collection_creators, collection_mints,
         collections::Model,
-        metadata_jsons,
+        metadata_jsons, purchases,
         sea_orm_active_enums::{Blockchain, CreationStatus},
     },
     AppContext,
@@ -72,6 +72,16 @@ impl Collection {
         let AppContext { holders_loader, .. } = ctx.data::<AppContext>()?;
 
         holders_loader.load_one(self.id).await
+    }
+
+    /// A list of all NFT purchases from the collection, including both primary and secondary sales.
+    async fn purchases(&self, ctx: &Context<'_>) -> Result<Option<Vec<purchases::Model>>> {
+        let AppContext {
+            collection_purchases_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        collection_purchases_loader.load_one(self.id).await
     }
 }
 

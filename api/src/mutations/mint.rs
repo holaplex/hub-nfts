@@ -130,6 +130,7 @@ impl Mutation {
             mint_id: Set(collection_mint_model.id),
             wallet: Set(input.recipient),
             spent: Set(drop_model.price),
+            drop_id: Set(Some(drop_model.id)),
             tx_signature: Set(None),
             status: Set(CreationStatus::Pending),
             created_at: Set(Utc::now().naive_utc()),

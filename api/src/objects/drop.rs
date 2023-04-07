@@ -1,9 +1,12 @@
-use async_graphql::{Enum, FieldError, Object, Result};
+use async_graphql::{Context, Enum, FieldError, Object, Result};
 use hub_core::chrono::Utc;
 use sea_orm::entity::prelude::*;
 
 use super::Collection;
-use crate::entities::{collections, drops, sea_orm_active_enums::CreationStatus};
+use crate::{
+    entities::{collections, drops, purchases, sea_orm_active_enums::CreationStatus},
+    AppContext,
+};
 
 /// An NFT campaign that controls the minting rules for a collection, such as its start date and end date.
 #[derive(Clone, Debug)]
@@ -119,6 +122,16 @@ impl Drop {
             (_, _, Some(false), ..) => Ok(DropStatus::Minting),
             _ => Err(FieldError::new("unsupported drop status")),
         }
+    }
+
+    /// A list of all NFT purchases from this drop.
+    async fn purchases(&self, ctx: &Context<'_>) -> Result<Option<Vec<purchases::Model>>> {
+        let AppContext {
+            drop_purchases_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        drop_purchases_loader.load_one(self.drop.id).await
     }
 }
 
