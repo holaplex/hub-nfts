@@ -12,7 +12,6 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub mint_id: Uuid,
-    pub customer_id: Uuid,
     #[sea_orm(column_type = "Text")]
     pub wallet: String,
     pub spent: i64,

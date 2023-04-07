@@ -128,7 +128,6 @@ impl Mutation {
         // inserts a purchase record in the database
         let purchase_am = purchases::ActiveModel {
             mint_id: Set(collection_mint_model.id),
-            customer_id: Set(user_id),
             wallet: Set(input.recipient),
             spent: Set(drop_model.price),
             tx_signature: Set(None),
