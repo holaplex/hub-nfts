@@ -4,10 +4,8 @@ use sea_orm::entity::prelude::*;
 use super::Holder;
 use crate::{
     entities::{
-        collection_creators, collection_mints,
-        collections::Model,
-        metadata_jsons, purchases,
-        sea_orm_active_enums::{Blockchain, CreationStatus},
+        collection_creators, collection_mints, collections::Model, metadata_jsons, purchases,
+        sea_orm_active_enums::Blockchain,
     },
     AppContext,
 };
@@ -22,8 +20,6 @@ pub struct Collection {
     pub blockchain: Blockchain,
     /// The total supply of the collection. Setting to `null` implies unlimited minting.
     pub supply: Option<i64>,
-    /// The creation status of the collection. When the collection is in a `CREATED` status you can mint NFTs from the collection.
-    pub creation_status: CreationStatus,
     /// The blockchain address of the collection used to view it in blockchain explorers.
     pub address: Option<String>,
     /// The current number of NFTs minted from the collection.
@@ -91,7 +87,6 @@ impl From<Model> for Collection {
             id,
             blockchain,
             supply,
-            creation_status,
             address,
             total_mints,
             signature,
@@ -101,7 +96,6 @@ impl From<Model> for Collection {
             id,
             blockchain,
             supply,
-            creation_status,
             address,
             total_mints,
             signature,

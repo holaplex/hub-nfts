@@ -69,7 +69,6 @@ impl Mutation {
         let collection = Collection::new(collections::ActiveModel {
             blockchain: Set(input.blockchain),
             supply: Set(input.supply.map(TryFrom::try_from).transpose()?),
-            creation_status: Set(CreationStatus::Pending),
             ..Default::default()
         })
         .creators(input.creators.clone())

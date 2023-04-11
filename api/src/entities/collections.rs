@@ -2,7 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
-use super::sea_orm_active_enums::{Blockchain, CreationStatus};
+use super::sea_orm_active_enums::Blockchain;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "collections")]
@@ -11,7 +11,6 @@ pub struct Model {
     pub id: Uuid,
     pub blockchain: Blockchain,
     pub supply: Option<i64>,
-    pub creation_status: CreationStatus,
     #[sea_orm(column_type = "Text", nullable)]
     pub address: Option<String>,
     pub total_mints: i64,
