@@ -186,7 +186,7 @@ impl TryFrom<TransactionStatus> for CreationStatus {
             TransactionStatus::Unspecified => Err(anyhow!("Invalid enum variant")),
             TransactionStatus::Blocked => Ok(Self::Blocked),
             TransactionStatus::Failed => Ok(Self::Failed),
-            TransactionStatus::Confirming => Ok(Self::Created),
+            TransactionStatus::Completed => Ok(Self::Created),
             TransactionStatus::Cancelled => Ok(Self::Canceled),
             TransactionStatus::Rejected => Ok(Self::Rejected),
             _ => Ok(Self::Pending),
