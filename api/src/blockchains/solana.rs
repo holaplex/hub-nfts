@@ -70,6 +70,12 @@ pub struct UpdateEditionRequest {
     pub creators: Vec<Creator>,
 }
 
+#[derive(Clone)]
+pub struct TransferAssetRequest {
+    pub sender: String,
+    pub recipient: String,
+    pub mint_address: String,
+}
 impl Solana {
     pub fn new(rpc_client: Arc<RpcClient>, db: Connection, payer_keypair: Vec<u8>) -> Self {
         Self {
@@ -82,14 +88,28 @@ impl Solana {
     #[must_use]
     pub fn edition(
         &self,
-    ) -> impl Edition<CreateDropRequest, CreateEditionRequest, UpdateEditionRequest, Pubkey> {
+    ) -> impl Edition<
+        CreateDropRequest,
+        CreateEditionRequest,
+        UpdateEditionRequest,
+        TransferAssetRequest,
+        Pubkey,
+    > {
         self.clone()
     }
 }
 
 #[async_trait::async_trait]
 
-impl Edition<CreateDropRequest, CreateEditionRequest, UpdateEditionRequest, Pubkey> for Solana {
+impl
+    Edition<
+        CreateDropRequest,
+        CreateEditionRequest,
+        UpdateEditionRequest,
+        TransferAssetRequest,
+        Pubkey,
+    > for Solana
+{
     /// Res
     ///
     /// # Errors
@@ -411,6 +431,65 @@ impl Edition<CreateDropRequest, CreateEditionRequest, UpdateEditionRequest, Pubk
         let payer_signature = payer.try_sign_message(&message.serialize())?;
 
         Ok((sc.mint_pubkey.parse()?, TransactionResponse {
+            serialized_message,
+            signed_message_signatures: vec![payer_signature.to_string()],
+        }))
+    }
+
+    async fn transfer(
+        &self,
+        request: TransferAssetRequest,
+    ) -> Result<(Pubkey, TransactionResponse)> {
+        let rpc = &self.rpc_client;
+        let TransferAssetRequest {
+            sender,
+            recipient,
+            mint_address,
+        } = request;
+
+        let sender: Pubkey = sender.parse()?;
+        let recipient: Pubkey = recipient.parse()?;
+        let mint_address: Pubkey = mint_address.parse()?;
+        let payer = Keypair::from_bytes(&self.payer_keypair)?;
+        let blockhash = rpc.get_latest_blockhash()?;
+        let source_ata = get_associated_token_address(&sender, &mint_address);
+        let destination_ata = get_associated_token_address(&recipient, &mint_address);
+
+        let create_ata_token_account = create_associated_token_account(
+            &payer.pubkey(),
+            &recipient,
+            &mint_address,
+            &spl_token::ID,
+        );
+
+        let transfer_instruction = spl_token::instruction::transfer(
+            &spl_token::ID,
+            &source_ata,
+            &destination_ata,
+            &sender,
+            &[&sender],
+            1,
+        )
+        .context("Failed to create transfer instruction")?;
+
+        let close_ata = spl_token::instruction::close_account(
+            &spl_token::ID,
+            &source_ata,
+            &payer.pubkey(),
+            &sender,
+            &[&sender],
+        )?;
+
+        let message = solana_program::message::Message::new_with_blockhash(
+            &[create_ata_token_account, transfer_instruction, close_ata],
+            Some(&payer.pubkey()),
+            &blockhash,
+        );
+
+        let serialized_message = message.serialize();
+        let payer_signature = payer.try_sign_message(&message.serialize())?;
+
+        Ok((mint_address, TransactionResponse {
             serialized_message,
             signed_message_signatures: vec![payer_signature.to_string()],
         }))

@@ -7,15 +7,15 @@ use sea_orm::{
 use crate::{
     db::Connection,
     entities::{
-        collection_mints, collections, drops,
+        collection_mints, collections, drops, nft_transfers,
         prelude::Purchases,
         project_wallets, purchases,
         sea_orm_active_enums::{Blockchain, CreationStatus},
     },
     proto::{
         treasury_events::{
-            Blockchain as ProtoBlockchainEnum, DropCreated, DropMinted, Event, ProjectWallet,
-            TransactionStatus,
+            Blockchain as ProtoBlockchainEnum, DropCreated, DropMinted, Event, MintTransfered,
+            ProjectWallet, TransactionStatus,
         },
         TreasuryEventKey,
     },
@@ -34,6 +34,9 @@ pub async fn process(msg: Services, db: Connection) -> Result<()> {
             Some(Event::DropMinted(payload)) => process_drop_minted_event(db, key, payload).await,
             Some(Event::ProjectWalletCreated(payload)) => {
                 process_project_wallet_created_event(db, payload).await
+            },
+            Some(Event::MintTransfered(payload)) => {
+                process_mint_transfered_event(db, key, payload).await
             },
             None | Some(_) => Ok(()),
         },
@@ -161,6 +164,55 @@ pub async fn process_drop_minted_event(
     purchase_am.status = Set(tx_status.try_into()?);
     purchase_am.tx_signature = Set(Some(tx_signature));
     purchase_am.update(db.get()).await?;
+
+    Ok(())
+}
+
+/// Processes a `MintTransfered` event and updates the corresponding entities in the database.
+///
+/// # Arguments
+///
+/// * `db` - A database connection object used to interact with the database.
+/// * `key` - A `TreasuryEventKey` representing the key of the event.
+/// * `payload` - A `MintTransfered` struct representing the payload of the event.
+/// # Errors
+///
+/// This function returns an error if it fails to update the mint owner or
+/// if it fails to inserts the nft transfer
+
+pub async fn process_mint_transfered_event(
+    db: Connection,
+    key: TreasuryEventKey,
+    payload: MintTransfered,
+) -> Result<()> {
+    let MintTransfered {
+        sender,
+        recipient,
+        tx_signature,
+        ..
+    } = payload;
+
+    let id = Uuid::from_str(&key.id)?;
+
+    let collection_mint = collection_mints::Entity::find_by_id(id)
+        .one(db.get())
+        .await
+        .context("failed to load collection mint from db")?
+        .context("collection mint not found in db")?;
+
+    let mut collection_mint_am: collection_mints::ActiveModel = collection_mint.into();
+    collection_mint_am.owner = Set(recipient.clone());
+    collection_mint_am.update(db.get()).await?;
+
+    let nft_transfer_am = nft_transfers::ActiveModel {
+        tx_signature: Set(tx_signature),
+        mint_id: Set(id),
+        sender: Set(sender),
+        receiver: Set(recipient),
+        ..Default::default()
+    };
+
+    nft_transfer_am.insert(db.get()).await?;
 
     Ok(())
 }

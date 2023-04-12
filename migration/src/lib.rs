@@ -26,6 +26,7 @@ mod m20230328_212141_add_signature_column_to_collections_n_mints;
 mod m20230328_213529_add_more_creation_status_events;
 mod m20230405_133333_rename_collection_id_to_id_and_rm_fk;
 mod m20230406_164930_create_purchase_history_table;
+mod m20230411_230029_create_nft_transfers_table;
 mod m20230415_202208_add_edition_field_to_collection_mints;
 
 pub struct Migrator;
@@ -61,6 +62,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20230405_133333_rename_collection_id_to_id_and_rm_fk::Migration),
             Box::new(m20230406_164930_create_purchase_history_table::Migration),
             Box::new(m20230415_202208_add_edition_field_to_collection_mints::Migration),
+            Box::new(m20230411_230029_create_nft_transfers_table::Migration),
         ]
     }
 }
