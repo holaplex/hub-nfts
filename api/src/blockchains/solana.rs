@@ -18,7 +18,7 @@ use spl_token::{
 use super::{Edition, TransactionResponse};
 use crate::{
     db::Connection,
-    entities::{collection_creators, solana_collections},
+    entities::{collection_creators, nft_transfers, solana_collections},
 };
 
 const TOKEN_PROGRAM_PUBKEY: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -441,6 +441,7 @@ impl
         request: TransferAssetRequest,
     ) -> Result<(Pubkey, TransactionResponse)> {
         let rpc = &self.rpc_client;
+        let db = self.db.get();
         let TransferAssetRequest {
             sender,
             recipient,
@@ -488,6 +489,16 @@ impl
 
         let serialized_message = message.serialize();
         let payer_signature = payer.try_sign_message(&message.serialize())?;
+
+        let nft_transfer_am = nft_transfers::ActiveModel {
+            tx_signature: Set(None),
+            mint_address: Set(mint_address.to_string()),
+            sender: Set(sender.to_string()),
+            recipient: Set(recipient.to_string()),
+            ..Default::default()
+        };
+
+        nft_transfer_am.insert(db).await?;
 
         Ok((mint_address, TransactionResponse {
             serialized_message,

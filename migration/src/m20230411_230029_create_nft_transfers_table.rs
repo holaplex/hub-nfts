@@ -1,7 +1,5 @@
 use sea_orm_migration::prelude::*;
 
-use crate::m20230220_223223_create_collection_mints_table::CollectionMints;
-
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -14,27 +12,25 @@ impl MigrationTrait for Migration {
                     .table(NftTransfers::Table)
                     .if_not_exists()
                     .col(
-                        ColumnDef::new(NftTransfers::TxSignature)
-                            .string()
+                        ColumnDef::new(NftTransfers::Id)
+                            .uuid()
                             .not_null()
-                            .primary_key(),
+                            .primary_key()
+                            .extra("default gen_random_uuid()".to_string()),
                     )
-                    .col(ColumnDef::new(NftTransfers::MintId).uuid().not_null())
+                    .col(ColumnDef::new(NftTransfers::TxSignature).string())
+                    .col(
+                        ColumnDef::new(NftTransfers::MintAddress)
+                            .string()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(NftTransfers::Sender).string().not_null())
-                    .col(ColumnDef::new(NftTransfers::Receiver).string().not_null())
+                    .col(ColumnDef::new(NftTransfers::Recipient).string().not_null())
                     .col(
                         ColumnDef::new(NftTransfers::CreatedAt)
                             .timestamp()
                             .not_null()
                             .extra("default now()".to_string()),
-                    )
-                    .foreign_key(
-                        ForeignKey::create()
-                            .name("fk-nft_transfers_mint_id")
-                            .from(NftTransfers::Table, NftTransfers::MintId)
-                            .to(CollectionMints::Table, CollectionMints::Id)
-                            .on_delete(ForeignKeyAction::Cascade)
-                            .on_update(ForeignKeyAction::Cascade),
                     )
                     .to_owned(),
             )
@@ -43,9 +39,9 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 IndexCreateStatement::new()
-                    .name("nft_transfers_mint_id_idx")
+                    .name("nft_transfers_mint_address_idx")
                     .table(NftTransfers::Table)
-                    .col(NftTransfers::MintId)
+                    .col(NftTransfers::MintAddress)
                     .index_type(IndexType::Hash)
                     .to_owned(),
             )
@@ -67,7 +63,7 @@ impl MigrationTrait for Migration {
                 IndexCreateStatement::new()
                     .name("nft_transfers_receiver_idx")
                     .table(NftTransfers::Table)
-                    .col(NftTransfers::Receiver)
+                    .col(NftTransfers::Recipient)
                     .index_type(IndexType::Hash)
                     .to_owned(),
             )
@@ -80,6 +76,17 @@ impl MigrationTrait for Migration {
                     .table(NftTransfers::Table)
                     .col(NftTransfers::CreatedAt)
                     .index_type(IndexType::BTree)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                IndexCreateStatement::new()
+                    .name("nft_transfers_tx_signature_idx")
+                    .table(NftTransfers::Table)
+                    .col(NftTransfers::TxSignature)
+                    .index_type(IndexType::Hash)
                     .to_owned(),
             )
             .await
@@ -95,9 +102,10 @@ impl MigrationTrait for Migration {
 #[derive(Iden)]
 enum NftTransfers {
     Table,
+    Id,
     TxSignature,
-    MintId,
+    MintAddress,
     Sender,
-    Receiver,
+    Recipient,
     CreatedAt,
 }

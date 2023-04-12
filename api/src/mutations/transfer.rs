@@ -102,7 +102,6 @@ impl Mutation {
                     signed_message_signatures,
                     blockchain: proto_blockchain_enum as i32,
                 }),
-
                 address: collection_mint_model.address.to_string(),
                 sender: collection_mint_model.owner.to_string(),
                 recipient: recipient.to_string(),

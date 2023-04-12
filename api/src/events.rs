@@ -186,9 +186,9 @@ pub async fn process_mint_transfered_event(
     payload: MintTransfered,
 ) -> Result<()> {
     let MintTransfered {
-        sender,
         recipient,
         tx_signature,
+        mint_address,
         ..
     } = payload;
 
@@ -204,13 +204,14 @@ pub async fn process_mint_transfered_event(
     collection_mint_am.owner = Set(recipient.clone());
     collection_mint_am.update(db.get()).await?;
 
-    let nft_transfer_am = nft_transfers::ActiveModel {
-        tx_signature: Set(tx_signature),
-        mint_id: Set(id),
-        sender: Set(sender),
-        receiver: Set(recipient),
-        ..Default::default()
-    };
+    let nft_transfer = nft_transfers::Entity::find()
+        .filter(nft_transfers::Column::MintAddress.eq(mint_address))
+        .one(db.get())
+        .await?
+        .ok_or_else(|| anyhow!("nft transfer record not found"))?;
+
+    let mut nft_transfer_am: nft_transfers::ActiveModel = nft_transfer.into();
+    nft_transfer_am.tx_signature = Set(Some(tx_signature));
 
     nft_transfer_am.insert(db.get()).await?;
 

@@ -6,29 +6,15 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "nft_transfers")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub tx_signature: String,
-    pub mint_id: Uuid,
+    pub id: Uuid,
+    pub tx_signature: Option<String>,
+    pub mint_address: String,
     pub sender: String,
-    pub receiver: String,
+    pub recipient: String,
     pub created_at: DateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::collection_mints::Entity",
-        from = "Column::MintId",
-        to = "super::collection_mints::Column::Id",
-        on_update = "Cascade",
-        on_delete = "Cascade"
-    )]
-    CollectionMints,
-}
-
-impl Related<super::collection_mints::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::CollectionMints.def()
-    }
-}
+pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
