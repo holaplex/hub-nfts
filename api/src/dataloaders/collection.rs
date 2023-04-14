@@ -29,9 +29,9 @@ impl DataLoader<Uuid> for Loader {
             .all(self.db.get())
             .await?;
 
-        Ok(collections
+        collections
             .into_iter()
-            .map(|collection| (collection.id, collection.into()))
-            .collect())
+            .map(|collection| Ok((collection.id, collection.try_into()?)))
+            .collect::<Result<HashMap<Uuid, Self::Value>, _>>()
     }
 }

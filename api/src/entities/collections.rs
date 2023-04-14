@@ -16,6 +16,7 @@ pub struct Model {
     pub address: Option<String>,
     pub total_mints: i64,
     pub signature: Option<String>,
+    pub seller_fee_basis_points: i16,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

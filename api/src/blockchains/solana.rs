@@ -239,7 +239,6 @@ impl
         let solana_collections_active_model = solana_collections::ActiveModel {
             collection_id: Set(collection),
             master_edition_address: Set(master_edition_pubkey.to_string()),
-            seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
             created_at: Set(Utc::now().naive_utc()),
             ata_pubkey: Set(ata.to_string()),
             owner_pubkey: Set(owner.to_string()),
@@ -391,12 +390,6 @@ impl
             .one(conn)
             .await?;
         let sc = solana_collection_model.ok_or_else(|| anyhow!("solana collection not found"))?;
-        let mut solana_collection_am = solana_collections::ActiveModel::from(sc.clone());
-
-        if let Some(seller_fee_basis_points) = seller_fee_basis_points {
-            solana_collection_am.seller_fee_basis_points = Set(seller_fee_basis_points.try_into()?);
-            solana_collection_am.update(conn).await?;
-        }
 
         let program_pubkey = mpl_token_metadata::id();
 
@@ -409,8 +402,7 @@ impl
                 name,
                 symbol,
                 uri,
-                seller_fee_basis_points: seller_fee_basis_points
-                    .unwrap_or(sc.seller_fee_basis_points.try_into()?),
+                seller_fee_basis_points: seller_fee_basis_points.unwrap_or_default(),
                 creators: Some(creators),
                 collection: None,
                 uses: None,

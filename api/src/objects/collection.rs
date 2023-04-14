@@ -1,4 +1,4 @@
-use async_graphql::{ComplexObject, Context, Result, SimpleObject};
+use async_graphql::{ComplexObject, Context, Error, Result, SimpleObject};
 use sea_orm::entity::prelude::*;
 
 use super::Holder;
@@ -28,7 +28,10 @@ pub struct Collection {
     pub address: Option<String>,
     /// The current number of NFTs minted from the collection.
     pub total_mints: i64,
+    /// The transaction signature of the collection.
     pub signature: Option<String>,
+    /// The royalties assigned to mints belonging to the collection expressed in basis points.
+    pub royalties: u16,
 }
 
 #[ComplexObject]
@@ -85,8 +88,10 @@ impl Collection {
     }
 }
 
-impl From<Model> for Collection {
-    fn from(
+impl TryFrom<Model> for Collection {
+    type Error = Error;
+
+    fn try_from(
         Model {
             id,
             blockchain,
@@ -95,9 +100,10 @@ impl From<Model> for Collection {
             address,
             total_mints,
             signature,
+            seller_fee_basis_points,
         }: Model,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        Ok(Self {
             id,
             blockchain,
             supply,
@@ -105,6 +111,7 @@ impl From<Model> for Collection {
             address,
             total_mints,
             signature,
-        }
+            royalties: seller_fee_basis_points.try_into()?,
+        })
     }
 }

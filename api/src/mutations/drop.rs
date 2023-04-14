@@ -65,11 +65,13 @@ impl Mutation {
                 ))
             })?
             .wallet_address;
+        let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
 
         let collection = Collection::new(collections::ActiveModel {
             blockchain: Set(input.blockchain),
             supply: Set(input.supply.map(TryFrom::try_from).transpose()?),
             creation_status: Set(CreationStatus::Pending),
+            seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
             ..Default::default()
         })
         .creators(input.creators.clone())
@@ -101,10 +103,10 @@ impl Mutation {
                             .collect::<Result<Vec<Creator>>>()?,
                         name: metadata_json_model.name,
                         symbol: metadata_json_model.symbol,
-                        seller_fee_basis_points: input.seller_fee_basis_points.unwrap_or_default(),
                         supply: input.supply,
                         metadata_json_uri: metadata_json_model.uri,
                         collection: collection.id,
+                        seller_fee_basis_points,
                     })
                     .await?
             },
@@ -113,7 +115,7 @@ impl Mutation {
             },
         };
 
-        let mut collection_am: collections::ActiveModel = collection.clone().into();
+        let mut collection_am: collections::ActiveModel = collection.clone().try_into()?;
 
         collection_am.address = Set(Some(collection_address.to_string()));
 
@@ -293,6 +295,14 @@ impl Mutation {
 
         let collection = collection_model.ok_or_else(|| Error::new("collection not found"))?;
 
+        let mut collection_am: collections::ActiveModel = collection.into();
+
+        if let Some(seller_fee_basis_points) = seller_fee_basis_points {
+            collection_am.seller_fee_basis_points = Set(seller_fee_basis_points.try_into()?);
+        }
+
+        let collection = collection_am.update(conn).await?;
+
         let current_creators = collection_creators::Entity::find()
             .filter(collection_creators::Column::CollectionId.eq(collection.id))
             .all(conn)
@@ -430,7 +440,7 @@ impl Mutation {
         .await?;
 
         Ok(PatchDropPayload {
-            drop: Drop::new(drop_model, collection),
+            drop: Drop::new(drop_model, collection.try_into()?),
         })
     }
 }
