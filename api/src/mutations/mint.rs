@@ -58,12 +58,6 @@ impl Mutation {
 
         let edition = collection.total_mints.add(1);
 
-        let mut collection_am = collections::ActiveModel::from(collection.clone());
-
-        collection_am.total_mints = Set(edition);
-
-        collection_am.update(conn).await?;
-
         // Fetch the project wallet address which will sign the transaction by hub-treasuries
         let wallet = project_wallets::Entity::find()
             .filter(
@@ -113,10 +107,15 @@ impl Mutation {
             owner: Set(input.recipient.clone()),
             creation_status: Set(CreationStatus::Pending),
             created_by: Set(user_id),
+            edition: Set(edition),
             ..Default::default()
         };
 
         let collection_mint_model = collection_mint_active_model.insert(conn).await?;
+
+        let mut collection_am = collections::ActiveModel::from(collection.clone());
+        collection_am.total_mints = Set(edition);
+        collection_am.update(conn).await?;
 
         let proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
 
@@ -162,8 +161,111 @@ impl Mutation {
             collection_mint: collection_mint_model.into(),
         })
     }
-}
 
+    pub async fn retry_mint(
+        &self,
+        ctx: &Context<'_>,
+        input: RetryMintInput,
+    ) -> Result<RetryMintPayload> {
+        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+        let producer = ctx.data::<Producer<NftEvents>>()?;
+        let conn = db.get();
+        let solana = ctx.data::<Solana>()?;
+
+        let UserID(id) = user_id;
+        let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+
+        let (collection_mint_model, drop) = collection_mints::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                collection_mints::Relation::Collections.def(),
+            )
+            .join(JoinType::InnerJoin, collections::Relation::Drops.def())
+            .select_also(drops::Entity)
+            .filter(collection_mints::Column::Id.eq(input.mint_id))
+            .one(conn)
+            .await?
+            .ok_or_else(|| Error::new("collection mint not found"))?;
+
+        let collection = collections::Entity::find()
+            .filter(collections::Column::Id.eq(collection_mint_model.collection_id.clone()))
+            .one(conn)
+            .await?
+            .ok_or_else(|| Error::new("collection not found"))?;
+
+        let drop_model = drop.ok_or_else(|| Error::new("drop not found"))?;
+
+        let recipient = collection_mint_model.owner.clone();
+        let edition = collection_mint_model.edition.clone();
+
+        // Fetch the project wallet address which will sign the transaction by hub-treasuries
+        let wallet = project_wallets::Entity::find()
+            .filter(
+                project_wallets::Column::ProjectId
+                    .eq(drop_model.project_id)
+                    .and(project_wallets::Column::Blockchain.eq(collection.blockchain)),
+            )
+            .one(conn)
+            .await?;
+
+        let owner_address = wallet
+            .ok_or_else(|| {
+                Error::new(format!(
+                    "no project wallet found for {} blockchain",
+                    collection.blockchain
+                ))
+            })?
+            .wallet_address;
+
+        let (
+            _,
+            TransactionResponse {
+                serialized_message,
+                signed_message_signatures,
+            },
+        ) = match collection.blockchain {
+            BlockchainEnum::Solana => {
+                solana
+                    .edition()
+                    .mint(CreateEditionRequest {
+                        collection: collection.id,
+                        recipient,
+                        owner_address,
+                        edition: edition.try_into()?,
+                    })
+                    .await?
+            },
+            BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
+                return Err(Error::new("blockchain not supported as this time"));
+            },
+        };
+
+        let proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
+
+        // emit `MintDrop` event
+        let event = NftEvents {
+            event: Some(nft_events::Event::MintDrop(MintTransaction {
+                transaction: Some(Transaction {
+                    serialized_message,
+                    signed_message_signatures,
+                    blockchain: proto_blockchain_enum as i32,
+                }),
+                project_id: drop_model.project_id.to_string(),
+                drop_id: drop_model.id.to_string(),
+            })),
+        };
+        let key = NftEventKey {
+            id: collection_mint_model.id.clone().to_string(),
+            user_id: user_id.to_string(),
+        };
+
+        producer.send(Some(&event), Some(&key)).await?;
+
+        Ok(RetryMintPayload {
+            collection_mint: collection_mint_model.into(),
+        })
+    }
+}
 /// Checks the status of a drop by verifying if it is currently running based on its start time, end time, and pause/shutdown status.
 /// # Errors
 ///
@@ -205,5 +307,15 @@ pub struct MintDropInput {
 
 #[derive(Debug, Clone, SimpleObject)]
 pub struct MintEditionPayload {
+    collection_mint: collection_mints::CollectionMint,
+}
+
+#[derive(Debug, Clone, InputObject)]
+pub struct RetryMintInput {
+    mint_id: Uuid,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct RetryMintPayload {
     collection_mint: collection_mints::CollectionMint,
 }

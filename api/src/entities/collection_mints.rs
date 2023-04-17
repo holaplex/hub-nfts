@@ -20,6 +20,7 @@ pub struct Model {
     pub created_by: Uuid,
     pub created_at: DateTime,
     pub signature: Option<String>,
+    pub edition: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, SimpleObject)]
@@ -33,6 +34,7 @@ pub struct CollectionMint {
     pub created_by: Uuid,
     pub created_at: DateTime,
     pub signature: Option<String>,
+    pub edition: i64,
 }
 
 #[ComplexObject]
@@ -69,6 +71,7 @@ impl From<Model> for CollectionMint {
             created_by,
             created_at,
             signature,
+            edition,
         }: Model,
     ) -> Self {
         Self {
@@ -80,6 +83,7 @@ impl From<Model> for CollectionMint {
             created_by,
             created_at,
             signature,
+            edition,
         }
     }
 }
