@@ -1,4 +1,4 @@
-use async_graphql::{ComplexObject, Context, Error, Result, SimpleObject};
+use async_graphql::{Context, Object, Result};
 use sea_orm::entity::prelude::*;
 
 use super::Holder;
@@ -13,8 +13,7 @@ use crate::{
 };
 
 /// An NFT collection that has either a fixed supply or unlimited mints. NFT collections are deployed to a desired blockchain.
-#[derive(Clone, Debug, PartialEq, Eq, SimpleObject)]
-#[graphql(complex)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Collection {
     /// The unique identifier for the collection.
     pub id: Uuid,
@@ -31,11 +30,50 @@ pub struct Collection {
     /// The transaction signature of the collection.
     pub signature: Option<String>,
     /// The royalties assigned to mints belonging to the collection expressed in basis points.
-    pub royalties: u16,
+    pub seller_fee_basis_points: i16,
 }
 
-#[ComplexObject]
+#[Object]
 impl Collection {
+    /// The unique identifier for the collection.
+    async fn id(&self) -> Uuid {
+        self.id
+    }
+
+    /// The blockchain of the collection.
+    async fn blockchain(&self) -> Blockchain {
+        self.blockchain
+    }
+    /// The total supply of the collection. Setting to `null` implies unlimited minting.
+    async fn supply(&self) -> Option<i64> {
+        self.supply
+    }
+
+    /// The creation status of the collection. When the collection is in a `CREATED` status you can mint NFTs from the collection.
+    async fn creation_status(&self) -> CreationStatus {
+        self.creation_status
+    }
+
+    /// The blockchain address of the collection used to view it in blockchain explorers.
+    async fn address(&self) -> Option<String> {
+        self.address.clone()
+    }
+
+    /// The current number of NFTs minted from the collection.
+    async fn total_mints(&self) -> i64 {
+        self.total_mints
+    }
+
+    /// The transaction signature of the collection.
+    async fn signature(&self) -> Option<String> {
+        self.signature.clone()
+    }
+
+    /// The royalties assigned to mints belonging to the collection expressed in basis points.
+    async fn seller_fee_basis_points(&self) -> i16 {
+        self.seller_fee_basis_points
+    }
+
     /// The metadata json associated to the collection.
     /// ## References
     /// [Metaplex v1.1.0 Standard](https://docs.metaplex.com/programs/token-metadata/token-standard)
@@ -88,10 +126,8 @@ impl Collection {
     }
 }
 
-impl TryFrom<Model> for Collection {
-    type Error = Error;
-
-    fn try_from(
+impl From<Model> for Collection {
+    fn from(
         Model {
             id,
             blockchain,
@@ -102,8 +138,8 @@ impl TryFrom<Model> for Collection {
             signature,
             seller_fee_basis_points,
         }: Model,
-    ) -> Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             id,
             blockchain,
             supply,
@@ -111,7 +147,7 @@ impl TryFrom<Model> for Collection {
             address,
             total_mints,
             signature,
-            royalties: seller_fee_basis_points.try_into()?,
-        })
+            seller_fee_basis_points,
+        }
     }
 }

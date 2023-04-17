@@ -78,7 +78,7 @@ impl Drop {
 
     /// The collection for which the drop is managing mints.
     async fn collection(&self) -> Result<Collection> {
-        self.collection.clone().try_into()
+        Ok(self.collection.clone().into())
     }
 
     /// The current status of the drop.

@@ -31,7 +31,7 @@ impl DataLoader<Uuid> for Loader {
 
         collections
             .into_iter()
-            .map(|collection| Ok((collection.id, collection.try_into()?)))
-            .collect::<Result<HashMap<Uuid, Self::Value>, _>>()
+            .map(|collection| Ok((collection.id, collection.into())))
+            .collect()
     }
 }
