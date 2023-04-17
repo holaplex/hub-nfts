@@ -9,9 +9,9 @@ impl MigrationTrait for Migration {
         manager
             .alter_table(
                 Table::alter()
-                    .table(Collections::Table)
+                    .table(CollectionMints::Table)
                     .add_column_if_not_exists(
-                        ColumnDef::new(Collections::SellerFeeBasisPoints).small_integer(),
+                        ColumnDef::new(CollectionMints::SellerFeeBasisPoints).small_integer(),
                     )
                     .to_owned(),
             )
@@ -22,8 +22,8 @@ impl MigrationTrait for Migration {
         manager
             .alter_table(
                 Table::alter()
-                    .table(Collections::Table)
-                    .drop_column(Collections::SellerFeeBasisPoints)
+                    .table(CollectionMints::Table)
+                    .drop_column(CollectionMints::SellerFeeBasisPoints)
                     .to_owned(),
             )
             .await
@@ -31,7 +31,7 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(Iden)]
-enum Collections {
+enum CollectionMints {
     Table,
     SellerFeeBasisPoints,
 }

@@ -31,6 +31,8 @@ mod m20230415_202208_add_edition_field_to_collection_mints;
 mod m20230412_073127_create_column_seller_fee_basis_points_on_collections;
 mod m20230412_144354_backfill_collections_seller_fee_basis_points_from_solana_collections;
 mod m20230412_150236_drop_seller_fee_basis_points_on_solana_collections;
+mod m20230414_110500_create_column_seller_fee_basis_points_on_collection_mints;
+mod m20230414_110554_backfill_collection_miint_seller_fee_basis_points_from_solana_collections;
 
 pub struct Migrator;
 
@@ -69,6 +71,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20230412_073127_create_column_seller_fee_basis_points_on_collections::Migration),
             Box::new(m20230412_144354_backfill_collections_seller_fee_basis_points_from_solana_collections::Migration),
             Box::new(m20230412_150236_drop_seller_fee_basis_points_on_solana_collections::Migration),
+            Box::new(m20230414_110500_create_column_seller_fee_basis_points_on_collection_mints::Migration),
+            Box::new(m20230414_110554_backfill_collection_miint_seller_fee_basis_points_from_solana_collections::Migration),
         ]
     }
 }

@@ -106,6 +106,7 @@ impl Mutation {
             address: Set(mint_address.to_string()),
             owner: Set(input.recipient.clone()),
             creation_status: Set(CreationStatus::Pending),
+            seller_fee_basis_points: Set(collection.seller_fee_basis_points),
             created_by: Set(user_id),
             edition: Set(edition),
             ..Default::default()

@@ -440,7 +440,7 @@ impl Mutation {
         .await?;
 
         Ok(PatchDropPayload {
-            drop: Drop::new(drop_model, collection.try_into()?),
+            drop: Drop::new(drop_model, collection),
         })
     }
 }
