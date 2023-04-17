@@ -162,6 +162,9 @@ impl Mutation {
         })
     }
 
+    /// This mutation retries a mint which failed or is in pending state. The mint returns immediately with a creation status of CREATING. You can [set up a webhook](https://docs.holaplex.dev/hub/For%20Developers/webhooks-overview) to receive a notification when the mint is accepted by the blockchain.
+    /// # Errors
+    /// If the mint cannot be saved to the database or fails to be emitted for submission to the desired blockchain, the mutation will result in an error.
     pub async fn retry_mint(
         &self,
         ctx: &Context<'_>,
@@ -182,13 +185,17 @@ impl Mutation {
             )
             .join(JoinType::InnerJoin, collections::Relation::Drops.def())
             .select_also(drops::Entity)
-            .filter(collection_mints::Column::Id.eq(input.mint_id))
+            .filter(collection_mints::Column::Id.eq(input.id))
             .one(conn)
             .await?
             .ok_or_else(|| Error::new("collection mint not found"))?;
 
+        if collection_mint_model.creation_status == CreationStatus::Created {
+            return Err(Error::new("mint is already created"));
+        }
+
         let collection = collections::Entity::find()
-            .filter(collections::Column::Id.eq(collection_mint_model.collection_id.clone()))
+            .filter(collections::Column::Id.eq(collection_mint_model.collection_id))
             .one(conn)
             .await?
             .ok_or_else(|| Error::new("collection not found"))?;
@@ -196,7 +203,7 @@ impl Mutation {
         let drop_model = drop.ok_or_else(|| Error::new("drop not found"))?;
 
         let recipient = collection_mint_model.owner.clone();
-        let edition = collection_mint_model.edition.clone();
+        let edition = collection_mint_model.edition;
 
         // Fetch the project wallet address which will sign the transaction by hub-treasuries
         let wallet = project_wallets::Entity::find()
@@ -299,22 +306,26 @@ async fn check_drop_status(drop_model: &drops::Model) -> Result<(), Error> {
     Ok(())
 }
 
+/// Represents input data for `mint_edition` mutation with a UUID and recipient as fields
 #[derive(Debug, Clone, InputObject)]
 pub struct MintDropInput {
     drop: Uuid,
     recipient: String,
 }
 
+/// Represents payload data for the `mint_edition` mutation
 #[derive(Debug, Clone, SimpleObject)]
 pub struct MintEditionPayload {
     collection_mint: collection_mints::CollectionMint,
 }
 
+/// Represents input data for `retry_mint` mutation with an ID as a field of type UUID
 #[derive(Debug, Clone, InputObject)]
 pub struct RetryMintInput {
-    mint_id: Uuid,
+    id: Uuid,
 }
 
+/// Represents payload data for `retry_mint` mutation
 #[derive(Debug, Clone, SimpleObject)]
 pub struct RetryMintPayload {
     collection_mint: collection_mints::CollectionMint,
