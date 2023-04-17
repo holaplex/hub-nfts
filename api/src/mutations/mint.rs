@@ -242,11 +242,6 @@ impl Mutation {
 
         let proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
 
-        MetadataJson::fetch(collection.id, db)
-            .await?
-            .save(collection_mint_model.id, db)
-            .await?;
-
         // emit `MintDrop` event
         let event = NftEvents {
             event: Some(nft_events::Event::MintDrop(MintTransaction {
