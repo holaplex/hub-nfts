@@ -21,24 +21,38 @@ pub struct Model {
     pub created_at: DateTime,
     pub signature: Option<String>,
     pub edition: i64,
+    pub seller_fee_basis_points: i16,
 }
 
+/// Represents a single NFT minted from a collection.
 #[derive(Clone, Debug, PartialEq, Eq, SimpleObject)]
 #[graphql(complex)]
 pub struct CollectionMint {
+    /// The unique ID of the minted NFT.
     pub id: Uuid,
+    /// The ID of the collection the NFT was minted from.
     pub collection_id: Uuid,
+    /// The wallet address of the NFT.
     pub address: String,
+    /// The wallet address of the owner of the NFT.
     pub owner: String,
+    /// The status of the NFT creation.
     pub creation_status: CreationStatus,
+    /// The unique ID of the creator of the NFT.
     pub created_by: Uuid,
+    /// The date and time when the NFT was created.
     pub created_at: DateTime,
+    /// The transaction signature associated with the NFT.
     pub signature: Option<String>,
+    /// The unique edition number of the NFT.
     pub edition: i64,
+    /// The seller fee basis points (ie royalties) for the NFT.
+    pub seller_fee_basis_points: i16,
 }
 
 #[ComplexObject]
 impl CollectionMint {
+    /// The collection the NFT was minted from.
     async fn collection(&self, ctx: &Context<'_>) -> Result<Option<Collection>> {
         let AppContext {
             collection_loader, ..
@@ -48,7 +62,6 @@ impl CollectionMint {
     }
 
     /// The metadata json associated to the collection.
-    /// ## References
     /// [Metaplex v1.1.0 Standard](https://docs.metaplex.com/programs/token-metadata/token-standard)
     async fn metadata_json(&self, ctx: &Context<'_>) -> Result<Option<metadata_jsons::Model>> {
         let AppContext {
@@ -72,6 +85,7 @@ impl From<Model> for CollectionMint {
             created_at,
             signature,
             edition,
+            seller_fee_basis_points,
         }: Model,
     ) -> Self {
         Self {
@@ -84,6 +98,7 @@ impl From<Model> for CollectionMint {
             created_at,
             signature,
             edition,
+            seller_fee_basis_points,
         }
     }
 }

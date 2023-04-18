@@ -68,10 +68,10 @@ impl DataLoader<Uuid> for AttributesLoader {
         Ok(metadata_json_attributes.into_iter().fold(
             HashMap::new(),
             |mut acc, metadata_json_attribute| {
-                acc.entry(metadata_json_attribute.id)
+                acc.entry(metadata_json_attribute.metadata_json_id)
                     .or_insert_with(Vec::new);
 
-                acc.entry(metadata_json_attribute.id)
+                acc.entry(metadata_json_attribute.metadata_json_id)
                     .and_modify(|attributes| attributes.push(metadata_json_attribute));
 
                 acc

@@ -16,7 +16,6 @@ pub struct Model {
     pub owner_pubkey: String,
     pub mint_pubkey: String,
     pub metadata_pubkey: String,
-    pub seller_fee_basis_points: i16,
     pub created_at: DateTime,
 }
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
