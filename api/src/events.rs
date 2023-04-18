@@ -105,7 +105,7 @@ pub async fn process_drop_created_event(
         .context("drop not found in db")?;
 
     let collection = collection_model.context("failed to get collection from db")?;
-    let mut collection_active_model: collections::ActiveModel = collection.try_into()?;
+    let mut collection_active_model: collections::ActiveModel = collection.into();
     collection_active_model.signature = Set(Some(tx_signature));
     collection_active_model.update(db.get()).await?;
 
