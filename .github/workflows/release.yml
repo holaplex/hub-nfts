@@ -3,6 +3,8 @@ on:
   push:
     branches:
       - main
+      - release 
+
 jobs:
   release:
     runs-on: self-hosted
@@ -52,6 +54,7 @@ jobs:
           cache-to: type=gha,mode=max
       - 
         name: Invoke workflow in hub-kubes repo
+        if: github.ref == 'refs/heads/main'
         uses: benc-uk/workflow-dispatch@v1
         with:
           ref: main
@@ -59,3 +62,13 @@ jobs:
           workflow: release.yml
           repo: holaplex/hub-kubes
           inputs: '{ "service": "nfts", "environment": "stage", "commit_hash": "${{ github.sha }}"}'
+      - 
+        name: Invoke workflow in hub-kubes repo
+        if: github.ref == 'refs/heads/release'
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          ref: main
+          token: ${{ secrets.ACTIONS_TOKEN }}
+          workflow: release.yml
+          repo: holaplex/hub-kubes
+          inputs: '{ "service": "nfts", "environment": "prod", "commit_hash": "${{ github.sha }}"}'
