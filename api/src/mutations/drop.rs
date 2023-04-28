@@ -275,6 +275,47 @@ impl Mutation {
             return Err(Error::new("please select at least one field to update"));
         }
 
+
+        // # credit client
+
+        // check credit balance
+        // 1. does credit check against balance
+        // 2. if balance is less than credit, return error
+        // 3. if balance is greater than credit, emit pending credit deduction event
+        let credit_deduction_id = credit_client
+            .initiate_credit_deduction(balance, organization_id, balance, action, blockchain)
+            .await?;
+        // deduction_status PENDING
+
+
+        // # credits
+        // write pending credit deduction
+        // credits_deduction
+        // -----------------
+        // id: credit_deduction_id
+        // status: PENDING
+        // action: action
+        // blockchain: blockchain
+        // organization_id: organization_id
+
+        // organization_credits
+        // --------------------
+        // pending_balance: organization_credits.pending_balance - cost
+
+        // # hub gateway
+        // X-Credit-Balance: organization_credits.pending_balance
+
+        // TODO
+        // 0. Listen for for initiate created deduction event
+        // 1. Add status column to credit_deductions PENDING CONFIRMED
+        // 2. Write the credit_deduction_id as the id of the record
+
+
+        // # nfts (credit consuming service)
+        // 1. Add column on record for the initially created credit_balance_id
+        // 2. fire commit event reading the credit_balance_id from the parent record (eg. drop or collection_mint)
+    
+
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let conn = db.get();
         let producer = ctx.data::<Producer<NftEvents>>()?;
@@ -436,9 +477,11 @@ impl Mutation {
             drop_model.id,
             drop_model.project_id,
             collection.blockchain,
+            credit_deduction_id,
         )
         .await?;
 
+        
         Ok(PatchDropPayload {
             drop: Drop::new(drop_model, collection),
         })

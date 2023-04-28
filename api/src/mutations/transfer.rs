@@ -94,6 +94,14 @@ impl Mutation {
             },
         };
 
+        let credit_deduction_id = client.initialize_credit_deduction(organization_id, balance, ).await?;
+
+        // mint_transfer
+        // ------------
+        //  mint_id: collection_mint_model.id,
+        // recipient: recipient,
+        /// credit_deduction_id: credit_deduction_id,
+
         // emit `TransferAsset` event
         let event = NftEvents {
             event: Some(nft_events::Event::TransferMint(TransferMintTransaction {

@@ -114,6 +114,12 @@ pub async fn process_drop_created_event(
     drops_active_model.creation_status = Set(tx_status.try_into()?);
     drops_active_model.update(db.get()).await?;
 
+    credit_client.commit(drop.credit_deduction_id)?;
+
+    // # credits
+    // 1. updates status to COMMITTED
+    // 2. update organization_credits.balance = organization_credits.balance - credit_deduction.credits
+
     debug!("status updated for drop {:?}", drop_id);
 
     Ok(())
@@ -182,7 +188,7 @@ pub async fn process_drop_minted_event(
 
 pub async fn process_mint_transfered_event(
     db: Connection,
-    key: TreasuryEventKey,
+    key: TreasuryEventKey {credit_deuction_id },
     payload: MintTransfered,
 ) -> Result<()> {
     let MintTransfered {
@@ -212,6 +218,9 @@ pub async fn process_mint_transfered_event(
 
     let mut nft_transfer_am: nft_transfers::ActiveModel = nft_transfer.into();
     nft_transfer_am.tx_signature = Set(Some(tx_signature));
+
+
+    credit_client.commit(collection_mint_am.credit_deduction_id)?;
 
     nft_transfer_am.insert(db.get()).await?;
 
