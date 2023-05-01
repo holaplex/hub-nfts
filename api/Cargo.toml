@@ -42,13 +42,14 @@ solana-sdk = "1.15.0"
 spl-associated-token-account = "1.1.2"
 mpl-token-metadata = "1.8.3"
 async-trait = "0.1.68"
+strum = { version = "0.24.1", features = ["derive"] }
 
 [dependencies.hub-core]
 package = "holaplex-hub-core"
 version = "0.1.0"
 git = "https://github.com/holaplex/hub-core"
-branch = "stable"
-features = ["kafka"]
+branch = "ryans/credits"
+features = ["kafka", "credits"]
 
 [build-dependencies.hub-core-build]
 package = "holaplex-hub-core-build"

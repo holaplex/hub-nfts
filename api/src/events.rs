@@ -116,6 +116,8 @@ pub async fn process_drop_created_event(
 
     debug!("status updated for drop {:?}", drop_id);
 
+    //  credits.confirm_deduction(drop.credits_deduction_id).await?;
+
     Ok(())
 }
 
@@ -165,6 +167,8 @@ pub async fn process_drop_minted_event(
     purchase_am.tx_signature = Set(Some(tx_signature));
     purchase_am.update(db.get()).await?;
 
+    //  credits.confirm_deduction(collection_mint.credits_deduction_id).await?;
+
     Ok(())
 }
 
@@ -189,10 +193,12 @@ pub async fn process_mint_transfered_event(
         recipient,
         tx_signature,
         mint_address,
+        transfer_id,
         ..
     } = payload;
 
     let id = Uuid::from_str(&key.id)?;
+    let transfer_id = Uuid::from_str(&transfer_id)?;
 
     let collection_mint = collection_mints::Entity::find_by_id(id)
         .one(db.get())
@@ -204,8 +210,7 @@ pub async fn process_mint_transfered_event(
     collection_mint_am.owner = Set(recipient.clone());
     collection_mint_am.update(db.get()).await?;
 
-    let nft_transfer = nft_transfers::Entity::find()
-        .filter(nft_transfers::Column::MintAddress.eq(mint_address))
+    let nft_transfer = nft_transfers::Entity::find_by_id(transfer_id)
         .one(db.get())
         .await?
         .ok_or_else(|| anyhow!("nft transfer record not found"))?;
@@ -214,6 +219,8 @@ pub async fn process_mint_transfered_event(
     nft_transfer_am.tx_signature = Set(Some(tx_signature));
 
     nft_transfer_am.insert(db.get()).await?;
+
+    //  credits.confirm_deduction(nft_transfer.credits_deduction_id).await?;
 
     Ok(())
 }

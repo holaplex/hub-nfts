@@ -33,6 +33,9 @@ mod m20230412_150236_drop_seller_fee_basis_points_on_solana_collections;
 mod m20230414_110500_create_column_seller_fee_basis_points_on_collection_mints;
 mod m20230414_110554_backfill_collection_miint_seller_fee_basis_points_from_solana_collections;
 mod m20230415_202208_add_edition_field_to_collection_mints;
+mod m20230501_121532_add_credits_deduction_id_to_collection_mints;
+mod m20230501_121545_add_credits_deduction_id_to_drops;
+mod m20230501_130939_add_credits_deduction_id_to_nft_transfers_table;
 
 pub struct Migrator;
 
@@ -66,13 +69,16 @@ impl MigratorTrait for Migrator {
             Box::new(m20230328_213529_add_more_creation_status_events::Migration),
             Box::new(m20230405_133333_rename_collection_id_to_id_and_rm_fk::Migration),
             Box::new(m20230406_164930_create_purchase_history_table::Migration),
-            Box::new(m20230415_202208_add_edition_field_to_collection_mints::Migration),
             Box::new(m20230411_230029_create_nft_transfers_table::Migration),
             Box::new(m20230412_073127_create_column_seller_fee_basis_points_on_collections::Migration),
             Box::new(m20230412_144354_backfill_collections_seller_fee_basis_points_from_solana_collections::Migration),
             Box::new(m20230412_150236_drop_seller_fee_basis_points_on_solana_collections::Migration),
             Box::new(m20230414_110500_create_column_seller_fee_basis_points_on_collection_mints::Migration),
             Box::new(m20230414_110554_backfill_collection_miint_seller_fee_basis_points_from_solana_collections::Migration),
+            Box::new(m20230415_202208_add_edition_field_to_collection_mints::Migration),
+            Box::new(m20230501_121532_add_credits_deduction_id_to_collection_mints::Migration),
+            Box::new(m20230501_121545_add_credits_deduction_id_to_drops::Migration),
+            Box::new(m20230501_130939_add_credits_deduction_id_to_nft_transfers_table::Migration),
         ]
     }
 }

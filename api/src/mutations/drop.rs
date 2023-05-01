@@ -2,6 +2,7 @@ use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{
     anyhow,
     chrono::{DateTime, Utc},
+    credits::CreditsClient,
     producer::Producer,
 };
 use mpl_token_metadata::state::Creator;
@@ -23,7 +24,7 @@ use crate::{
     metadata_json::MetadataJson,
     objects::{CollectionCreator, Drop, MetadataJsonInput},
     proto::{self, nft_events, NftEventKey, NftEvents},
-    AppContext, NftStorageClient, UserID,
+    Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
 
 #[derive(Default)]
@@ -39,14 +40,22 @@ impl Mutation {
         ctx: &Context<'_>,
         input: CreateDropInput,
     ) -> Result<CreateDropPayload> {
-        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            ..
+        } = ctx.data::<AppContext>()?;
         let UserID(id) = user_id;
+        let OrganizationId(org) = organization_id;
         let conn = db.get();
         let producer = ctx.data::<Producer<NftEvents>>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
         let solana = ctx.data::<Solana>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
 
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+        let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
 
         let wallet = project_wallets::Entity::find()
             .filter(
@@ -145,6 +154,8 @@ impl Mutation {
             input.blockchain,
         )
         .await?;
+
+        submit_pending_deduction(credits, user_id, org_id, input.blockchain).await?;
 
         Ok(CreateDropPayload {
             drop: Drop::new(drop_model, collection),
@@ -512,6 +523,33 @@ async fn emit_update_metadata_transaction_event(
     };
 
     producer.send(Some(&event), Some(&key)).await?;
+
+    Ok(())
+}
+
+async fn submit_pending_deduction(
+    credits: &CreditsClient<Actions>,
+    user_id: Uuid,
+    org_id: Uuid,
+    blockchain: BlockchainEnum,
+) -> Result<()> {
+    let id = match blockchain {
+        BlockchainEnum::Solana => {
+            credits
+                .submit_pending_deduction(
+                    org_id.to_string(),
+                    user_id.to_string(),
+                    Actions::CreateSolanaDrop,
+                    hub_core::credits::Blockchain::Solana,
+                )
+                .await?
+        },
+        _ => {
+            return Err(Error::new("blockchain not supported yet"));
+        },
+    };
+
+    // save id to drops table
 
     Ok(())
 }

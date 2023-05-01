@@ -10,7 +10,7 @@ use holaplex_hub_nfts::{
     events,
     handlers::{graphql_handler, health, playground},
     nft_storage::NftStorageClient,
-    proto, AppState, Args, Services,
+    proto, Actions, AppState, Args, Services,
 };
 use hub_core::{
     anyhow::Context as AnyhowContext,
@@ -41,7 +41,7 @@ pub fn main() {
             let schema = build_schema();
 
             let producer = common.producer_cfg.build::<proto::NftEvents>().await?;
-
+            let credits = common.credits_cfg.build::<Actions>().await?;
             let nft_storage = NftStorageClient::new(nft_storage)?;
 
             let solana_rpc = Arc::new(RpcClient::new(solana.solana_endpoint));
@@ -54,6 +54,7 @@ pub fn main() {
                 schema,
                 connection.clone(),
                 producer.clone(),
+                credits,
                 solana_blockchain,
                 nft_storage,
             );

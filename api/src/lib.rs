@@ -31,6 +31,7 @@ use hub_core::{
     anyhow::{Error, Result},
     clap,
     consumer::RecvError,
+    credits::CreditsClient,
     prelude::*,
     producer::Producer,
     tokio,
@@ -124,11 +125,57 @@ impl<'a> FromRequest<'a> for UserID {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct OrganizationId(Option<Uuid>);
+
+impl TryFrom<&str> for OrganizationId {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        let id = Uuid::from_str(value)?;
+
+        Ok(Self(Some(id)))
+    }
+}
+
+#[async_trait]
+impl<'a> FromRequest<'a> for OrganizationId {
+    async fn from_request(req: &'a Request, _body: &mut RequestBody) -> poem::Result<Self> {
+        let id = req
+            .headers()
+            .get("X-ORGANIZATION-ID")
+            .and_then(|value| value.to_str().ok())
+            .map_or(Ok(Self(None)), Self::try_from)?;
+
+        Ok(id)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::EnumIter, strum::AsRefStr)]
+pub enum Actions {
+    CreateSolanaDrop,
+    MintSolanaEdition,
+    RetrySolanaEdition,
+    TransferSolanaNft,
+}
+
+impl From<Actions> for hub_core::credits::Action {
+    fn from(value: Actions) -> Self {
+        match value {
+            Actions::CreateSolanaDrop => hub_core::credits::Action::CreateDrop,
+            Actions::MintSolanaEdition => hub_core::credits::Action::MintEdition,
+            Actions::RetrySolanaEdition => hub_core::credits::Action::RetryMint,
+            Actions::TransferSolanaNft => hub_core::credits::Action::TransferAsset,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub schema: AppSchema,
     pub connection: Connection,
     pub producer: Producer<NftEvents>,
+    pub credits: CreditsClient<Actions>,
     pub solana: Solana,
     pub nft_storage: NftStorageClient,
 }
@@ -139,6 +186,7 @@ impl AppState {
         schema: AppSchema,
         connection: Connection,
         producer: Producer<NftEvents>,
+        credits: CreditsClient<Actions>,
         solana: Solana,
         nft_storage: NftStorageClient,
     ) -> Self {
@@ -146,6 +194,7 @@ impl AppState {
             schema,
             connection,
             producer,
+            credits,
             solana,
             nft_storage,
         }
@@ -155,6 +204,7 @@ impl AppState {
 pub struct AppContext {
     pub db: Connection,
     user_id: UserID,
+    organization_id: OrganizationId,
     project_drops_loader: DataLoader<ProjectDropsLoader>,
     collection_loader: DataLoader<CollectionLoader>,
     metadata_json_loader: DataLoader<MetadataJsonLoader>,
@@ -170,7 +220,7 @@ pub struct AppContext {
 
 impl AppContext {
     #[must_use]
-    pub fn new(db: Connection, user_id: UserID) -> Self {
+    pub fn new(db: Connection, user_id: UserID, organization_id: OrganizationId) -> Self {
         let project_drops_loader =
             DataLoader::new(ProjectDropsLoader::new(db.clone()), tokio::spawn);
         let collection_loader = DataLoader::new(CollectionLoader::new(db.clone()), tokio::spawn);
@@ -193,6 +243,7 @@ impl AppContext {
         Self {
             db,
             user_id,
+            organization_id,
             project_drops_loader,
             collection_loader,
             metadata_json_loader,

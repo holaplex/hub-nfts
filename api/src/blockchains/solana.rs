@@ -428,10 +428,7 @@ impl
         }))
     }
 
-    async fn transfer(
-        &self,
-        request: TransferAssetRequest,
-    ) -> Result<(Pubkey, TransactionResponse)> {
+    async fn transfer(&self, request: TransferAssetRequest) -> Result<(Uuid, TransactionResponse)> {
         let rpc = &self.rpc_client;
         let db = self.db.get();
         let TransferAssetRequest {
@@ -490,9 +487,9 @@ impl
             ..Default::default()
         };
 
-        nft_transfer_am.insert(db).await?;
+        let nft_transfer_model = nft_transfer_am.insert(db).await?;
 
-        Ok((mint_address, TransactionResponse {
+        Ok((nft_transfer_model.id, TransactionResponse {
             serialized_message,
             signed_message_signatures: vec![payer_signature.to_string()],
         }))

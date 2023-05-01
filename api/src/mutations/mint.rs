@@ -1,7 +1,7 @@
 use std::ops::Add;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{chrono::Utc, producer::Producer};
+use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
     },
     metadata_json::MetadataJson,
     proto::{self, nft_events, MintTransaction, NftEventKey, NftEvents, Transaction},
-    AppContext, UserID,
+    Actions, AppContext, OrganizationId, UserID,
 };
 
 #[derive(Default)]
@@ -33,13 +33,22 @@ impl Mutation {
         ctx: &Context<'_>,
         input: MintDropInput,
     ) -> Result<MintEditionPayload> {
-        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            ..
+        } = ctx.data::<AppContext>()?;
         let producer = ctx.data::<Producer<NftEvents>>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
 
         let UserID(id) = user_id;
+        let OrganizationId(org) = organization_id;
+
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+        let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
 
         let drop_model = Drops::find()
             .join(JoinType::InnerJoin, drops::Relation::Collections.def())
@@ -158,6 +167,8 @@ impl Mutation {
 
         producer.send(Some(&event), Some(&key)).await?;
 
+        submit_pending_deduction(credits, user_id, org_id, collection.blockchain).await?;
+
         Ok(MintEditionPayload {
             collection_mint: collection_mint_model.into(),
         })
@@ -274,10 +285,38 @@ impl Mutation {
         })
     }
 }
+
+async fn submit_pending_deduction(
+    credits: &CreditsClient<Actions>,
+    user_id: Uuid,
+    org_id: Uuid,
+    blockchain: BlockchainEnum,
+) -> Result<()> {
+    let id = match blockchain {
+        BlockchainEnum::Solana => {
+            credits
+                .submit_pending_deduction(
+                    org_id.to_string(),
+                    user_id.to_string(),
+                    Actions::MintSolanaEdition,
+                    hub_core::credits::Blockchain::Solana,
+                )
+                .await?
+        },
+        _ => {
+            return Err(Error::new("blockchain not supported yet"));
+        },
+    };
+
+    // save id to drops table
+
+    Ok(())
+}
+
 /// Checks the status of a drop by verifying if it is currently running based on its start time, end time, and pause/shutdown status.
 /// # Errors
 ///
-/// This function returns an error if the drop is not yet created, paused, 
+/// This function returns an error if the drop is not yet created, paused,
 /// shutdown, has not yet started, or has already ended based
 async fn check_drop_status(drop_model: &drops::Model) -> Result<(), Error> {
     if drop_model.creation_status != CreationStatus::Created {
