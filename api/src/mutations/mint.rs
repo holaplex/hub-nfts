@@ -309,7 +309,7 @@ async fn submit_pending_deduction(
                 .submit_pending_deduction(
                     org_id,
                     user_id,
-                    Actions::MintSolanaEdition,
+                    Actions::MintEdition,
                     hub_core::credits::Blockchain::Solana,
                 )
                 .await?

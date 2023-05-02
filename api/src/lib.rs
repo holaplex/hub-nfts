@@ -153,19 +153,19 @@ impl<'a> FromRequest<'a> for OrganizationId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::EnumIter, strum::AsRefStr)]
 pub enum Actions {
-    CreateSolanaDrop,
-    MintSolanaEdition,
-    RetrySolanaEdition,
-    TransferSolanaNft,
+    CreateDrop,
+    MintEdition,
+    RetryMint,
+    TransferAsset,
 }
 
 impl From<Actions> for hub_core::credits::Action {
     fn from(value: Actions) -> Self {
         match value {
-            Actions::CreateSolanaDrop => hub_core::credits::Action::CreateDrop,
-            Actions::MintSolanaEdition => hub_core::credits::Action::MintEdition,
-            Actions::RetrySolanaEdition => hub_core::credits::Action::RetryMint,
-            Actions::TransferSolanaNft => hub_core::credits::Action::TransferAsset,
+            Actions::CreateDrop => hub_core::credits::Action::CreateDrop,
+            Actions::MintEdition => hub_core::credits::Action::MintEdition,
+            Actions::RetryMint => hub_core::credits::Action::RetryMint,
+            Actions::TransferAsset => hub_core::credits::Action::TransferAsset,
         }
     }
 }

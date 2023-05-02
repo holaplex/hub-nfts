@@ -157,7 +157,7 @@ async fn submit_pending_deduction(
                 .submit_pending_deduction(
                     org_id,
                     user_id,
-                    Actions::TransferSolanaNft,
+                    Actions::TransferAsset,
                     hub_core::credits::Blockchain::Solana,
                 )
                 .await?
