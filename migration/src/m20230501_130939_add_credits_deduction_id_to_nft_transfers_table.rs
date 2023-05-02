@@ -11,7 +11,7 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(NftTransfers::Table)
                     .add_column_if_not_exists(
-                        ColumnDef::new(NftTransfers::CreditsDeductionId).string(),
+                        ColumnDef::new(NftTransfers::CreditsDeductionId).uuid(),
                     )
                     .to_owned(),
             )

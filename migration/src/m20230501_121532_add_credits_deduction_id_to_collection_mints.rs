@@ -10,7 +10,7 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Drops::Table)
-                    .add_column_if_not_exists(ColumnDef::new(Drops::CreditsDeductionId).string())
+                    .add_column_if_not_exists(ColumnDef::new(Drops::CreditsDeductionId).uuid())
                     .to_owned(),
             )
             .await

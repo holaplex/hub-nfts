@@ -54,7 +54,7 @@ pub fn main() {
                 schema,
                 connection.clone(),
                 producer.clone(),
-                credits,
+                credits.clone(),
                 solana_blockchain,
                 nft_storage,
             );
@@ -66,13 +66,14 @@ pub fn main() {
                     let mut stream = cons.stream();
                     loop {
                         let connection = connection.clone();
+                        let credits = credits.clone();
 
                         match stream.next().await {
                             Some(Ok(msg)) => {
                                 info!(?msg, "message received");
 
                                 tokio::spawn(async move {
-                                    events::process(msg, connection.clone()).await
+                                    events::process(msg, connection.clone(), credits.clone()).await
                                 });
                                 task::yield_now().await;
                             },

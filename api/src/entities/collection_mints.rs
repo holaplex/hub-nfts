@@ -22,7 +22,7 @@ pub struct Model {
     pub signature: Option<String>,
     pub edition: i64,
     pub seller_fee_basis_points: i16,
-    pub credits_deduction_id: Option<String>,
+    pub credits_deduction_id: Option<Uuid>,
 }
 
 /// Represents a single NFT minted from a collection.
@@ -50,7 +50,7 @@ pub struct CollectionMint {
     /// The seller fee basis points (ie royalties) for the NFT.
     pub seller_fee_basis_points: i16,
     /// credits deduction id
-    pub credits_deduction_id: Option<String>,
+    pub credits_deduction_id: Option<Uuid>,
 }
 
 #[ComplexObject]

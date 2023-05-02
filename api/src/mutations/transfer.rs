@@ -1,6 +1,6 @@
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{credits::CreditsClient, producer::Producer};
-use sea_orm::{prelude::*, JoinType, QuerySelect};
+use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -8,9 +8,10 @@ use crate::{
         solana::{Solana, TransferAssetRequest},
         Edition, TransactionResponse,
     },
+    db::Connection,
     entities::{
         collection_mints::{self, CollectionMint},
-        collections, drops,
+        collections, drops, nft_transfers,
         prelude::{Collections, Drops},
         sea_orm_active_enums::Blockchain,
     },
@@ -126,8 +127,15 @@ impl Mutation {
 
         producer.send(Some(&event), Some(&key)).await?;
 
-        submit_pending_deduction(credits, org_id, user_id, transfer_id, collection.blockchain)
-            .await?;
+        submit_pending_deduction(
+            credits,
+            db,
+            org_id,
+            user_id,
+            transfer_id,
+            collection.blockchain,
+        )
+        .await?;
 
         Ok(TransferAssetPayload {
             mint: collection_mint_model.into(),
@@ -137,6 +145,7 @@ impl Mutation {
 
 async fn submit_pending_deduction(
     credits: &CreditsClient<Actions>,
+    db: &Connection,
     org_id: Uuid,
     user_id: Uuid,
     transfer_id: Uuid,
@@ -146,8 +155,8 @@ async fn submit_pending_deduction(
         Blockchain::Solana => {
             credits
                 .submit_pending_deduction(
-                    org_id.to_string(),
-                    user_id.to_string(),
+                    org_id,
+                    user_id,
                     Actions::TransferSolanaNft,
                     hub_core::credits::Blockchain::Solana,
                 )
@@ -158,7 +167,14 @@ async fn submit_pending_deduction(
         },
     };
 
-    // save credits deduction id in nft transfers
+    let nft_transfer_model = nft_transfers::Entity::find_by_id(transfer_id)
+        .one(db.get())
+        .await?
+        .ok_or_else(|| Error::new("drop not found"))?;
+
+    let mut nft_transfer: nft_transfers::ActiveModel = nft_transfer_model.into();
+    nft_transfer.credits_deduction_id = Set(Some(id.0));
+    nft_transfer.update(db.get()).await?;
 
     Ok(())
 }

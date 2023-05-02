@@ -15,6 +15,7 @@ use crate::{
         Edition, TransactionResponse,
     },
     collection::Collection,
+    db::Connection,
     entities::{
         collection_creators, collections, drops, metadata_jsons,
         prelude::{Collections, Drops},
@@ -155,7 +156,15 @@ impl Mutation {
         )
         .await?;
 
-        submit_pending_deduction(credits, user_id, org_id, input.blockchain).await?;
+        submit_pending_deduction(
+            credits,
+            db,
+            user_id,
+            org_id,
+            drop_model.id,
+            input.blockchain,
+        )
+        .await?;
 
         Ok(CreateDropPayload {
             drop: Drop::new(drop_model, collection),
@@ -529,16 +538,18 @@ async fn emit_update_metadata_transaction_event(
 
 async fn submit_pending_deduction(
     credits: &CreditsClient<Actions>,
+    db: &Connection,
     user_id: Uuid,
     org_id: Uuid,
+    drop: Uuid,
     blockchain: BlockchainEnum,
 ) -> Result<()> {
     let id = match blockchain {
         BlockchainEnum::Solana => {
             credits
                 .submit_pending_deduction(
-                    org_id.to_string(),
-                    user_id.to_string(),
+                    org_id,
+                    user_id,
                     Actions::CreateSolanaDrop,
                     hub_core::credits::Blockchain::Solana,
                 )
@@ -549,7 +560,14 @@ async fn submit_pending_deduction(
         },
     };
 
-    // save id to drops table
+    let drop_model = drops::Entity::find_by_id(drop)
+        .one(db.get())
+        .await?
+        .ok_or_else(|| Error::new("drop not found"))?;
+
+    let mut drop: drops::ActiveModel = drop_model.into();
+    drop.credits_deduction_id = Set(Some(id.0));
+    drop.update(db.get()).await?;
 
     Ok(())
 }

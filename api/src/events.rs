@@ -1,4 +1,8 @@
-use hub_core::{prelude::*, uuid::Uuid};
+use hub_core::{
+    credits::{CreditsClient, TransactionId},
+    prelude::*,
+    uuid::Uuid,
+};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait,
     Set,
@@ -19,24 +23,28 @@ use crate::{
         },
         TreasuryEventKey,
     },
-    Services,
+    Actions, Services,
 };
 
 /// Process the given message for various services.
 ///
 /// # Errors
 /// This functioncan return an error if it fails to process any event
-pub async fn process(msg: Services, db: Connection) -> Result<()> {
+pub async fn process(msg: Services, db: Connection, credits: CreditsClient<Actions>) -> Result<()> {
     // match topics
     match msg {
         Services::Treasuries(key, e) => match e.event {
-            Some(Event::DropCreated(payload)) => process_drop_created_event(db, key, payload).await,
-            Some(Event::DropMinted(payload)) => process_drop_minted_event(db, key, payload).await,
+            Some(Event::DropCreated(payload)) => {
+                process_drop_created_event(db, credits, key, payload).await
+            },
+            Some(Event::DropMinted(payload)) => {
+                process_drop_minted_event(db, credits, key, payload).await
+            },
             Some(Event::ProjectWalletCreated(payload)) => {
                 process_project_wallet_created_event(db, payload).await
             },
             Some(Event::MintTransfered(payload)) => {
-                process_mint_transfered_event(db, key, payload).await
+                process_mint_transfered_event(db, credits, key, payload).await
             },
             None | Some(_) => Ok(()),
         },
@@ -84,6 +92,7 @@ pub async fn process_project_wallet_created_event(
 /// - Failed to update collection in the database
 pub async fn process_drop_created_event(
     db: Connection,
+    credits: CreditsClient<Actions>,
     key: TreasuryEventKey,
     payload: DropCreated,
 ) -> Result<()> {
@@ -109,14 +118,19 @@ pub async fn process_drop_created_event(
     collection_active_model.signature = Set(Some(tx_signature));
     collection_active_model.update(db.get()).await?;
 
-    let mut drops_active_model: drops::ActiveModel = drop.into();
+    let mut drops_active_model: drops::ActiveModel = drop.clone().into();
 
     drops_active_model.creation_status = Set(tx_status.try_into()?);
     drops_active_model.update(db.get()).await?;
 
     debug!("status updated for drop {:?}", drop_id);
 
-    //  credits.confirm_deduction(drop.credits_deduction_id).await?;
+    let deduction_id = drop
+        .credits_deduction_id
+        .context("drop has no deduction id")?;
+    credits
+        .confirm_deduction(TransactionId(deduction_id))
+        .await?;
 
     Ok(())
 }
@@ -130,6 +144,7 @@ pub async fn process_drop_created_event(
 /// - Failed to load or update collection mint or purchase from the database
 pub async fn process_drop_minted_event(
     db: Connection,
+    credits: CreditsClient<Actions>,
     key: TreasuryEventKey,
     payload: DropMinted,
 ) -> Result<()> {
@@ -148,7 +163,8 @@ pub async fn process_drop_minted_event(
         .context("failed to load collection mint from db")?
         .context("collection mint not found in db")?;
 
-    let mut collection_mint_active_model: collection_mints::ActiveModel = collection_mint.into();
+    let mut collection_mint_active_model: collection_mints::ActiveModel =
+        collection_mint.clone().into();
 
     collection_mint_active_model.creation_status = Set(tx_status.try_into()?);
     collection_mint_active_model.signature = Set(Some(tx_signature.clone()));
@@ -167,7 +183,13 @@ pub async fn process_drop_minted_event(
     purchase_am.tx_signature = Set(Some(tx_signature));
     purchase_am.update(db.get()).await?;
 
-    //  credits.confirm_deduction(collection_mint.credits_deduction_id).await?;
+    let deduction_id = collection_mint
+        .credits_deduction_id
+        .context("deduction id not found")?;
+
+    credits
+        .confirm_deduction(TransactionId(deduction_id))
+        .await?;
 
     Ok(())
 }
@@ -186,13 +208,13 @@ pub async fn process_drop_minted_event(
 
 pub async fn process_mint_transfered_event(
     db: Connection,
+    credits: CreditsClient<Actions>,
     key: TreasuryEventKey,
     payload: MintTransfered,
 ) -> Result<()> {
     let MintTransfered {
         recipient,
         tx_signature,
-        mint_address,
         transfer_id,
         ..
     } = payload;
@@ -215,12 +237,18 @@ pub async fn process_mint_transfered_event(
         .await?
         .ok_or_else(|| anyhow!("nft transfer record not found"))?;
 
-    let mut nft_transfer_am: nft_transfers::ActiveModel = nft_transfer.into();
+    let mut nft_transfer_am: nft_transfers::ActiveModel = nft_transfer.clone().into();
     nft_transfer_am.tx_signature = Set(Some(tx_signature));
 
     nft_transfer_am.insert(db.get()).await?;
 
-    //  credits.confirm_deduction(nft_transfer.credits_deduction_id).await?;
+    let deduction_id = nft_transfer
+        .credits_deduction_id
+        .context("deduction id not found")?;
+
+    credits
+        .confirm_deduction(TransactionId(deduction_id))
+        .await?;
 
     Ok(())
 }

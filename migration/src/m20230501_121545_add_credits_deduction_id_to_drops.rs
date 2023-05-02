@@ -11,7 +11,7 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(CollectionMints::Table)
                     .add_column_if_not_exists(
-                        ColumnDef::new(CollectionMints::CreditsDeductionId).string(),
+                        ColumnDef::new(CollectionMints::CreditsDeductionId).uuid(),
                     )
                     .to_owned(),
             )

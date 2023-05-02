@@ -9,6 +9,7 @@ use crate::{
         solana::{CreateEditionRequest, Solana},
         Edition, TransactionResponse,
     },
+    db::Connection,
     entities::{
         collection_mints, collections, drops,
         prelude::{Collections, Drops},
@@ -167,7 +168,15 @@ impl Mutation {
 
         producer.send(Some(&event), Some(&key)).await?;
 
-        submit_pending_deduction(credits, user_id, org_id, collection.blockchain).await?;
+        submit_pending_deduction(
+            credits,
+            db,
+            user_id,
+            org_id,
+            collection_mint_model.id,
+            collection.blockchain,
+        )
+        .await?;
 
         Ok(MintEditionPayload {
             collection_mint: collection_mint_model.into(),
@@ -288,16 +297,18 @@ impl Mutation {
 
 async fn submit_pending_deduction(
     credits: &CreditsClient<Actions>,
+    db: &Connection,
     user_id: Uuid,
     org_id: Uuid,
+    mint: Uuid,
     blockchain: BlockchainEnum,
 ) -> Result<()> {
     let id = match blockchain {
         BlockchainEnum::Solana => {
             credits
                 .submit_pending_deduction(
-                    org_id.to_string(),
-                    user_id.to_string(),
+                    org_id,
+                    user_id,
                     Actions::MintSolanaEdition,
                     hub_core::credits::Blockchain::Solana,
                 )
@@ -308,7 +319,14 @@ async fn submit_pending_deduction(
         },
     };
 
-    // save id to drops table
+    let mint_model = collection_mints::Entity::find_by_id(mint)
+        .one(db.get())
+        .await?
+        .ok_or_else(|| Error::new("drop not found"))?;
+
+    let mut mint: collection_mints::ActiveModel = mint_model.into();
+    mint.credits_deduction_id = Set(Some(id.0));
+    mint.update(db.get()).await?;
 
     Ok(())
 }
