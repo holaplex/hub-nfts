@@ -52,6 +52,7 @@ impl Mutation {
             db,
             user_id,
             organization_id,
+            balance,
             ..
         } = ctx.data::<AppContext>()?;
         let UserID(id) = user_id;
@@ -59,6 +60,9 @@ impl Mutation {
 
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
         let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or_else(|| Error::new("X-ORGANIZATION-BALANCE header not found"))?;
 
         let conn = db.get();
         let producer = ctx.data::<Producer<NftEvents>>()?;
@@ -130,6 +134,7 @@ impl Mutation {
         submit_pending_deduction(
             credits,
             db,
+            balance,
             org_id,
             user_id,
             transfer_id,
@@ -146,6 +151,7 @@ impl Mutation {
 async fn submit_pending_deduction(
     credits: &CreditsClient<Actions>,
     db: &Connection,
+    balance: u64,
     org_id: Uuid,
     user_id: Uuid,
     transfer_id: Uuid,
@@ -159,6 +165,7 @@ async fn submit_pending_deduction(
                     user_id,
                     Actions::TransferAsset,
                     hub_core::credits::Blockchain::Solana,
+                    balance,
                 )
                 .await?
         },
@@ -167,13 +174,15 @@ async fn submit_pending_deduction(
         },
     };
 
+    let deduction_id = id.ok_or_else(|| Error::new("failed to generate credits deduction id"))?;
+
     let nft_transfer_model = nft_transfers::Entity::find_by_id(transfer_id)
         .one(db.get())
         .await?
         .ok_or_else(|| Error::new("drop not found"))?;
 
     let mut nft_transfer: nft_transfers::ActiveModel = nft_transfer_model.into();
-    nft_transfer.credits_deduction_id = Set(Some(id.0));
+    nft_transfer.credits_deduction_id = Set(Some(deduction_id.0));
     nft_transfer.update(db.get()).await?;
 
     Ok(())

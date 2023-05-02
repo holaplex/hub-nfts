@@ -151,6 +151,32 @@ impl<'a> FromRequest<'a> for OrganizationId {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Balance(Option<u64>);
+
+impl TryFrom<&str> for Balance {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        let balance = value.parse()?;
+
+        Ok(Self(Some(balance)))
+    }
+}
+
+#[async_trait]
+impl<'a> FromRequest<'a> for Balance {
+    async fn from_request(req: &'a Request, _body: &mut RequestBody) -> poem::Result<Self> {
+        let id = req
+            .headers()
+            .get("X-ORGANIZATION-BALANCE")
+            .and_then(|value| value.to_str().ok())
+            .map_or(Ok(Self(None)), Self::try_from)?;
+
+        Ok(id)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::EnumIter, strum::AsRefStr)]
 pub enum Actions {
     CreateDrop,
@@ -205,6 +231,7 @@ pub struct AppContext {
     pub db: Connection,
     user_id: UserID,
     organization_id: OrganizationId,
+    balance: Balance,
     project_drops_loader: DataLoader<ProjectDropsLoader>,
     collection_loader: DataLoader<CollectionLoader>,
     metadata_json_loader: DataLoader<MetadataJsonLoader>,
@@ -220,7 +247,12 @@ pub struct AppContext {
 
 impl AppContext {
     #[must_use]
-    pub fn new(db: Connection, user_id: UserID, organization_id: OrganizationId) -> Self {
+    pub fn new(
+        db: Connection,
+        user_id: UserID,
+        organization_id: OrganizationId,
+        balance: Balance,
+    ) -> Self {
         let project_drops_loader =
             DataLoader::new(ProjectDropsLoader::new(db.clone()), tokio::spawn);
         let collection_loader = DataLoader::new(CollectionLoader::new(db.clone()), tokio::spawn);
@@ -244,6 +276,7 @@ impl AppContext {
             db,
             user_id,
             organization_id,
+            balance,
             project_drops_loader,
             collection_loader,
             metadata_json_loader,

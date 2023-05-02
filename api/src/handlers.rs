@@ -7,7 +7,7 @@ use poem::{
     IntoResponse,
 };
 
-use crate::{AppContext, AppState, OrganizationId, UserID};
+use crate::{AppContext, AppState, Balance, OrganizationId, UserID};
 
 #[handler]
 pub fn health() {}
@@ -22,9 +22,10 @@ pub async fn graphql_handler(
     Data(state): Data<&AppState>,
     user_id: UserID,
     organization: OrganizationId,
+    balance: Balance,
     req: GraphQLRequest,
 ) -> Result<GraphQLResponse> {
-    let context = AppContext::new(state.connection.clone(), user_id, organization);
+    let context = AppContext::new(state.connection.clone(), user_id, organization, balance);
 
     Ok(state
         .schema

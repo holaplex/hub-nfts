@@ -2076,7 +2076,7 @@ dependencies = [
 [[package]]
 name = "holaplex-hub-core"
 version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=ryans/credits#53bb5d3b66f0d78b07e200b0870fb6f7121e0992"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#bb4530a1fe278f8338bdba6773956965ea2d0f84"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2109,26 +2109,7 @@ dependencies = [
 [[package]]
 name = "holaplex-hub-core-build"
 version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=ryans/credits#53bb5d3b66f0d78b07e200b0870fb6f7121e0992"
-dependencies = [
- "anyhow",
- "dotenv",
- "futures-util",
- "hex",
- "prost-build",
- "reqwest",
- "serde",
- "sha2 0.10.6",
- "tempfile",
- "tokio",
- "toml 0.5.11",
- "url",
-]
-
-[[package]]
-name = "holaplex-hub-core-build"
-version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=stable#b4512209a8c56f1205b84ce05f25a389a8c9b8d8"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#bb4530a1fe278f8338bdba6773956965ea2d0f84"
 dependencies = [
  "anyhow",
  "dotenv",
@@ -2147,9 +2128,9 @@ dependencies = [
 [[package]]
 name = "holaplex-hub-core-schemas"
 version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=ryans/credits#53bb5d3b66f0d78b07e200b0870fb6f7121e0992"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#bb4530a1fe278f8338bdba6773956965ea2d0f84"
 dependencies = [
- "holaplex-hub-core-build 0.1.0 (git+https://github.com/holaplex/hub-core?branch=ryans/credits)",
+ "holaplex-hub-core-build",
  "prost",
 ]
 
@@ -2161,7 +2142,7 @@ dependencies = [
  "async-graphql-poem",
  "async-trait",
  "holaplex-hub-core",
- "holaplex-hub-core-build 0.1.0 (git+https://github.com/holaplex/hub-core?branch=stable)",
+ "holaplex-hub-core-build",
  "mpl-token-metadata",
  "poem",
  "prost",

@@ -38,6 +38,7 @@ impl Mutation {
             db,
             user_id,
             organization_id,
+            balance,
             ..
         } = ctx.data::<AppContext>()?;
         let producer = ctx.data::<Producer<NftEvents>>()?;
@@ -50,6 +51,9 @@ impl Mutation {
 
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
         let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or_else(|| Error::new("X-ORGANIZATION-BALANCE header not found"))?;
 
         let drop_model = Drops::find()
             .join(JoinType::InnerJoin, drops::Relation::Collections.def())
@@ -171,6 +175,7 @@ impl Mutation {
         submit_pending_deduction(
             credits,
             db,
+            balance,
             user_id,
             org_id,
             collection_mint_model.id,
@@ -298,6 +303,7 @@ impl Mutation {
 async fn submit_pending_deduction(
     credits: &CreditsClient<Actions>,
     db: &Connection,
+    balance: u64,
     user_id: Uuid,
     org_id: Uuid,
     mint: Uuid,
@@ -311,6 +317,7 @@ async fn submit_pending_deduction(
                     user_id,
                     Actions::MintEdition,
                     hub_core::credits::Blockchain::Solana,
+                    balance,
                 )
                 .await?
         },
@@ -319,13 +326,15 @@ async fn submit_pending_deduction(
         },
     };
 
+    let deduction_id = id.ok_or_else(|| Error::new("failed to generate credits deduction id"))?;
+
     let mint_model = collection_mints::Entity::find_by_id(mint)
         .one(db.get())
         .await?
         .ok_or_else(|| Error::new("drop not found"))?;
 
     let mut mint: collection_mints::ActiveModel = mint_model.into();
-    mint.credits_deduction_id = Set(Some(id.0));
+    mint.credits_deduction_id = Set(Some(deduction_id.0));
     mint.update(db.get()).await?;
 
     Ok(())
