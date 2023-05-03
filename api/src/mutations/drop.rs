@@ -192,6 +192,10 @@ impl Mutation {
 
         let collection = collection.ok_or_else(|| Error::new("collection not found"))?;
 
+        if drop.creation_status == CreationStatus::Created {
+            return Err(Error::new("drop already created"));
+        }
+
         let (
             collection_address,
             TransactionResponse {
