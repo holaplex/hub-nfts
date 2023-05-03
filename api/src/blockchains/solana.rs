@@ -18,7 +18,15 @@ use spl_token::{
 use super::{Edition, TransactionResponse};
 use crate::{
     db::Connection,
-    entities::{collection_creators, nft_transfers, solana_collections},
+    entities::{
+        collection_creators,
+        collections::{self, Model as CollectionModel},
+        metadata_jsons,
+        metadata_jsons::Model as MetadataJsonModel,
+        nft_transfers,
+        prelude::{CollectionCreators, MetadataJsons},
+        solana_collections,
+    },
 };
 
 const TOKEN_PROGRAM_PUBKEY: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -43,12 +51,8 @@ pub struct Solana {
 pub struct CreateDropRequest {
     pub creators: Vec<Creator>,
     pub owner_address: String,
-    pub name: String,
-    pub symbol: String,
-    pub seller_fee_basis_points: u16,
-    pub supply: Option<u64>,
-    pub metadata_json_uri: String,
-    pub collection: Uuid,
+    pub collection: CollectionModel,
+    pub metadata_json: MetadataJsonModel,
 }
 
 #[derive(Clone)]
@@ -68,6 +72,11 @@ pub struct UpdateEditionRequest {
     pub symbol: String,
     pub uri: String,
     pub creators: Vec<Creator>,
+}
+
+#[derive(Clone)]
+pub struct RetryDropRequest {
+    pub collection: CollectionModel,
 }
 
 #[derive(Clone)]
@@ -93,6 +102,7 @@ impl Solana {
         CreateEditionRequest,
         UpdateEditionRequest,
         TransferAssetRequest,
+        RetryDropRequest,
         Pubkey,
     > {
         self.clone()
@@ -107,6 +117,7 @@ impl
         CreateEditionRequest,
         UpdateEditionRequest,
         TransferAssetRequest,
+        RetryDropRequest,
         Pubkey,
     > for Solana
 {
@@ -119,144 +130,33 @@ impl
         let CreateDropRequest {
             creators,
             owner_address,
-            name,
-            symbol,
-            seller_fee_basis_points,
-            supply,
-            metadata_json_uri,
             collection,
+            metadata_json,
         } = request;
         let rpc = &self.rpc_client;
         let conn = self.db.get();
 
         let payer = Keypair::from_bytes(&self.payer_keypair)?;
-        let mint = Keypair::new();
-
         let owner = owner_address.parse()?;
-        let ata = get_associated_token_address(&owner, &mint.pubkey());
 
-        let (token_metadata_pubkey, _) = solana_program::pubkey::Pubkey::find_program_address(
-            &[
-                b"metadata",
-                mpl_token_metadata::ID.as_ref(),
-                mint.pubkey().as_ref(),
-            ],
-            &mpl_token_metadata::ID,
-        );
-
-        let (master_edition_pubkey, _) = solana_program::pubkey::Pubkey::find_program_address(
-            &[
-                b"metadata",
-                mpl_token_metadata::ID.as_ref(),
-                mint.pubkey().as_ref(),
-                b"edition",
-            ],
-            &mpl_token_metadata::ID,
-        );
-
-        let len = spl_token::state::Mint::LEN;
-
-        let rent = rpc.get_minimum_balance_for_rent_exemption(len)?;
-
-        let create_account_ins = solana_program::system_instruction::create_account(
-            &payer.pubkey(),
-            &mint.pubkey(),
-            rent,
-            len.try_into()?,
-            &spl_token::ID,
-        );
-
-        let initialize_mint_ins = spl_token::instruction::initialize_mint(
-            &spl_token::ID,
-            &mint.pubkey(),
-            &owner,
-            Some(&owner),
-            0,
-        )?;
-
-        let ata_ins = spl_associated_token_account::instruction::create_associated_token_account(
-            &payer.pubkey(),
-            &owner,
-            &mint.pubkey(),
-            &spl_token::ID,
-        );
-
-        let min_to_ins =
-            spl_token::instruction::mint_to(&spl_token::ID, &mint.pubkey(), &ata, &owner, &[], 1)?;
-
-        let create_metadata_account_ins =
-            mpl_token_metadata::instruction::create_metadata_accounts_v3(
-                mpl_token_metadata::ID,
-                token_metadata_pubkey,
-                mint.pubkey(),
-                owner,
-                payer.pubkey(),
-                owner,
-                name.clone(),
-                symbol.clone(),
-                metadata_json_uri.clone(),
-                Some(creators),
-                seller_fee_basis_points,
-                true,
-                true,
-                None,
-                None,
-                None,
-            );
-
-        let create_master_edition_ins = mpl_token_metadata::instruction::create_master_edition_v3(
-            mpl_token_metadata::ID,
-            master_edition_pubkey,
-            mint.pubkey(),
-            owner,
-            owner,
-            token_metadata_pubkey,
-            payer.pubkey(),
-            supply,
-        );
-
-        let blockhash = rpc.get_latest_blockhash()?;
-
-        let instructions = &[
-            create_account_ins,
-            initialize_mint_ins,
-            ata_ins,
-            min_to_ins,
-            create_metadata_account_ins,
-            create_master_edition_ins,
-        ];
-
-        let message = solana_program::message::Message::new_with_blockhash(
-            instructions,
-            Some(&payer.pubkey()),
-            &blockhash,
-        );
-
-        let serialized_message = message.serialize();
-        let mint_signature = mint.try_sign_message(&message.serialize())?;
-        let payer_signature = payer.try_sign_message(&message.serialize())?;
+        let (mint, master_edition, ata, metadata, tx) =
+            create_drop_transaction(rpc, &payer, &owner, &collection, &metadata_json, &creators)?;
 
         let solana_collections_active_model = solana_collections::ActiveModel {
-            collection_id: Set(collection),
-            master_edition_address: Set(master_edition_pubkey.to_string()),
+            collection_id: Set(collection.id),
+            master_edition_address: Set(master_edition.to_string()),
             created_at: Set(Utc::now().into()),
             ata_pubkey: Set(ata.to_string()),
             owner_pubkey: Set(owner.to_string()),
             update_authority: Set(owner.to_string()),
-            mint_pubkey: Set(mint.pubkey().to_string()),
-            metadata_pubkey: Set(token_metadata_pubkey.to_string()),
+            mint_pubkey: Set(mint.to_string()),
+            metadata_pubkey: Set(metadata.to_string()),
             ..Default::default()
         };
 
         solana_collections_active_model.insert(conn).await?;
 
-        Ok((mint.pubkey(), TransactionResponse {
-            serialized_message,
-            signed_message_signatures: vec![
-                payer_signature.to_string(),
-                mint_signature.to_string(),
-            ],
-        }))
+        Ok((mint, tx))
     }
 
     /// Res
@@ -494,6 +394,165 @@ impl
             signed_message_signatures: vec![payer_signature.to_string()],
         }))
     }
+
+    #[allow(clippy::too_many_lines)]
+
+    async fn retry_drop(&self, request: RetryDropRequest) -> Result<(Pubkey, TransactionResponse)> {
+        let rpc = &self.rpc_client;
+        let conn = self.db.get();
+
+        let RetryDropRequest { collection } = request;
+
+        let solana_collection = solana_collections::Entity::find()
+            .filter(solana_collections::Column::CollectionId.eq(collection.id))
+            .one(conn)
+            .await?
+            .context("solana collection not found")?;
+        let metadata_json = MetadataJsons::find_by_id(collection.id)
+            .one(conn)
+            .await?
+            .context("metadata json not found")?;
+        let creators = CollectionCreators::find()
+            .filter(collection_creators::Column::CollectionId.eq(collection.id))
+            .all(conn)
+            .await?
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<Creator>>>()?;
+
+        let payer = Keypair::from_bytes(&self.payer_keypair)?;
+        let owner = solana_collection.owner_pubkey.parse()?;
+
+        let (mint, master_edition, ata, metadata, tx) =
+            create_drop_transaction(rpc, &payer, &owner, &collection, &metadata_json, &creators)?;
+
+        // update solana collection record
+        let mut sc: solana_collections::ActiveModel = solana_collection.into();
+        sc.master_edition_address = Set(master_edition.to_string());
+        sc.ata_pubkey = Set(ata.to_string());
+        sc.mint_pubkey = Set(mint.to_string());
+        sc.metadata_pubkey = Set(metadata.to_string());
+
+        sc.update(conn).await?;
+
+        Ok((mint, tx))
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn create_drop_transaction(
+    rpc: &RpcClient,
+    payer: &Keypair,
+    owner: &Pubkey,
+    collection: &collections::Model,
+    metadata_json: &metadata_jsons::Model,
+    creators: &[Creator],
+) -> Result<(Pubkey, Pubkey, Pubkey, Pubkey, TransactionResponse)> {
+    let mint = Keypair::new();
+    let ata = get_associated_token_address(owner, &mint.pubkey());
+    let (metadata, _) = Pubkey::find_program_address(
+        &[
+            b"metadata",
+            mpl_token_metadata::ID.as_ref(),
+            mint.pubkey().as_ref(),
+        ],
+        &mpl_token_metadata::ID,
+    );
+    let (master_edition, _) = Pubkey::find_program_address(
+        &[
+            b"metadata",
+            mpl_token_metadata::ID.as_ref(),
+            mint.pubkey().as_ref(),
+            b"edition",
+        ],
+        &mpl_token_metadata::ID,
+    );
+    let len = spl_token::state::Mint::LEN;
+    let rent = rpc.get_minimum_balance_for_rent_exemption(len)?;
+    let blockhash = rpc.get_latest_blockhash()?;
+
+    let create_account_ins = solana_program::system_instruction::create_account(
+        &payer.pubkey(),
+        &mint.pubkey(),
+        rent,
+        len.try_into()?,
+        &spl_token::ID,
+    );
+    let initialize_mint_ins = spl_token::instruction::initialize_mint(
+        &spl_token::ID,
+        &mint.pubkey(),
+        owner,
+        Some(owner),
+        0,
+    )?;
+    let ata_ins = spl_associated_token_account::instruction::create_associated_token_account(
+        &payer.pubkey(),
+        owner,
+        &mint.pubkey(),
+        &spl_token::ID,
+    );
+    let min_to_ins =
+        spl_token::instruction::mint_to(&spl_token::ID, &mint.pubkey(), &ata, owner, &[], 1)?;
+    let create_metadata_account_ins = mpl_token_metadata::instruction::create_metadata_accounts_v3(
+        mpl_token_metadata::ID,
+        metadata,
+        mint.pubkey(),
+        *owner,
+        payer.pubkey(),
+        *owner,
+        metadata_json.name.clone(),
+        metadata_json.symbol.clone(),
+        metadata_json.uri.clone(),
+        Some(creators.to_vec()),
+        collection.seller_fee_basis_points.try_into()?,
+        true,
+        true,
+        None,
+        None,
+        None,
+    );
+    let create_master_edition_ins = mpl_token_metadata::instruction::create_master_edition_v3(
+        mpl_token_metadata::ID,
+        master_edition,
+        mint.pubkey(),
+        *owner,
+        *owner,
+        metadata,
+        payer.pubkey(),
+        collection.supply.map(TryInto::try_into).transpose()?,
+    );
+    let instructions = vec![
+        create_account_ins,
+        initialize_mint_ins,
+        ata_ins,
+        min_to_ins,
+        create_metadata_account_ins,
+        create_master_edition_ins,
+    ];
+
+    let message = solana_program::message::Message::new_with_blockhash(
+        &instructions,
+        Some(&payer.pubkey()),
+        &blockhash,
+    );
+
+    let serialized_message = message.serialize();
+    let mint_signature = mint.try_sign_message(&message.serialize())?;
+    let payer_signature = payer.try_sign_message(&message.serialize())?;
+
+    Ok((
+        mint.pubkey(),
+        master_edition,
+        ata,
+        metadata,
+        TransactionResponse {
+            serialized_message,
+            signed_message_signatures: vec![
+                payer_signature.to_string(),
+                mint_signature.to_string(),
+            ],
+        },
+    ))
 }
 
 impl TryFrom<collection_creators::Model> for Creator {

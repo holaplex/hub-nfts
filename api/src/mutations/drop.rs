@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     blockchains::{
-        solana::{CreateDropRequest, Solana, UpdateEditionRequest},
+        solana::{CreateDropRequest, RetryDropRequest, Solana, UpdateEditionRequest},
         Edition, TransactionResponse,
     },
     collection::Collection,
@@ -87,7 +87,7 @@ impl Mutation {
         .save(db)
         .await?;
 
-        let metadata_json_model = MetadataJson::new(input.metadata_json)
+        let metadata_json = MetadataJson::new(input.metadata_json)
             .upload(nft_storage)
             .await?
             .save(collection.id, db)
@@ -110,12 +110,8 @@ impl Mutation {
                             .into_iter()
                             .map(TryInto::try_into)
                             .collect::<Result<Vec<Creator>>>()?,
-                        name: metadata_json_model.name,
-                        symbol: metadata_json_model.symbol,
-                        supply: input.supply,
-                        metadata_json_uri: metadata_json_model.uri,
-                        collection: collection.id,
-                        seller_fee_basis_points,
+                        collection: collection.clone(),
+                        metadata_json,
                     })
                     .await?
             },
@@ -171,6 +167,70 @@ impl Mutation {
         })
     }
 
+    /// This mutation retries an existing drop.
+    /// The drop returns immediately with a creation status of CREATING.
+    /// You can [set up a webhook](https://docs.holaplex.dev/hub/For%20Developers/webhooks-overview) to receive a notification when the drop is ready to be minted.
+    /// Errors
+    /// The mutation will fail if the drop and its related collection cannot be located,
+    /// if the transaction response cannot be built,
+    /// or if the transaction event cannot be emitted.
+    pub async fn retry_drop(
+        &self,
+        ctx: &Context<'_>,
+        input: RetryDropInput,
+    ) -> Result<CreateDropPayload> {
+        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+        let UserID(id) = user_id;
+        let producer = ctx.data::<Producer<NftEvents>>()?;
+        let solana = ctx.data::<Solana>()?;
+        let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+        let (drop, collection) = Drops::find_by_id(input.drop)
+            .find_also_related(Collections)
+            .one(db.get())
+            .await?
+            .ok_or_else(|| Error::new("drop not found"))?;
+
+        let collection = collection.ok_or_else(|| Error::new("collection not found"))?;
+
+        let (
+            collection_address,
+            TransactionResponse {
+                serialized_message,
+                signed_message_signatures,
+            },
+        ) = match collection.blockchain {
+            BlockchainEnum::Solana => {
+                solana
+                    .edition()
+                    .retry_drop(RetryDropRequest {
+                        collection: collection.clone(),
+                    })
+                    .await?
+            },
+            BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
+                return Err(Error::new("blockchain not supported as this time"));
+            },
+        };
+
+        let mut collection_am: collections::ActiveModel = collection.clone().try_into()?;
+        collection_am.address = Set(Some(collection_address.to_string()));
+        let collection = collection_am.update(db.get()).await?;
+
+        emit_drop_transaction_event(
+            producer,
+            input.drop,
+            user_id,
+            serialized_message,
+            signed_message_signatures,
+            drop.project_id,
+            collection.blockchain,
+        )
+        .await?;
+
+        Ok(CreateDropPayload {
+            drop: Drop::new(drop, collection),
+        })
+    }
     /// This mutation allows for the temporary blocking of the minting of editions and can be resumed by calling the resumeDrop mutation.
     pub async fn pause_drop(
         &self,
@@ -582,6 +642,16 @@ pub struct CreateDropInput {
     pub blockchain: BlockchainEnum,
     pub creators: Vec<CollectionCreator>,
     pub metadata_json: MetadataJsonInput,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
+pub struct RetryDropInput {
+    pub drop: Uuid,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct RetryDropPayload {
+    drop: Drop,
 }
 
 impl TryFrom<CollectionCreator> for Creator {
