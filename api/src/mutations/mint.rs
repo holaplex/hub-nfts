@@ -180,6 +180,7 @@ impl Mutation {
             org_id,
             collection_mint_model.id,
             collection.blockchain,
+            Actions::MintEdition,
         )
         .await?;
 
@@ -196,13 +197,26 @@ impl Mutation {
         ctx: &Context<'_>,
         input: RetryMintInput,
     ) -> Result<RetryMintPayload> {
-        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
         let producer = ctx.data::<Producer<NftEvents>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
 
         let UserID(id) = user_id;
+        let OrganizationId(org) = organization_id;
+
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+        let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or_else(|| Error::new("X-ORGANIZATION-BALANCE header not found"))?;
 
         let (collection_mint_model, drop) = collection_mints::Entity::find()
             .join(
@@ -277,7 +291,7 @@ impl Mutation {
 
         // emit `MintDrop` event
         let event = NftEvents {
-            event: Some(nft_events::Event::MintDrop(MintTransaction {
+            event: Some(nft_events::Event::RetryMint(MintTransaction {
                 transaction: Some(Transaction {
                     serialized_message,
                     signed_message_signatures,
@@ -294,6 +308,18 @@ impl Mutation {
 
         producer.send(Some(&event), Some(&key)).await?;
 
+        submit_pending_deduction(
+            credits,
+            db,
+            balance,
+            user_id,
+            org_id,
+            collection_mint_model.id,
+            collection.blockchain,
+            Actions::RetryMint,
+        )
+        .await?;
+
         Ok(RetryMintPayload {
             collection_mint: collection_mint_model.into(),
         })
@@ -308,6 +334,7 @@ async fn submit_pending_deduction(
     org_id: Uuid,
     mint: Uuid,
     blockchain: BlockchainEnum,
+    action: Actions,
 ) -> Result<()> {
     let id = match blockchain {
         BlockchainEnum::Solana => {
@@ -315,7 +342,7 @@ async fn submit_pending_deduction(
                 .submit_pending_deduction(
                     org_id,
                     user_id,
-                    Actions::MintEdition,
+                    action,
                     hub_core::credits::Blockchain::Solana,
                     balance,
                 )

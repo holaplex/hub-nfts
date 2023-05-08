@@ -183,6 +183,7 @@ pub enum Actions {
     CreateDrop,
     MintEdition,
     RetryMint,
+    RetryDrop,
     TransferAsset,
 }
 
@@ -192,6 +193,7 @@ impl From<Actions> for hub_core::credits::Action {
             Actions::CreateDrop => hub_core::credits::Action::CreateDrop,
             Actions::MintEdition => hub_core::credits::Action::MintEdition,
             Actions::RetryMint => hub_core::credits::Action::RetryMint,
+            Actions::RetryDrop => hub_core::credits::Action::RetryDrop,
             Actions::TransferAsset => hub_core::credits::Action::TransferAsset,
         }
     }

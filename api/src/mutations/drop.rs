@@ -159,6 +159,7 @@ impl Mutation {
             org_id,
             drop_model.id,
             input.blockchain,
+            Actions::CreateDrop,
         )
         .await?;
 
@@ -179,11 +180,23 @@ impl Mutation {
         ctx: &Context<'_>,
         input: RetryDropInput,
     ) -> Result<CreateDropPayload> {
-        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
         let UserID(id) = user_id;
+        let OrganizationId(org) = organization_id;
         let producer = ctx.data::<Producer<NftEvents>>()?;
         let solana = ctx.data::<Solana>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+        let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or_else(|| Error::new("X-ORGANIZATION-BALANCE header not found"))?;
         let (drop, collection) = Drops::find_by_id(input.drop)
             .find_also_related(Collections)
             .one(db.get())
@@ -220,7 +233,7 @@ impl Mutation {
         collection_am.address = Set(Some(collection_address.to_string()));
         let collection = collection_am.update(db.get()).await?;
 
-        emit_drop_transaction_event(
+        emit_retry_drop_event(
             producer,
             input.drop,
             user_id,
@@ -228,6 +241,18 @@ impl Mutation {
             signed_message_signatures,
             drop.project_id,
             collection.blockchain,
+        )
+        .await?;
+
+        submit_pending_deduction(
+            credits,
+            db,
+            balance,
+            user_id,
+            org_id,
+            drop.id,
+            collection.blockchain,
+            Actions::RetryDrop,
         )
         .await?;
 
@@ -519,6 +544,41 @@ impl Mutation {
     }
 }
 
+/// This functions emits the retry drop transaction event
+/// # Errors
+/// This function fails if producer is unable to send the event
+async fn emit_retry_drop_event(
+    producer: &Producer<NftEvents>,
+    id: Uuid,
+    user_id: Uuid,
+    serialized_message: Vec<u8>,
+    signatures: Vec<String>,
+    project_id: Uuid,
+    blockchain: BlockchainEnum,
+) -> Result<()> {
+    let proto_blockchain_enum: proto::Blockchain = blockchain.into();
+
+    let event = NftEvents {
+        event: Some(nft_events::Event::RetryDrop(proto::DropTransaction {
+            transaction: Some(proto::Transaction {
+                serialized_message,
+                signed_message_signatures: signatures,
+                blockchain: proto_blockchain_enum as i32,
+            }),
+
+            project_id: project_id.to_string(),
+        })),
+    };
+    let key = NftEventKey {
+        id: id.to_string(),
+        user_id: user_id.to_string(),
+    };
+
+    producer.send(Some(&event), Some(&key)).await?;
+
+    Ok(())
+}
+
 /// This functions emits the drop transaction event
 /// # Errors
 /// This function fails if producer is unable to sent the event
@@ -598,6 +658,7 @@ async fn submit_pending_deduction(
     org_id: Uuid,
     drop: Uuid,
     blockchain: BlockchainEnum,
+    action: Actions,
 ) -> Result<()> {
     let id = match blockchain {
         BlockchainEnum::Solana => {
@@ -605,7 +666,7 @@ async fn submit_pending_deduction(
                 .submit_pending_deduction(
                     org_id,
                     user_id,
-                    Actions::CreateDrop,
+                    action,
                     hub_core::credits::Blockchain::Solana,
                     balance,
                 )
