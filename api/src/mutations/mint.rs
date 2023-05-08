@@ -277,7 +277,7 @@ impl Mutation {
 /// Checks the status of a drop by verifying if it is currently running based on its start time, end time, and pause/shutdown status.
 /// # Errors
 ///
-/// This function returns an error if the drop is not yet created, paused, 
+/// This function returns an error if the drop is not yet created, paused,
 /// shutdown, has not yet started, or has already ended based
 async fn check_drop_status(drop_model: &drops::Model) -> Result<(), Error> {
     if drop_model.creation_status != CreationStatus::Created {
