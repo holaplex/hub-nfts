@@ -53,7 +53,7 @@ impl Mutation {
         let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
         let balance = balance
             .0
-            .ok_or_else(|| Error::new("X-ORGANIZATION-BALANCE header not found"))?;
+            .ok_or_else(|| Error::new("X-CREDIT-BALANCE header not found"))?;
 
         let drop_model = Drops::find()
             .join(JoinType::InnerJoin, drops::Relation::Collections.def())

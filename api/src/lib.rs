@@ -169,7 +169,7 @@ impl<'a> FromRequest<'a> for Balance {
     async fn from_request(req: &'a Request, _body: &mut RequestBody) -> poem::Result<Self> {
         let id = req
             .headers()
-            .get("X-ORGANIZATION-BALANCE")
+            .get("X-CREDIT-BALANCE")
             .and_then(|value| value.to_str().ok())
             .map_or(Ok(Self(None)), Self::try_from)?;
 
