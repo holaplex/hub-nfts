@@ -265,16 +265,6 @@ impl Mutation {
             creators,
         } = input;
 
-        if price.is_none()
-            && start_time.is_none()
-            && end_time.is_none()
-            && seller_fee_basis_points.is_none()
-            && metadata_json.is_none()
-            && creators.is_none()
-        {
-            return Err(Error::new("please select at least one field to update"));
-        }
-
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let conn = db.get();
         let producer = ctx.data::<Producer<NftEvents>>()?;
@@ -313,17 +303,19 @@ impl Mutation {
         if let Some(price) = price {
             drop_am.price = Set(price.try_into()?);
         }
-        if let Some(start_time) = start_time {
-            drop_am.start_time = Set(Some(start_time.naive_utc()));
-        }
 
-        if let Some(end_time) = end_time {
-            drop_am.end_time = if end_time < Utc::now() {
-                return Err(Error::new("endTime can not be in the past"));
-            } else {
-                Set(Some(end_time.naive_utc()))
-            };
-        }
+        drop_am.start_time = Set(Some(
+            start_time.map_or(Utc::now().naive_utc(), |t| t.naive_utc()),
+        ));
+        drop_am.end_time = Set(end_time
+            .map(|t| {
+                if t > Utc::now() {
+                    Ok(t.naive_utc())
+                } else {
+                    Err(Error::new("end time must be in the future"))
+                }
+            })
+            .transpose()?);
 
         if creators.clone().is_some() {
             let creators = creators
