@@ -1,0 +1,15 @@
+[MintEdition]
+solana = 5
+polygon = 10
+
+[CreateDrop]
+solana = 5
+polygon = 15
+
+[RetryMint]
+solana = 5
+polygon = 10
+
+[TransferAsset]
+solana = 5
+polygon = 10

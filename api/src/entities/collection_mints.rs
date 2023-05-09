@@ -22,6 +22,7 @@ pub struct Model {
     pub signature: Option<String>,
     pub edition: i64,
     pub seller_fee_basis_points: i16,
+    pub credits_deduction_id: Option<Uuid>,
 }
 
 /// Represents a single NFT minted from a collection.
@@ -48,6 +49,8 @@ pub struct CollectionMint {
     pub edition: i64,
     /// The seller fee basis points (ie royalties) for the NFT.
     pub seller_fee_basis_points: i16,
+    /// credits deduction id
+    pub credits_deduction_id: Option<Uuid>,
 }
 
 #[ComplexObject]
@@ -86,6 +89,7 @@ impl From<Model> for CollectionMint {
             signature,
             edition,
             seller_fee_basis_points,
+            credits_deduction_id,
         }: Model,
     ) -> Self {
         Self {
@@ -99,6 +103,7 @@ impl From<Model> for CollectionMint {
             signature,
             edition,
             seller_fee_basis_points,
+            credits_deduction_id,
         }
     }
 }

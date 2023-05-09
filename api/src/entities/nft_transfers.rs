@@ -12,6 +12,7 @@ pub struct Model {
     pub sender: String,
     pub recipient: String,
     pub created_at: DateTime,
+    pub credits_deduction_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

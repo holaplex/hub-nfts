@@ -1,6 +1,6 @@
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::producer::Producer;
-use sea_orm::{prelude::*, JoinType, QuerySelect};
+use hub_core::{credits::CreditsClient, producer::Producer};
+use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -8,14 +8,15 @@ use crate::{
         solana::{Solana, TransferAssetRequest},
         Edition, TransactionResponse,
     },
+    db::Connection,
     entities::{
         collection_mints::{self, CollectionMint},
-        collections, drops,
+        collections, drops, nft_transfers,
         prelude::{Collections, Drops},
         sea_orm_active_enums::Blockchain,
     },
     proto::{self, nft_events, NftEventKey, NftEvents, TransferMintTransaction},
-    AppContext, UserID,
+    Actions, AppContext, OrganizationId, UserID,
 };
 
 #[derive(Default)]
@@ -47,11 +48,25 @@ impl Mutation {
         ctx: &Context<'_>,
         input: TransferAssetInput,
     ) -> Result<TransferAssetPayload> {
-        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
         let UserID(id) = user_id;
+        let OrganizationId(org) = organization_id;
+
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+        let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or_else(|| Error::new("X-CREDIT-BALANCE header not found"))?;
+
         let conn = db.get();
         let producer = ctx.data::<Producer<NftEvents>>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
 
         let TransferAssetInput { id, recipient } = input;
 
@@ -73,7 +88,7 @@ impl Mutation {
         let proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
 
         let (
-            _,
+            transfer_id,
             TransactionResponse {
                 serialized_message,
                 signed_message_signatures,
@@ -106,6 +121,7 @@ impl Mutation {
                 sender: collection_mint_model.owner.to_string(),
                 recipient: recipient.to_string(),
                 project_id: drop.project_id.to_string(),
+                transfer_id: transfer_id.to_string(),
             })),
         };
         let key = NftEventKey {
@@ -115,10 +131,61 @@ impl Mutation {
 
         producer.send(Some(&event), Some(&key)).await?;
 
+        submit_pending_deduction(
+            credits,
+            db,
+            balance,
+            org_id,
+            user_id,
+            transfer_id,
+            collection.blockchain,
+        )
+        .await?;
+
         Ok(TransferAssetPayload {
             mint: collection_mint_model.into(),
         })
     }
+}
+
+async fn submit_pending_deduction(
+    credits: &CreditsClient<Actions>,
+    db: &Connection,
+    balance: u64,
+    org_id: Uuid,
+    user_id: Uuid,
+    transfer_id: Uuid,
+    blockchain: Blockchain,
+) -> Result<()> {
+    let id = match blockchain {
+        Blockchain::Solana => {
+            credits
+                .submit_pending_deduction(
+                    org_id,
+                    user_id,
+                    Actions::TransferAsset,
+                    hub_core::credits::Blockchain::Solana,
+                    balance,
+                )
+                .await?
+        },
+        _ => {
+            return Err(Error::new("blockchain not supported yet"));
+        },
+    };
+
+    let deduction_id = id.ok_or_else(|| Error::new("failed to generate credits deduction id"))?;
+
+    let nft_transfer_model = nft_transfers::Entity::find_by_id(transfer_id)
+        .one(db.get())
+        .await?
+        .ok_or_else(|| Error::new("drop not found"))?;
+
+    let mut nft_transfer: nft_transfers::ActiveModel = nft_transfer_model.into();
+    nft_transfer.credits_deduction_id = Set(Some(deduction_id.0));
+    nft_transfer.update(db.get()).await?;
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
