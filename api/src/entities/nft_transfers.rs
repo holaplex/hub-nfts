@@ -11,7 +11,7 @@ pub struct Model {
     pub mint_address: String,
     pub sender: String,
     pub recipient: String,
-    pub created_at: DateTime,
+    pub created_at: DateTimeWithTimeZone,
     pub credits_deduction_id: Option<Uuid>,
 }
 

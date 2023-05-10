@@ -147,7 +147,7 @@ impl Mutation {
             drop_id: Set(Some(drop_model.id)),
             tx_signature: Set(None),
             status: Set(CreationStatus::Pending),
-            created_at: Set(Utc::now().naive_utc()),
+            created_at: Set(Utc::now().into()),
             ..Default::default()
         };
 
@@ -359,7 +359,7 @@ async fn check_drop_status(drop_model: &drops::Model) -> Result<(), Error> {
         .map_or(Ok(()), |_| Err(Error::new("Drop status is shutdown")))?;
 
     drop_model.start_time.map_or(Ok(()), |start_time| {
-        if start_time <= Utc::now().naive_utc() {
+        if start_time <= Utc::now() {
             Ok(())
         } else {
             Err(Error::new("Drop has not yet started"))
@@ -367,7 +367,7 @@ async fn check_drop_status(drop_model: &drops::Model) -> Result<(), Error> {
     })?;
 
     drop_model.end_time.map_or(Ok(()), |end_time| {
-        if end_time > Utc::now().naive_utc() {
+        if end_time > Utc::now() {
             Ok(())
         } else {
             Err(Error::new("Drop has already ended"))

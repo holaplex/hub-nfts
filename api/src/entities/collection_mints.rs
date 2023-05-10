@@ -18,7 +18,7 @@ pub struct Model {
     pub owner: String,
     pub creation_status: CreationStatus,
     pub created_by: Uuid,
-    pub created_at: DateTime,
+    pub created_at: DateTimeWithTimeZone,
     pub signature: Option<String>,
     pub edition: i64,
     pub seller_fee_basis_points: i16,
@@ -42,7 +42,7 @@ pub struct CollectionMint {
     /// The unique ID of the creator of the NFT.
     pub created_by: Uuid,
     /// The date and time when the NFT was created.
-    pub created_at: DateTime,
+    pub created_at: DateTimeWithTimeZone,
     /// The transaction signature associated with the NFT.
     pub signature: Option<String>,
     /// The unique edition number of the NFT.
