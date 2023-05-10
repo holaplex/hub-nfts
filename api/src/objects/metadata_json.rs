@@ -56,7 +56,7 @@ impl MetadataJson {
         let url = Url::parse(&self.image_original)?;
         asset_proxy
             .proxy_ipfs_image(&url, None)
-            .map_err(|e| e.into())
+            .map_err(Into::into)
             .map(|u| u.map(Into::into))
     }
 }

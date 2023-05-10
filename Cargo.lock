@@ -2146,7 +2146,7 @@ dependencies = [
 [[package]]
 name = "holaplex-hub-core"
 version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=abdul/asset_proxy#aa0b87659408fad3b1b57b6b7f192a19685f91ce"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#fe3d22246798054f39260c058ea557b5b9b7c3f9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2180,26 +2180,7 @@ dependencies = [
 [[package]]
 name = "holaplex-hub-core-build"
 version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=abdul/asset_proxy#aa0b87659408fad3b1b57b6b7f192a19685f91ce"
-dependencies = [
- "anyhow",
- "dotenv",
- "futures-util",
- "hex",
- "prost-build",
- "reqwest",
- "serde",
- "sha2 0.10.6",
- "tempfile",
- "tokio",
- "toml 0.5.11",
- "url",
-]
-
-[[package]]
-name = "holaplex-hub-core-build"
-version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=stable#3d8b9b7d8384f5acbf0d27cdfc60ed5de082537d"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#fe3d22246798054f39260c058ea557b5b9b7c3f9"
 dependencies = [
  "anyhow",
  "dotenv",
@@ -2218,9 +2199,9 @@ dependencies = [
 [[package]]
 name = "holaplex-hub-core-schemas"
 version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=abdul/asset_proxy#aa0b87659408fad3b1b57b6b7f192a19685f91ce"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#fe3d22246798054f39260c058ea557b5b9b7c3f9"
 dependencies = [
- "holaplex-hub-core-build 0.1.0 (git+https://github.com/holaplex/hub-core?branch=abdul/asset_proxy)",
+ "holaplex-hub-core-build",
  "prost",
 ]
 
@@ -2232,7 +2213,7 @@ dependencies = [
  "async-graphql-poem",
  "async-trait",
  "holaplex-hub-core",
- "holaplex-hub-core-build 0.1.0 (git+https://github.com/holaplex/hub-core?branch=stable)",
+ "holaplex-hub-core-build",
  "mpl-token-metadata",
  "poem",
  "prost",
@@ -2806,9 +2787,9 @@ dependencies = [
 
 [[package]]
 name = "mpl-token-metadata"
-version = "1.11.0"
+version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aed414104154928aa995a44a0a474c449d04ce5a4ee6c975ad41c5d2912f0dfe"
+checksum = "fe6527274dc245c7516244eec69ba28e0fef4b754c26238cf8a570038ab1ca73"
 dependencies = [
  "arrayref",
  "borsh 0.9.3",
@@ -5950,9 +5931,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.28.0"
+version = "1.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3c786bf8134e5a3a166db9b29ab8f48134739014a3eca7bc6bfa95d673b136f"
+checksum = "0aa32867d44e6f2ce3385e89dceb990188b8bb0fb25b0cf576647a6f98ac5105"
 dependencies = [
  "autocfg",
  "bytes 1.4.0",
