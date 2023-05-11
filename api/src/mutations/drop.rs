@@ -2,6 +2,7 @@ use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{
     anyhow,
     chrono::{DateTime, Utc},
+    credits::CreditsClient,
     producer::Producer,
 };
 use mpl_token_metadata::state::Creator;
@@ -14,6 +15,7 @@ use crate::{
         Edition, TransactionResponse,
     },
     collection::Collection,
+    db::Connection,
     entities::{
         collection_creators, collections, drops, metadata_jsons,
         prelude::{Collections, Drops},
@@ -23,7 +25,7 @@ use crate::{
     metadata_json::MetadataJson,
     objects::{CollectionCreator, Drop, MetadataJsonInput},
     proto::{self, nft_events, NftEventKey, NftEvents},
-    AppContext, NftStorageClient, UserID,
+    Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
 
 #[derive(Default)]
@@ -39,14 +41,26 @@ impl Mutation {
         ctx: &Context<'_>,
         input: CreateDropInput,
     ) -> Result<CreateDropPayload> {
-        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
         let UserID(id) = user_id;
+        let OrganizationId(org) = organization_id;
         let conn = db.get();
         let producer = ctx.data::<Producer<NftEvents>>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
         let solana = ctx.data::<Solana>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
 
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+        let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or_else(|| Error::new("X-CREDIT-BALANCE header not found"))?;
 
         let wallet = project_wallets::Entity::find()
             .filter(
@@ -142,6 +156,17 @@ impl Mutation {
             serialized_message,
             signed_message_signatures,
             input.project,
+            input.blockchain,
+        )
+        .await?;
+
+        submit_pending_deduction(
+            credits,
+            db,
+            balance,
+            user_id,
+            org_id,
+            drop_model.id,
             input.blockchain,
         )
         .await?;
@@ -265,16 +290,6 @@ impl Mutation {
             creators,
         } = input;
 
-        if price.is_none()
-            && start_time.is_none()
-            && end_time.is_none()
-            && seller_fee_basis_points.is_none()
-            && metadata_json.is_none()
-            && creators.is_none()
-        {
-            return Err(Error::new("please select at least one field to update"));
-        }
-
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let conn = db.get();
         let producer = ctx.data::<Producer<NftEvents>>()?;
@@ -313,17 +328,19 @@ impl Mutation {
         if let Some(price) = price {
             drop_am.price = Set(price.try_into()?);
         }
-        if let Some(start_time) = start_time {
-            drop_am.start_time = Set(Some(start_time.naive_utc()));
-        }
 
-        if let Some(end_time) = end_time {
-            drop_am.end_time = if end_time < Utc::now() {
-                return Err(Error::new("endTime can not be in the past"));
-            } else {
-                Set(Some(end_time.naive_utc()))
-            };
-        }
+        drop_am.start_time = Set(Some(
+            start_time.map_or(Utc::now().naive_utc(), |t| t.naive_utc()),
+        ));
+        drop_am.end_time = Set(end_time
+            .map(|t| {
+                if t > Utc::now() {
+                    Ok(t.naive_utc())
+                } else {
+                    Err(Error::new("end time must be in the future"))
+                }
+            })
+            .transpose()?);
 
         if creators.clone().is_some() {
             let creators = creators
@@ -512,6 +529,46 @@ async fn emit_update_metadata_transaction_event(
     };
 
     producer.send(Some(&event), Some(&key)).await?;
+
+    Ok(())
+}
+
+async fn submit_pending_deduction(
+    credits: &CreditsClient<Actions>,
+    db: &Connection,
+    balance: u64,
+    user_id: Uuid,
+    org_id: Uuid,
+    drop: Uuid,
+    blockchain: BlockchainEnum,
+) -> Result<()> {
+    let id = match blockchain {
+        BlockchainEnum::Solana => {
+            credits
+                .submit_pending_deduction(
+                    org_id,
+                    user_id,
+                    Actions::CreateDrop,
+                    hub_core::credits::Blockchain::Solana,
+                    balance,
+                )
+                .await?
+        },
+        _ => {
+            return Err(Error::new("blockchain not supported yet"));
+        },
+    };
+
+    let deduction_id = id.ok_or_else(|| Error::new("failed to generate credits deduction id"))?;
+
+    let drop_model = drops::Entity::find_by_id(drop)
+        .one(db.get())
+        .await?
+        .ok_or_else(|| Error::new("drop not found"))?;
+
+    let mut drop: drops::ActiveModel = drop_model.into();
+    drop.credits_deduction_id = Set(Some(deduction_id.0));
+    drop.update(db.get()).await?;
 
     Ok(())
 }
