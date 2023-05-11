@@ -1,93 +1,11 @@
-use async_graphql::{ComplexObject, Context, InputObject, Result, SimpleObject};
-use hub_core::{assets::AssetProxy, uuid::Uuid};
-use reqwest::Url;
+use async_graphql::InputObject;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    entities::{
-        metadata_json_attributes::{self, Model as MetadataJsonAttributeModel},
-        metadata_json_files::Model as MetadataJsonFileModel,
-        metadata_jsons::{self, Model as MetadataJsonModel},
-    },
-    AppContext,
+use crate::entities::{
+    metadata_json_attributes::Model as MetadataJsonAttributeModel,
+    metadata_json_files::Model as MetadataJsonFileModel,
+    metadata_jsons::Model as MetadataJsonModel,
 };
-
-/// The collection's associated metadata JSON.
-/// ## References
-/// [Metaplex v1.1.0 Standard](https://docs.metaplex.com/programs/token-metadata/token-standard)
-#[derive(Clone, Debug, PartialEq, Eq, SimpleObject)]
-#[graphql(complex, concrete(name = "MetadataJson", params()))]
-pub struct MetadataJson {
-    pub id: Uuid,
-    pub identifier: String,
-    /// The assigned name of the NFT.
-    pub name: String,
-    /// The URI for the complete metadata JSON.
-    pub uri: String,
-    /// The symbol of the NFT.
-    pub symbol: String,
-    /// The description of the NFT.
-    pub description: String,
-    /// The image URI for the NFT.
-    pub image_original: String,
-    /// An optional animated version of the NFT art.
-    pub animation_url: Option<String>,
-    /// An optional URL where viewers can find more information on the NFT, such as the collection's homepage or Twitter page.
-    pub external_url: Option<String>,
-}
-
-#[ComplexObject]
-impl MetadataJson {
-    // The NFT's associated attributes.
-    async fn attributes(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<Vec<metadata_json_attributes::Model>>> {
-        let AppContext {
-            metadata_json_attributes_loader,
-            ..
-        } = ctx.data::<AppContext>()?;
-
-        metadata_json_attributes_loader.load_one(self.id).await
-    }
-
-    async fn image(&self, ctx: &Context<'_>) -> Result<Option<String>> {
-        let asset_proxy = ctx.data::<AssetProxy>()?;
-        let url = Url::parse(&self.image_original)?;
-        asset_proxy
-            .proxy_ipfs_image(&url, None)
-            .map_err(Into::into)
-            .map(|u| u.map(Into::into))
-    }
-}
-
-impl From<metadata_jsons::Model> for MetadataJson {
-    fn from(
-        metadata_jsons::Model {
-            id,
-            identifier,
-            name,
-            uri,
-            symbol,
-            description,
-            image,
-            animation_url,
-            external_url,
-        }: metadata_jsons::Model,
-    ) -> Self {
-        Self {
-            id,
-            identifier,
-            name,
-            uri,
-            symbol,
-            description,
-            image_original: image,
-            animation_url,
-            external_url,
-        }
-    }
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
 pub struct MetadataJsonInput {
