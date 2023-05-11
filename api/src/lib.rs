@@ -29,6 +29,7 @@ use dataloaders::{
 use db::Connection;
 use hub_core::{
     anyhow::{Error, Result},
+    assets::AssetProxy,
     clap,
     consumer::RecvError,
     credits::CreditsClient,
@@ -204,6 +205,7 @@ pub struct AppState {
     pub credits: CreditsClient<Actions>,
     pub solana: Solana,
     pub nft_storage: NftStorageClient,
+    pub asset_proxy: AssetProxy,
 }
 
 impl AppState {
@@ -215,6 +217,7 @@ impl AppState {
         credits: CreditsClient<Actions>,
         solana: Solana,
         nft_storage: NftStorageClient,
+        asset_proxy: AssetProxy,
     ) -> Self {
         Self {
             schema,
@@ -223,6 +226,7 @@ impl AppState {
             credits,
             solana,
             nft_storage,
+            asset_proxy,
         }
     }
 }

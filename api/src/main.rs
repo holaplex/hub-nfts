@@ -57,6 +57,7 @@ pub fn main() {
                 credits.clone(),
                 solana_blockchain,
                 nft_storage,
+                common.asset_proxy,
             );
 
             let cons = common.consumer_cfg.build::<Services>().await?;
