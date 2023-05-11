@@ -1,12 +1,12 @@
 use async_graphql::{Context, Object, Result};
 use sea_orm::entity::prelude::*;
 
-use super::Holder;
+use super::{metadata_json::MetadataJson, Holder};
 use crate::{
     entities::{
         collection_creators, collection_mints,
         collections::Model,
-        metadata_jsons, purchases,
+        purchases,
         sea_orm_active_enums::{Blockchain, CreationStatus},
     },
     AppContext,
@@ -77,7 +77,7 @@ impl Collection {
     /// The metadata json associated to the collection.
     /// ## References
     /// [Metaplex v1.1.0 Standard](https://docs.metaplex.com/programs/token-metadata/token-standard)
-    async fn metadata_json(&self, ctx: &Context<'_>) -> Result<Option<metadata_jsons::Model>> {
+    async fn metadata_json(&self, ctx: &Context<'_>) -> Result<Option<MetadataJson>> {
         let AppContext {
             metadata_json_loader,
             ..
