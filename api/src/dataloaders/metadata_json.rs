@@ -7,7 +7,6 @@ use sea_orm::prelude::*;
 use crate::{
     db::Connection,
     entities::{metadata_json_attributes, metadata_jsons},
-    objects::MetadataJson,
 };
 
 #[derive(Debug, Clone)]
@@ -25,7 +24,7 @@ impl Loader {
 #[async_trait]
 impl DataLoader<Uuid> for Loader {
     type Error = FieldError;
-    type Value = MetadataJson;
+    type Value = metadata_jsons::Model;
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let metadata_jsons = metadata_jsons::Entity::find()
@@ -35,7 +34,7 @@ impl DataLoader<Uuid> for Loader {
 
         Ok(metadata_jsons
             .into_iter()
-            .map(|metadata_json| (metadata_json.id, metadata_json.into()))
+            .map(|metadata_json| (metadata_json.id, metadata_json))
             .collect())
     }
 }
