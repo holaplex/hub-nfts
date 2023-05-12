@@ -151,16 +151,14 @@ impl Mutation {
         )
         .await?;
 
-        submit_pending_deduction(
-            credits,
-            db,
-            balance,
+        submit_pending_deduction(credits, db, DeductionParams {
             user_id,
             org_id,
-            drop_model.id,
-            input.blockchain,
-            Actions::CreateDrop,
-        )
+            balance,
+            drop: drop_model.id,
+            blockchain: input.blockchain,
+            action: Actions::CreateDrop,
+        })
         .await?;
 
         Ok(CreateDropPayload {
@@ -233,6 +231,16 @@ impl Mutation {
         collection_am.address = Set(Some(collection_address.to_string()));
         let collection = collection_am.update(db.get()).await?;
 
+        submit_pending_deduction(credits, db, DeductionParams {
+            balance,
+            user_id,
+            org_id,
+            drop: drop.id,
+            blockchain: collection.blockchain,
+            action: Actions::RetryDrop,
+        })
+        .await?;
+
         emit_retry_drop_event(
             producer,
             input.drop,
@@ -241,18 +249,6 @@ impl Mutation {
             signed_message_signatures,
             drop.project_id,
             collection.blockchain,
-        )
-        .await?;
-
-        submit_pending_deduction(
-            credits,
-            db,
-            balance,
-            user_id,
-            org_id,
-            drop.id,
-            collection.blockchain,
-            Actions::RetryDrop,
         )
         .await?;
 
@@ -650,16 +646,38 @@ async fn emit_update_metadata_transaction_event(
     Ok(())
 }
 
-async fn submit_pending_deduction(
-    credits: &CreditsClient<Actions>,
-    db: &Connection,
+struct DeductionParams {
     balance: u64,
     user_id: Uuid,
     org_id: Uuid,
     drop: Uuid,
     blockchain: BlockchainEnum,
     action: Actions,
+}
+
+async fn submit_pending_deduction(
+    credits: &CreditsClient<Actions>,
+    db: &Connection,
+    params: DeductionParams,
 ) -> Result<()> {
+    let DeductionParams {
+        balance,
+        user_id,
+        org_id,
+        drop,
+        blockchain,
+        action,
+    } = params;
+
+    let drop_model = drops::Entity::find_by_id(drop)
+        .one(db.get())
+        .await?
+        .ok_or_else(|| Error::new("drop not found"))?;
+
+    if drop_model.credits_deduction_id.is_some() {
+        return Ok(());
+    }
+
     let id = match blockchain {
         BlockchainEnum::Solana => {
             credits
@@ -678,11 +696,6 @@ async fn submit_pending_deduction(
     };
 
     let deduction_id = id.ok_or_else(|| Error::new("failed to generate credits deduction id"))?;
-
-    let drop_model = drops::Entity::find_by_id(drop)
-        .one(db.get())
-        .await?
-        .ok_or_else(|| Error::new("drop not found"))?;
 
     let mut drop: drops::ActiveModel = drop_model.into();
     drop.credits_deduction_id = Set(Some(deduction_id.0));
