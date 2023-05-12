@@ -1,0 +1,71 @@
+name: Merge Docker Manifests and deploy to kubes
+on:
+  push:
+    branches:
+      - main
+      - release
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      -
+        name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - 
+        name: Wait for release workflow to succeed (arm64)
+        uses: lewagon/wait-on-check-action@v1.3.1
+        with:
+          ref: ${{ github.ref }}
+          check-name: release (arm64)
+          repo-token: ${{ secrets.ACTIONS_TOKEN }}
+          wait-interval: 10
+          allowed-conclusions: success
+
+      - 
+        name: Wait for release workflow to succeed (amd64)
+        uses: lewagon/wait-on-check-action@v1.3.1
+        with:
+          ref: ${{ github.ref }}
+          check-name: release (amd64)
+          repo-token: ${{ secrets.ACTIONS_TOKEN }}
+          wait-interval: 10
+          allowed-conclusions: success 
+      - 
+        name: Merge ${{ github.event.repository.name }} image tags
+        uses: Noelware/docker-manifest-action@master
+        with:
+          inputs: ${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest,${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.sha }}
+          images: ${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest-amd64,${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest-arm64
+          push: true
+      - 
+        name: Merge ${{ github.event.repository.name }}-migrations image tags
+        uses: Noelware/docker-manifest-action@master
+        with:
+          inputs: ${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}-migrations:latest,${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}-migrations:${{ github.sha }}
+          images: ${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}-migrations:latest-amd64,${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}-migrations:latest-arm64
+          push: true
+      - 
+        name: Invoke workflow in hub-kubes repo
+        if: github.ref == 'refs/heads/main'
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          ref: main
+          token: ${{ secrets.ACTIONS_TOKEN }}
+          workflow: release.yml
+          repo: holaplex/hub-kubes
+          inputs: '{ "service": "nfts", "environment": "stage", "commit_hash": "${{ github.sha }}"}'
+      - 
+        name: Invoke workflow in hub-kubes repo
+        if: github.ref == 'refs/heads/release'
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          ref: main
+          token: ${{ secrets.ACTIONS_TOKEN }}
+          workflow: release.yml
+          repo: holaplex/hub-kubes
+          inputs: '{ "service": "nfts", "environment": "prod", "commit_hash": "${{ github.sha }}"}'
