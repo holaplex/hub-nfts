@@ -1,4 +1,6 @@
-FROM lukemathwalker/cargo-chef:0.1.50-rust-buster AS chef
+FROM rust:1.69.0-bullseye as chef
+RUN cargo install cargo-chef --locked
+
 WORKDIR /app
 
 RUN apt-get update -y && \
@@ -14,7 +16,9 @@ RUN apt-get update -y && \
   rm -rf /var/lib/apt/lists/*
 
 FROM chef AS planner
-COPY Cargo.* rust-toolchain.toml ./
+
+
+COPY Cargo.* ./
 COPY api api
 COPY migration migration
 RUN cargo chef prepare --recipe-path recipe.json
@@ -24,7 +28,7 @@ COPY --from=planner /app/recipe.json recipe.json
 # Build dependencies - this is the caching Docker layer!
 RUN cargo chef cook --release --recipe-path recipe.json
 # Build application
-COPY Cargo.* rust-toolchain.toml ./
+COPY Cargo.* ./
 COPY api api
 COPY migration migration
 

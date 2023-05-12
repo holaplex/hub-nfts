@@ -1,6 +1,18 @@
 name: Cargo
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+      - release
+  pull_request:
+    branches:
+      - "**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
 
   clippy:
@@ -23,11 +35,15 @@ jobs:
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
-            toolchain: nightly-2022-12-11
+            toolchain: 1.69.0
             override: true
             components: rustfmt, clippy
-      - uses: actions/cache@v3
+
+      - uses: tespkg/actions-cache@v1
         with:
+          accessKey: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          secretKey: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          bucket: ${{ vars.AWS_BUCKET }}
           path: |
             ~/.cargo/bin/
             ~/.cargo/registry/index/

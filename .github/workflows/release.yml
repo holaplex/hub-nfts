@@ -5,6 +5,13 @@ on:
       - main
       - release 
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:  
+  CACHE_CONFIG: type=s3,region=${{ vars.AWS_REGION }},bucket=${{ vars.AWS_BUCKET }},access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }},secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
 jobs:
   release:
     strategy:
@@ -50,8 +57,8 @@ jobs:
           provenance: false
           platforms: linux/${{ matrix.arch }}
           tags: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}:latest-${{ matrix.arch }}
-          cache-from: type=s3,region=${{ vars.AWS_REGION }},bucket=${{ vars.AWS_BUCKET }},prefix=buildx/${{ github.event.repository.name }}/${{ matrix.arch }}/,access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }},secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          cache-to: type=s3,region=${{ vars.AWS_REGION }},bucket=${{ vars.AWS_BUCKET }},prefix=buildx/${{ github.event.repository.name }}/${{ matrix.arch }}/,access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }},secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }},mode=max
+          cache-from: ${{ env.CACHE_CONFIG }},prefix=buildx/${{ github.event.repository.name }}/${{ matrix.arch }}/
+          cache-to: ${{ env.CACHE_CONFIG }},prefix=buildx/${{ github.event.repository.name }}/${{ matrix.arch }}/,mode=max
       -
         name: Build and push ${{ github.event.repository.name }}-migrations
         uses: docker/build-push-action@v3
@@ -63,5 +70,5 @@ jobs:
           provenance: false
           platforms: linux/${{ matrix.arch }}
           tags: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations:latest-${{ matrix.arch }}
-          cache-from: type=s3,region=${{ vars.AWS_REGION }},bucket=${{ vars.AWS_BUCKET }},prefix=buildx/${{ github.event.repository.name }}/${{ matrix.arch }}/,access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }},secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          cache-to: type=s3,region=${{ vars.AWS_REGION }},bucket=${{ vars.AWS_BUCKET }},prefix=buildx/${{ github.event.repository.name }}/${{ matrix.arch }}/,access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }},secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }},mode=max 
+          cache-from: ${{ env.CACHE_CONFIG }},prefix=buildx/${{ github.event.repository.name }}/${{ matrix.arch }}/
+          cache-to: ${{ env.CACHE_CONFIG }},prefix=buildx/${{ github.event.repository.name }}/${{ matrix.arch }}/,mode=max
