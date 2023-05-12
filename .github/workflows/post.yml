@@ -5,52 +5,56 @@ on:
       - main
       - release
 
+env:
+  SERVICE_NAME: nfts
+  DOCKERHUB_REPO: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}
+  DOCKERHUB_MIGRATIONS_REPO: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations
+  CHECK_INTERVAL: 10
+
 jobs:
   merge:
     runs-on: ubuntu-latest
     environment: release
     steps:
-      -
-        name: Login to Docker Hub
+      - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - 
-        name: Wait for release workflow to succeed (arm64)
+      
+      - name: Wait for release workflow to succeed (arm64)
         uses: lewagon/wait-on-check-action@v1.3.1
         with:
           ref: ${{ github.ref }}
           check-name: release (arm64)
           repo-token: ${{ secrets.ACTIONS_TOKEN }}
-          wait-interval: 10
+          wait-interval: ${{ env.CHECK_INTERVAL }}
           allowed-conclusions: success
 
-      - 
-        name: Wait for release workflow to succeed (amd64)
+      - name: Wait for release workflow to succeed (amd64)
         uses: lewagon/wait-on-check-action@v1.3.1
         with:
           ref: ${{ github.ref }}
           check-name: release (amd64)
           repo-token: ${{ secrets.ACTIONS_TOKEN }}
-          wait-interval: 10
-          allowed-conclusions: success 
-      - 
-        name: Merge ${{ github.event.repository.name }} image tags
+          wait-interval: ${{ env.CHECK_INTERVAL }}
+          allowed-conclusions: success
+
+      - name: Merge image tags
         uses: Noelware/docker-manifest-action@master
         with:
-          inputs: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}:latest,${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}:${{ github.sha }}
-          images: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}:latest-amd64,${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}:latest-arm64
+          inputs: ${{ env.DOCKERHUB_REPO }}:latest,${{ env.DOCKERHUB_REPO }}:${{ github.sha }}
+          images: ${{ env.DOCKERHUB_REPO }}:latest-amd64,${{ env.DOCKERHUB_REPO }}:latest-arm64
           push: true
-      - 
-        name: Merge ${{ github.event.repository.name }}-migrations image tags
+
+      - name: Merge migrations image tags
         uses: Noelware/docker-manifest-action@master
         with:
-          inputs: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations:latest,${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations:${{ github.sha }}
-          images: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations:latest-amd64,${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations:latest-arm64
+          inputs: ${{ env.DOCKERHUB_MIGRATIONS_REPO }}:latest,${{ env.DOCKERHUB_MIGRATIONS_REPO }}:${{ github.sha }}
+          images: ${{ env.DOCKERHUB_MIGRATIONS_REPO }}:latest-amd64,${{ env.DOCKERHUB_MIGRATIONS_REPO }}:latest-arm64
           push: true
-      - 
-        name: Invoke workflow in hub-kubes repo
+      
+      - name: Invoke workflow in hub-kubes repo for stage
         if: github.ref == 'refs/heads/main'
         uses: benc-uk/workflow-dispatch@v1
         with:
@@ -58,9 +62,9 @@ jobs:
           token: ${{ secrets.ACTIONS_TOKEN }}
           workflow: release.yml
           repo: holaplex/hub-kubes
-          inputs: '{ "service": "nfts", "environment": "stage", "commit_hash": "${{ github.sha }}"}'
-      - 
-        name: Invoke workflow in hub-kubes repo
+          inputs: '{ "service": "${{ env.SERVICE_NAME }}", "environment": "stage", "commit_hash": "${{ github.sha }}"}'
+
+      - name: Invoke workflow in hub-kubes repo for prod
         if: github.ref == 'refs/heads/release'
         uses: benc-uk/workflow-dispatch@v1
         with:
@@ -68,4 +72,4 @@ jobs:
           token: ${{ secrets.ACTIONS_TOKEN }}
           workflow: release.yml
           repo: holaplex/hub-kubes
-          inputs: '{ "service": "nfts", "environment": "prod", "commit_hash": "${{ github.sha }}"}'
+          inputs: '{ "service": "${{ env.SERVICE_NAME }}", "environment": "prod", "commit_hash": "${{ github.sha }}"}'
