@@ -39,15 +39,15 @@ jobs:
         name: Merge ${{ github.event.repository.name }} image tags
         uses: Noelware/docker-manifest-action@master
         with:
-          inputs: ${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest,${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.sha }}
-          images: ${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest-amd64,${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest-arm64
+          inputs: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}:latest,${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}:${{ github.sha }}
+          images: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}:latest-amd64,${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}:latest-arm64
           push: true
       - 
         name: Merge ${{ github.event.repository.name }}-migrations image tags
         uses: Noelware/docker-manifest-action@master
         with:
-          inputs: ${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}-migrations:latest,${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}-migrations:${{ github.sha }}
-          images: ${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}-migrations:latest-amd64,${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}-migrations:latest-arm64
+          inputs: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations:latest,${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations:${{ github.sha }}
+          images: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations:latest-amd64,${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations:latest-arm64
           push: true
       - 
         name: Invoke workflow in hub-kubes repo
