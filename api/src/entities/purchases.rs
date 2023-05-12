@@ -28,7 +28,7 @@ pub struct Model {
     /// The status of the creation of the NFT.
     pub status: CreationStatus,
     /// The date and time when the purchase was created.
-    pub created_at: DateTime,
+    pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

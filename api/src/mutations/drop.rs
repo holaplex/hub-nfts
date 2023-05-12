@@ -1,10 +1,5 @@
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{
-    anyhow,
-    chrono::{DateTime, Utc},
-    credits::CreditsClient,
-    producer::Producer,
-};
+use hub_core::{anyhow, chrono::Utc, credits::CreditsClient, producer::Producer};
 use mpl_token_metadata::state::Creator;
 use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
@@ -139,11 +134,11 @@ impl Mutation {
             project_id: Set(input.project),
             collection_id: Set(collection.id),
             creation_status: Set(CreationStatus::Pending),
-            start_time: Set(input.start_time.map(|start_date| start_date.naive_utc())),
-            end_time: Set(input.end_time.map(|end_date| end_date.naive_utc())),
+            start_time: Set(input.start_time),
+            end_time: Set(input.end_time),
             price: Set(input.price.unwrap_or_default().try_into()?),
             created_by: Set(user_id),
-            created_at: Set(Utc::now().naive_utc()),
+            created_at: Set(Utc::now().into()),
             ..Default::default()
         };
 
@@ -198,7 +193,7 @@ impl Mutation {
 
         let mut drops_active_model: drops::ActiveModel = drop.into();
 
-        drops_active_model.paused_at = Set(Some(Utc::now().naive_utc()));
+        drops_active_model.paused_at = Set(Some(Utc::now().into()));
         let drop_model = drops_active_model.update(db.get()).await?;
 
         Ok(PauseDropPayload {
@@ -263,7 +258,7 @@ impl Mutation {
 
         let mut drops_active_model: drops::ActiveModel = drop.into();
 
-        drops_active_model.shutdown_at = Set(Some(Utc::now().naive_utc()));
+        drops_active_model.shutdown_at = Set(Some(Utc::now().into()));
 
         let drop_model = drops_active_model.update(db.get()).await?;
 
@@ -329,13 +324,11 @@ impl Mutation {
             drop_am.price = Set(price.try_into()?);
         }
 
-        drop_am.start_time = Set(Some(
-            start_time.map_or(Utc::now().naive_utc(), |t| t.naive_utc()),
-        ));
+        drop_am.start_time = Set(Some(start_time.map_or(Utc::now().into(), |t| t)));
         drop_am.end_time = Set(end_time
             .map(|t| {
                 if t > Utc::now() {
-                    Ok(t.naive_utc())
+                    Ok(t)
                 } else {
                     Err(Error::new("end time must be in the future"))
                 }
@@ -584,8 +577,8 @@ pub struct CreateDropInput {
     pub price: Option<u64>,
     pub seller_fee_basis_points: Option<u16>,
     pub supply: Option<u64>,
-    pub start_time: Option<DateTime<Utc>>,
-    pub end_time: Option<DateTime<Utc>>,
+    pub start_time: Option<DateTimeWithTimeZone>,
+    pub end_time: Option<DateTimeWithTimeZone>,
     pub blockchain: BlockchainEnum,
     pub creators: Vec<CollectionCreator>,
     pub metadata_json: MetadataJsonInput,
@@ -617,9 +610,9 @@ pub struct PatchDropInput {
     /// The new price for the drop in the native token of the blockchain
     pub price: Option<u64>,
     /// The new start time for the drop in UTC
-    pub start_time: Option<DateTime<Utc>>,
+    pub start_time: Option<DateTimeWithTimeZone>,
     /// The new end time for the drop in UTC
-    pub end_time: Option<DateTime<Utc>>,
+    pub end_time: Option<DateTimeWithTimeZone>,
     /// The new seller fee basis points for the drop
     pub seller_fee_basis_points: Option<u16>,
     /// The new metadata JSON for the drop

@@ -12,13 +12,13 @@ pub struct Model {
     pub project_id: Uuid,
     pub collection_id: Uuid,
     pub creation_status: CreationStatus,
-    pub start_time: Option<DateTime>,
-    pub end_time: Option<DateTime>,
+    pub start_time: Option<DateTimeWithTimeZone>,
+    pub end_time: Option<DateTimeWithTimeZone>,
     pub price: i64,
     pub created_by: Uuid,
-    pub created_at: DateTime,
-    pub paused_at: Option<DateTime>,
-    pub shutdown_at: Option<DateTime>,
+    pub created_at: DateTimeWithTimeZone,
+    pub paused_at: Option<DateTimeWithTimeZone>,
+    pub shutdown_at: Option<DateTimeWithTimeZone>,
     pub credits_deduction_id: Option<Uuid>,
 }
 

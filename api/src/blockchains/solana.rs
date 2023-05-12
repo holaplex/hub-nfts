@@ -239,7 +239,7 @@ impl
         let solana_collections_active_model = solana_collections::ActiveModel {
             collection_id: Set(collection),
             master_edition_address: Set(master_edition_pubkey.to_string()),
-            created_at: Set(Utc::now().naive_utc()),
+            created_at: Set(Utc::now().into()),
             ata_pubkey: Set(ata.to_string()),
             owner_pubkey: Set(owner.to_string()),
             update_authority: Set(owner.to_string()),
