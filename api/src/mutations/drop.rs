@@ -76,6 +76,10 @@ impl Mutation {
             .wallet_address;
         let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
 
+        if input.supply == Some(0) {
+            return Err(Error::new("supply must be greater than 0 or null"));
+        }
+
         let collection = Collection::new(collections::ActiveModel {
             blockchain: Set(input.blockchain),
             supply: Set(input.supply.map(TryFrom::try_from).transpose()?),
