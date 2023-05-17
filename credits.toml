@@ -13,3 +13,7 @@ polygon = 10
 [TransferAsset]
 solana = 5
 polygon = 10
+
+[RetryDrop]
+solana = 5
+polygon = 10

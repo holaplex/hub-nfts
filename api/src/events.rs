@@ -46,6 +46,12 @@ pub async fn process(msg: Services, db: Connection, credits: CreditsClient<Actio
             Some(Event::MintTransfered(payload)) => {
                 process_mint_transfered_event(db, credits, key, payload).await
             },
+            Some(Event::MintRetried(payload)) => {
+                process_drop_minted_event(db, credits, key, payload).await
+            },
+            Some(Event::DropRetried(payload)) => {
+                process_drop_created_event(db, credits, key, payload).await
+            },
             None | Some(_) => Ok(()),
         },
     }

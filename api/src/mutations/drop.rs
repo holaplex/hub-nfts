@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     blockchains::{
-        solana::{CreateDropRequest, Solana, UpdateEditionRequest},
+        solana::{CreateDropRequest, RetryDropRequest, Solana, UpdateEditionRequest},
         Edition, TransactionResponse,
     },
     collection::Collection,
@@ -87,7 +87,7 @@ impl Mutation {
         .save(db)
         .await?;
 
-        let metadata_json_model = MetadataJson::new(input.metadata_json)
+        let metadata_json = MetadataJson::new(input.metadata_json)
             .upload(nft_storage)
             .await?
             .save(collection.id, db)
@@ -110,12 +110,8 @@ impl Mutation {
                             .into_iter()
                             .map(TryInto::try_into)
                             .collect::<Result<Vec<Creator>>>()?,
-                        name: metadata_json_model.name,
-                        symbol: metadata_json_model.symbol,
-                        supply: input.supply,
-                        metadata_json_uri: metadata_json_model.uri,
-                        collection: collection.id,
-                        seller_fee_basis_points,
+                        collection: collection.clone(),
+                        metadata_json,
                     })
                     .await?
             },
@@ -155,15 +151,14 @@ impl Mutation {
         )
         .await?;
 
-        submit_pending_deduction(
-            credits,
-            db,
-            balance,
+        submit_pending_deduction(credits, db, DeductionParams {
             user_id,
             org_id,
-            drop_model.id,
-            input.blockchain,
-        )
+            balance,
+            drop: drop_model.id,
+            blockchain: input.blockchain,
+            action: Actions::CreateDrop,
+        })
         .await?;
 
         Ok(CreateDropPayload {
@@ -171,6 +166,96 @@ impl Mutation {
         })
     }
 
+    /// This mutation retries an existing drop.
+    /// The drop returns immediately with a creation status of CREATING.
+    /// You can [set up a webhook](https://docs.holaplex.dev/hub/For%20Developers/webhooks-overview) to receive a notification when the drop is ready to be minted.
+    /// Errors
+    /// The mutation will fail if the drop and its related collection cannot be located,
+    /// if the transaction response cannot be built,
+    /// or if the transaction event cannot be emitted.
+    pub async fn retry_drop(
+        &self,
+        ctx: &Context<'_>,
+        input: RetryDropInput,
+    ) -> Result<CreateDropPayload> {
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
+        let UserID(id) = user_id;
+        let OrganizationId(org) = organization_id;
+        let producer = ctx.data::<Producer<NftEvents>>()?;
+        let solana = ctx.data::<Solana>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
+        let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+        let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or_else(|| Error::new("X-ORGANIZATION-BALANCE header not found"))?;
+        let (drop, collection) = Drops::find_by_id(input.drop)
+            .find_also_related(Collections)
+            .one(db.get())
+            .await?
+            .ok_or_else(|| Error::new("drop not found"))?;
+
+        let collection = collection.ok_or_else(|| Error::new("collection not found"))?;
+
+        if drop.creation_status == CreationStatus::Created {
+            return Err(Error::new("drop already created"));
+        }
+
+        let (
+            collection_address,
+            TransactionResponse {
+                serialized_message,
+                signed_message_signatures,
+            },
+        ) = match collection.blockchain {
+            BlockchainEnum::Solana => {
+                solana
+                    .edition()
+                    .retry_drop(RetryDropRequest {
+                        collection: collection.clone(),
+                    })
+                    .await?
+            },
+            BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
+                return Err(Error::new("blockchain not supported as this time"));
+            },
+        };
+
+        let mut collection_am: collections::ActiveModel = collection.clone().try_into()?;
+        collection_am.address = Set(Some(collection_address.to_string()));
+        let collection = collection_am.update(db.get()).await?;
+
+        submit_pending_deduction(credits, db, DeductionParams {
+            balance,
+            user_id,
+            org_id,
+            drop: drop.id,
+            blockchain: collection.blockchain,
+            action: Actions::RetryDrop,
+        })
+        .await?;
+
+        emit_retry_drop_event(
+            producer,
+            input.drop,
+            user_id,
+            serialized_message,
+            signed_message_signatures,
+            drop.project_id,
+            collection.blockchain,
+        )
+        .await?;
+
+        Ok(CreateDropPayload {
+            drop: Drop::new(drop, collection),
+        })
+    }
     /// This mutation allows for the temporary blocking of the minting of editions and can be resumed by calling the resumeDrop mutation.
     pub async fn pause_drop(
         &self,
@@ -455,6 +540,41 @@ impl Mutation {
     }
 }
 
+/// This functions emits the retry drop transaction event
+/// # Errors
+/// This function fails if producer is unable to send the event
+async fn emit_retry_drop_event(
+    producer: &Producer<NftEvents>,
+    id: Uuid,
+    user_id: Uuid,
+    serialized_message: Vec<u8>,
+    signatures: Vec<String>,
+    project_id: Uuid,
+    blockchain: BlockchainEnum,
+) -> Result<()> {
+    let proto_blockchain_enum: proto::Blockchain = blockchain.into();
+
+    let event = NftEvents {
+        event: Some(nft_events::Event::RetryDrop(proto::DropTransaction {
+            transaction: Some(proto::Transaction {
+                serialized_message,
+                signed_message_signatures: signatures,
+                blockchain: proto_blockchain_enum as i32,
+            }),
+
+            project_id: project_id.to_string(),
+        })),
+    };
+    let key = NftEventKey {
+        id: id.to_string(),
+        user_id: user_id.to_string(),
+    };
+
+    producer.send(Some(&event), Some(&key)).await?;
+
+    Ok(())
+}
+
 /// This functions emits the drop transaction event
 /// # Errors
 /// This function fails if producer is unable to sent the event
@@ -526,22 +646,45 @@ async fn emit_update_metadata_transaction_event(
     Ok(())
 }
 
-async fn submit_pending_deduction(
-    credits: &CreditsClient<Actions>,
-    db: &Connection,
+struct DeductionParams {
     balance: u64,
     user_id: Uuid,
     org_id: Uuid,
     drop: Uuid,
     blockchain: BlockchainEnum,
+    action: Actions,
+}
+
+async fn submit_pending_deduction(
+    credits: &CreditsClient<Actions>,
+    db: &Connection,
+    params: DeductionParams,
 ) -> Result<()> {
+    let DeductionParams {
+        balance,
+        user_id,
+        org_id,
+        drop,
+        blockchain,
+        action,
+    } = params;
+
+    let drop_model = drops::Entity::find_by_id(drop)
+        .one(db.get())
+        .await?
+        .ok_or_else(|| Error::new("drop not found"))?;
+
+    if drop_model.credits_deduction_id.is_some() {
+        return Ok(());
+    }
+
     let id = match blockchain {
         BlockchainEnum::Solana => {
             credits
                 .submit_pending_deduction(
                     org_id,
                     user_id,
-                    Actions::CreateDrop,
+                    action,
                     hub_core::credits::Blockchain::Solana,
                     balance,
                 )
@@ -553,11 +696,6 @@ async fn submit_pending_deduction(
     };
 
     let deduction_id = id.ok_or_else(|| Error::new("failed to generate credits deduction id"))?;
-
-    let drop_model = drops::Entity::find_by_id(drop)
-        .one(db.get())
-        .await?
-        .ok_or_else(|| Error::new("drop not found"))?;
 
     let mut drop: drops::ActiveModel = drop_model.into();
     drop.credits_deduction_id = Set(Some(deduction_id.0));
@@ -582,6 +720,16 @@ pub struct CreateDropInput {
     pub blockchain: BlockchainEnum,
     pub creators: Vec<CollectionCreator>,
     pub metadata_json: MetadataJsonInput,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
+pub struct RetryDropInput {
+    pub drop: Uuid,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct RetryDropPayload {
+    drop: Drop,
 }
 
 impl TryFrom<CollectionCreator> for Creator {

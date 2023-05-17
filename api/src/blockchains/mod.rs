@@ -9,9 +9,10 @@ pub struct TransactionResponse {
 
 #[async_trait::async_trait]
 
-pub trait Edition<A, B, C, D, M> {
+pub trait Edition<A, B, C, D, E, M> {
     async fn create(&self, payload: A) -> Result<(M, TransactionResponse)>;
     async fn mint(&self, payload: B) -> Result<(M, TransactionResponse)>;
     async fn update(&self, payload: C) -> Result<(M, TransactionResponse)>;
     async fn transfer(&self, payload: D) -> Result<(Uuid, TransactionResponse)>;
+    async fn retry_drop(&self, payload: E) -> Result<(M, TransactionResponse)>;
 }
