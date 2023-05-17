@@ -1,4 +1,4 @@
-use async_graphql::{Context, Enum, FieldError, Object, Result};
+use async_graphql::{Context, Enum, Object, Result};
 use hub_core::chrono::Utc;
 use sea_orm::entity::prelude::*;
 
@@ -119,8 +119,9 @@ impl Drop {
             (Some(true), ..) => Ok(DropStatus::Scheduled),
             (_, Some(true), ..) => Ok(DropStatus::Expired),
             (_, _, Some(true), ..) => Ok(DropStatus::Minted),
-            (_, _, Some(false), ..) => Ok(DropStatus::Minting),
-            _ => Err(FieldError::new("unsupported drop status")),
+            (_, _, Some(false), ..) | (_, _, None, _, _, CreationStatus::Created) => {
+                Ok(DropStatus::Minting)
+            },
         }
     }
 
