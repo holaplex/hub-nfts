@@ -15,7 +15,7 @@ concurrency:
 jobs:
   test:
     name: Cargo Test
-    runs-on: self-hosted
+    runs-on: amd64
 
     services:
       postgres:
@@ -41,7 +41,7 @@ jobs:
             libssl-dev \
             libudev-dev \
             pkg-config \
-            protobuf-compiler 
+            protobuf-compiler
 
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -61,7 +61,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          key: ${{ github.event.repository.name }}-${{ runner.arch }}-cargo-test-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
 
       - name: cargo test
         uses: actions-rs/cargo@v1
