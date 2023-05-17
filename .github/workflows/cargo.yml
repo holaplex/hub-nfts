@@ -17,7 +17,7 @@ jobs:
 
   clippy:
     name: clippy/check/doc
-    runs-on: self-hosted
+    runs-on: amd64
     steps:
       - name: Install dependencies
         run: |
@@ -50,7 +50,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}-v1
+          key: ${{ github.event.repository.name }}-${{ runner.arch }}-cargo-clippy-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
 
       - name: cargo clippy
         uses: actions-rs/cargo@v1
