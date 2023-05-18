@@ -16,7 +16,7 @@ pub struct Model {
     pub owner_pubkey: String,
     pub mint_pubkey: String,
     pub metadata_pubkey: String,
-    pub created_at: DateTime,
+    pub created_at: DateTimeWithTimeZone,
 }
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {

@@ -3,11 +3,25 @@ on:
   push:
     branches:
       - main
-      - release 
+      - release
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SERVICE_NAME: nfts
+  DOCKERHUB_REPO: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}
+  DOCKERHUB_MIGRATIONS_REPO: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations
+  CACHE_CONFIG: type=s3,region=${{ vars.AWS_REGION }},bucket=${{ vars.AWS_BUCKET }},access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }},secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
 
 jobs:
-  release:
-    runs-on: self-hosted
+  build:
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch }}
     environment: release
     steps:
       -
@@ -19,41 +33,85 @@ jobs:
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - 
-        run: docker context create mycontext
-      - 
-        run: docker context use mycontext 
-      - 
-        name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-        with:
-          buildkitd-flags: --debug
-          version: v0.9.1
-          endpoint: mycontext
       -
-        name: Build and push hub-nfts
+        run: |
+          docker context create ci
+          docker context use ci
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          driver-opts: image=moby/buildkit:master
+          version: v0.10.4
+          endpoint: ci
+      -
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      -
+        name: Build and push ${{ github.event.repository.name }}
         uses: docker/build-push-action@v3
         with:
           context: .
           file: ./Dockerfile
-          target: hub-nfts
+          target: ${{ github.event.repository.name }}
           push: true
-          tags: ${{ vars.DOCKERHUB_ORG }}/hub-nfts:${{ github.sha }},${{ vars.DOCKERHUB_ORG }}/hub-nfts:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          provenance: false
+          platforms: linux/${{ matrix.arch }}
+          tags: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}:latest-${{ matrix.arch }}
+          cache-from: ${{ env.CACHE_CONFIG }},prefix=buildx/${{ github.event.repository.name }}/${{ matrix.arch }}/
+          cache-to: ${{ env.CACHE_CONFIG }},prefix=buildx/${{ github.event.repository.name }}/${{ matrix.arch }}/,mode=max
       -
-        name: Build and push hub-nfts-migrations
+        name: Build and push ${{ github.event.repository.name }}-migrations
         uses: docker/build-push-action@v3
         with:
           context: .
           file: ./Dockerfile
           target: migrator
           push: true
-          tags: ${{ vars.DOCKERHUB_ORG }}/hub-nfts-migrations:${{ github.sha }},${{ vars.DOCKERHUB_ORG }}/hub-nfts-migrations:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - 
-        name: Invoke workflow in hub-kubes repo
+          provenance: false
+          platforms: linux/${{ matrix.arch }}
+          tags: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations:latest-${{ matrix.arch }}
+          cache-from: ${{ env.CACHE_CONFIG }},prefix=buildx/${{ github.event.repository.name }}/${{ matrix.arch }}/
+          cache-to: ${{ env.CACHE_CONFIG }},prefix=buildx/${{ github.event.repository.name }}/${{ matrix.arch }}/,mode=max
+
+  finalize:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Merge service image tags
+        uses: Noelware/docker-manifest-action@master
+        with:
+          inputs: ${{ env.DOCKERHUB_REPO }}:latest,${{ env.DOCKERHUB_REPO }}:${{ github.sha }}
+          images: ${{ env.DOCKERHUB_REPO }}:latest-amd64,${{ env.DOCKERHUB_REPO }}:latest-arm64
+          push: true
+
+      - name: Merge migrations image tags
+        uses: Noelware/docker-manifest-action@master
+        with:
+          inputs: ${{ env.DOCKERHUB_MIGRATIONS_REPO }}:latest,${{ env.DOCKERHUB_MIGRATIONS_REPO }}:${{ github.sha }}
+          images: ${{ env.DOCKERHUB_MIGRATIONS_REPO }}:latest-amd64,${{ env.DOCKERHUB_MIGRATIONS_REPO }}:latest-arm64
+          push: true
+
+      - name: Setup variables
+        id: vars
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/release" ]]; then
+            echo "::set-output name=environment::prod"
+          else
+            echo "::set-output name=environment::stage"
+          fi
+
+      - name: Invoke workflow in hub-kubes repo
         if: github.ref == 'refs/heads/main'
         uses: benc-uk/workflow-dispatch@v1
         with:
@@ -61,14 +119,4 @@ jobs:
           token: ${{ secrets.ACTIONS_TOKEN }}
           workflow: release.yml
           repo: holaplex/hub-kubes
-          inputs: '{ "service": "nfts", "environment": "stage", "commit_hash": "${{ github.sha }}"}'
-      - 
-        name: Invoke workflow in hub-kubes repo
-        if: github.ref == 'refs/heads/release'
-        uses: benc-uk/workflow-dispatch@v1
-        with:
-          ref: main
-          token: ${{ secrets.ACTIONS_TOKEN }}
-          workflow: release.yml
-          repo: holaplex/hub-kubes
-          inputs: '{ "service": "nfts", "environment": "prod", "commit_hash": "${{ github.sha }}"}'
+          inputs: '{ "service": "${{ env.SERVICE_NAME }}", "environment": "${{ steps.vars.outputs.environment }}", "commit_hash": "${{ github.sha }}"}'

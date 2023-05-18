@@ -1,10 +1,21 @@
 name: Cargo test
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+      - release
+  pull_request:
+    branches:
+      - "**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     name: Cargo Test
-    runs-on: self-hosted
+    runs-on: amd64
 
     services:
       postgres:
@@ -30,24 +41,27 @@ jobs:
             libssl-dev \
             libudev-dev \
             pkg-config \
-            protobuf-compiler 
+            protobuf-compiler
 
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
-            toolchain: nightly-2022-12-11
+            toolchain: 1.69.0
             override: true
             components: cargo, rustc
 
-      - uses: actions/cache@v3
+      - uses: tespkg/actions-cache@v1
         with:
+          accessKey: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          secretKey: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          bucket: ${{ vars.AWS_BUCKET }}
           path: |
             ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          key: ${{ github.event.repository.name }}-${{ runner.arch }}-cargo-test-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
 
       - name: cargo test
         uses: actions-rs/cargo@v1

@@ -70,6 +70,10 @@ impl Mutation {
 
         let collection = collection_model.ok_or_else(|| Error::new("collection not found"))?;
 
+        if collection.supply == Some(collection.total_mints) {
+            return Err(Error::new("Collection is sold out"));
+        }
+
         let edition = collection.total_mints.add(1);
 
         // Fetch the project wallet address which will sign the transaction by hub-treasuries
@@ -147,7 +151,7 @@ impl Mutation {
             drop_id: Set(Some(drop_model.id)),
             tx_signature: Set(None),
             status: Set(CreationStatus::Pending),
-            created_at: Set(Utc::now().naive_utc()),
+            created_at: Set(Utc::now().into()),
             ..Default::default()
         };
 
@@ -172,15 +176,14 @@ impl Mutation {
 
         producer.send(Some(&event), Some(&key)).await?;
 
-        submit_pending_deduction(
-            credits,
-            db,
+        submit_pending_deduction(credits, db, DeductionParams {
             balance,
             user_id,
             org_id,
-            collection_mint_model.id,
-            collection.blockchain,
-        )
+            mint: collection_mint_model.id,
+            blockchain: collection.blockchain,
+            action: Actions::MintEdition,
+        })
         .await?;
 
         Ok(MintEditionPayload {
@@ -196,13 +199,26 @@ impl Mutation {
         ctx: &Context<'_>,
         input: RetryMintInput,
     ) -> Result<RetryMintPayload> {
-        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
         let producer = ctx.data::<Producer<NftEvents>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
 
         let UserID(id) = user_id;
+        let OrganizationId(org) = organization_id;
+
         let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+        let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or_else(|| Error::new("X-ORGANIZATION-BALANCE header not found"))?;
 
         let (collection_mint_model, drop) = collection_mints::Entity::find()
             .join(
@@ -277,7 +293,7 @@ impl Mutation {
 
         // emit `MintDrop` event
         let event = NftEvents {
-            event: Some(nft_events::Event::MintDrop(MintTransaction {
+            event: Some(nft_events::Event::RetryMint(MintTransaction {
                 transaction: Some(Transaction {
                     serialized_message,
                     signed_message_signatures,
@@ -294,28 +310,60 @@ impl Mutation {
 
         producer.send(Some(&event), Some(&key)).await?;
 
+        submit_pending_deduction(credits, db, DeductionParams {
+            balance,
+            user_id,
+            org_id,
+            mint: collection_mint_model.id,
+            blockchain: collection.blockchain,
+            action: Actions::RetryMint,
+        })
+        .await?;
+
         Ok(RetryMintPayload {
             collection_mint: collection_mint_model.into(),
         })
     }
 }
 
-async fn submit_pending_deduction(
-    credits: &CreditsClient<Actions>,
-    db: &Connection,
+struct DeductionParams {
     balance: u64,
     user_id: Uuid,
     org_id: Uuid,
     mint: Uuid,
     blockchain: BlockchainEnum,
+    action: Actions,
+}
+async fn submit_pending_deduction(
+    credits: &CreditsClient<Actions>,
+    db: &Connection,
+    params: DeductionParams,
 ) -> Result<()> {
+    let DeductionParams {
+        balance,
+        user_id,
+        org_id,
+        mint,
+        blockchain,
+        action,
+    } = params;
+
+    let mint_model = collection_mints::Entity::find_by_id(mint)
+        .one(db.get())
+        .await?
+        .ok_or_else(|| Error::new("drop not found"))?;
+
+    if mint_model.credits_deduction_id.is_some() {
+        return Ok(());
+    }
+
     let id = match blockchain {
         BlockchainEnum::Solana => {
             credits
                 .submit_pending_deduction(
                     org_id,
                     user_id,
-                    Actions::MintEdition,
+                    action,
                     hub_core::credits::Blockchain::Solana,
                     balance,
                 )
@@ -327,11 +375,6 @@ async fn submit_pending_deduction(
     };
 
     let deduction_id = id.ok_or_else(|| Error::new("failed to generate credits deduction id"))?;
-
-    let mint_model = collection_mints::Entity::find_by_id(mint)
-        .one(db.get())
-        .await?
-        .ok_or_else(|| Error::new("drop not found"))?;
 
     let mut mint: collection_mints::ActiveModel = mint_model.into();
     mint.credits_deduction_id = Set(Some(deduction_id.0));
@@ -359,7 +402,7 @@ async fn check_drop_status(drop_model: &drops::Model) -> Result<(), Error> {
         .map_or(Ok(()), |_| Err(Error::new("Drop status is shutdown")))?;
 
     drop_model.start_time.map_or(Ok(()), |start_time| {
-        if start_time <= Utc::now().naive_utc() {
+        if start_time <= Utc::now() {
             Ok(())
         } else {
             Err(Error::new("Drop has not yet started"))
@@ -367,7 +410,7 @@ async fn check_drop_status(drop_model: &drops::Model) -> Result<(), Error> {
     })?;
 
     drop_model.end_time.map_or(Ok(()), |end_time| {
-        if end_time > Utc::now().naive_utc() {
+        if end_time > Utc::now() {
             Ok(())
         } else {
             Err(Error::new("Drop has already ended"))

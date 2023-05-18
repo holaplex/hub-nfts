@@ -104,7 +104,7 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(Iden)]
-enum Purchases {
+pub enum Purchases {
     Table,
     Id,
     DropId,

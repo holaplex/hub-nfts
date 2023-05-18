@@ -100,7 +100,7 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(Iden)]
-enum NftTransfers {
+pub enum NftTransfers {
     Table,
     Id,
     TxSignature,

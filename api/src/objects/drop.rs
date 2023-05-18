@@ -1,4 +1,4 @@
-use async_graphql::{Context, Enum, FieldError, Object, Result};
+use async_graphql::{Context, Enum, Object, Result};
 use hub_core::chrono::Utc;
 use sea_orm::entity::prelude::*;
 
@@ -40,12 +40,12 @@ impl Drop {
     }
 
     /// The date and time in UTC when the drop is eligible for minting. A value of `null` means the drop can be minted immediately.
-    async fn start_time(&self) -> Option<DateTime> {
+    async fn start_time(&self) -> Option<DateTimeWithTimeZone> {
         self.drop.start_time
     }
 
     /// The end date and time in UTC for the drop. A value of `null` means the drop does not end until it is fully minted.
-    async fn end_time(&self) -> Option<DateTime> {
+    async fn end_time(&self) -> Option<DateTimeWithTimeZone> {
         self.drop.end_time
     }
 
@@ -60,19 +60,19 @@ impl Drop {
     }
 
     /// The date and time in UTC when the drop was created.
-    async fn created_at(&self) -> DateTime {
+    async fn created_at(&self) -> DateTimeWithTimeZone {
         self.drop.created_at
     }
 
     // The paused_at field represents the date and time in UTC when the drop was paused.
     // If it is null, the drop is currently not paused.
-    async fn paused_at(&self) -> Option<DateTime> {
+    async fn paused_at(&self) -> Option<DateTimeWithTimeZone> {
         self.drop.paused_at
     }
 
     /// The shutdown_at field represents the date and time in UTC when the drop was shutdown
     /// If it is null, the drop is currently not shutdown
-    async fn shutdown_at(&self) -> Option<DateTime> {
+    async fn shutdown_at(&self) -> Option<DateTimeWithTimeZone> {
         self.drop.shutdown_at
     }
 
@@ -83,7 +83,7 @@ impl Drop {
 
     /// The current status of the drop.
     async fn status(&self) -> Result<DropStatus> {
-        let now = Utc::now().naive_utc();
+        let now = Utc::now();
         let scheduled = self.drop.start_time.map(|start_time| now < start_time);
         let expired = self.drop.end_time.map(|end_time| now > end_time);
         let paused_at = self.drop.paused_at;
@@ -119,8 +119,9 @@ impl Drop {
             (Some(true), ..) => Ok(DropStatus::Scheduled),
             (_, Some(true), ..) => Ok(DropStatus::Expired),
             (_, _, Some(true), ..) => Ok(DropStatus::Minted),
-            (_, _, Some(false), ..) => Ok(DropStatus::Minting),
-            _ => Err(FieldError::new("unsupported drop status")),
+            (_, _, Some(false), ..) | (_, _, None, _, _, CreationStatus::Created) => {
+                Ok(DropStatus::Minting)
+            },
         }
     }
 
