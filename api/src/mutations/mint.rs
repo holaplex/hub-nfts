@@ -70,6 +70,10 @@ impl Mutation {
 
         let collection = collection_model.ok_or_else(|| Error::new("collection not found"))?;
 
+        if collection.supply == Some(collection.total_mints) {
+            return Err(Error::new("Collection is sold out"));
+        }
+
         let edition = collection.total_mints.add(1);
 
         // Fetch the project wallet address which will sign the transaction by hub-treasuries
