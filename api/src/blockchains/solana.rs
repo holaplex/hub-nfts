@@ -37,14 +37,14 @@ pub struct SolanaArgs {
     pub solana_endpoint: String,
 
     #[arg(long, env)]
-    pub solana_keypair_path: String,
+    pub solana_treasury_wallet: String,
 }
 
 #[derive(Clone)]
 pub struct Solana {
     rpc_client: Arc<RpcClient>,
     db: Connection,
-    payer_keypair: Vec<u8>,
+    payer: Pubkey,
 }
 
 #[derive(Clone)]
@@ -86,11 +86,11 @@ pub struct TransferAssetRequest {
     pub mint_address: String,
 }
 impl Solana {
-    pub fn new(rpc_client: Arc<RpcClient>, db: Connection, payer_keypair: Vec<u8>) -> Self {
+    pub fn new(rpc_client: Arc<RpcClient>, db: Connection, payer: Pubkey) -> Self {
         Self {
             rpc_client,
             db,
-            payer_keypair,
+            payer,
         }
     }
 
@@ -136,11 +136,11 @@ impl
         let rpc = &self.rpc_client;
         let conn = self.db.get();
 
-        let payer = Keypair::from_bytes(&self.payer_keypair)?;
+        let payer = &self.payer;
         let owner = owner_address.parse()?;
 
         let (mint, master_edition, ata, metadata, tx) =
-            create_drop_transaction(rpc, &payer, &owner, &collection, &metadata_json, &creators)?;
+            create_drop_transaction(rpc, payer, &owner, &collection, &metadata_json, &creators)?;
 
         let solana_collections_active_model = solana_collections::ActiveModel {
             collection_id: Set(collection.id),
@@ -173,7 +173,7 @@ impl
             edition,
         } = request;
 
-        let payer = Keypair::from_bytes(&self.payer_keypair)?;
+        let payer = &self.payer;
         let owner = owner_address.parse()?;
 
         let solana_collection_model = solana_collections::Entity::find()
@@ -211,7 +211,7 @@ impl
 
         let mut instructions = vec![
             create_account(
-                &payer.pubkey(),
+                payer,
                 &new_mint_key.pubkey(),
                 rpc.get_minimum_balance_for_rent_exemption(state::Mint::LEN)?,
                 state::Mint::LEN as u64,
@@ -219,7 +219,7 @@ impl
             ),
             initialize_mint(&token_key, &new_mint_key.pubkey(), &owner, Some(&owner), 0)?,
             create_associated_token_account(
-                &payer.pubkey(),
+                payer,
                 &recipient,
                 &new_mint_key.pubkey(),
                 &spl_token::ID,
@@ -241,7 +241,7 @@ impl
             master_edition_pubkey,
             new_mint_key.pubkey(),
             owner,
-            payer.pubkey(),
+            *payer,
             owner,
             existing_token_account,
             owner,
@@ -254,20 +254,16 @@ impl
 
         let message = solana_program::message::Message::new_with_blockhash(
             &instructions,
-            Some(&payer.pubkey()),
+            Some(payer),
             &blockhash,
         );
 
         let serialized_message = message.serialize();
         let mint_signature = new_mint_key.try_sign_message(&message.serialize())?;
-        let payer_signature = payer.try_sign_message(&message.serialize())?;
 
         Ok((new_mint_key.pubkey(), TransactionResponse {
             serialized_message,
-            signed_message_signatures: vec![
-                payer_signature.to_string(),
-                mint_signature.to_string(),
-            ],
+            signed_message_signatures: vec![mint_signature.to_string()],
         }))
     }
 
@@ -284,7 +280,7 @@ impl
             creators,
         } = request.clone();
 
-        let payer = Keypair::from_bytes(&self.payer_keypair)?;
+        let payer = &self.payer;
         let solana_collection_model = solana_collections::Entity::find()
             .filter(solana_collections::Column::CollectionId.eq(collection))
             .one(conn)
@@ -313,18 +309,14 @@ impl
 
         let blockhash = rpc.get_latest_blockhash()?;
 
-        let message = solana_program::message::Message::new_with_blockhash(
-            &[ins],
-            Some(&payer.pubkey()),
-            &blockhash,
-        );
+        let message =
+            solana_program::message::Message::new_with_blockhash(&[ins], Some(payer), &blockhash);
 
         let serialized_message = message.serialize();
-        let payer_signature = payer.try_sign_message(&message.serialize())?;
 
         Ok((sc.mint_pubkey.parse()?, TransactionResponse {
             serialized_message,
-            signed_message_signatures: vec![payer_signature.to_string()],
+            signed_message_signatures: Vec::new(),
         }))
     }
 
@@ -340,17 +332,13 @@ impl
         let sender: Pubkey = sender.parse()?;
         let recipient: Pubkey = recipient.parse()?;
         let mint_address: Pubkey = mint_address.parse()?;
-        let payer = Keypair::from_bytes(&self.payer_keypair)?;
+        let payer = &&self.payer;
         let blockhash = rpc.get_latest_blockhash()?;
         let source_ata = get_associated_token_address(&sender, &mint_address);
         let destination_ata = get_associated_token_address(&recipient, &mint_address);
 
-        let create_ata_token_account = create_associated_token_account(
-            &payer.pubkey(),
-            &recipient,
-            &mint_address,
-            &spl_token::ID,
-        );
+        let create_ata_token_account =
+            create_associated_token_account(payer, &recipient, &mint_address, &spl_token::ID);
 
         let transfer_instruction = spl_token::instruction::transfer(
             &spl_token::ID,
@@ -362,22 +350,18 @@ impl
         )
         .context("Failed to create transfer instruction")?;
 
-        let close_ata = spl_token::instruction::close_account(
-            &spl_token::ID,
-            &source_ata,
-            &payer.pubkey(),
-            &sender,
-            &[&sender],
-        )?;
+        let close_ata =
+            spl_token::instruction::close_account(&spl_token::ID, &source_ata, payer, &sender, &[
+                &sender,
+            ])?;
 
         let message = solana_program::message::Message::new_with_blockhash(
             &[create_ata_token_account, transfer_instruction, close_ata],
-            Some(&payer.pubkey()),
+            Some(payer),
             &blockhash,
         );
 
         let serialized_message = message.serialize();
-        let payer_signature = payer.try_sign_message(&message.serialize())?;
 
         let nft_transfer_am = nft_transfers::ActiveModel {
             tx_signature: Set(None),
@@ -391,7 +375,7 @@ impl
 
         Ok((nft_transfer_model.id, TransactionResponse {
             serialized_message,
-            signed_message_signatures: vec![payer_signature.to_string()],
+            signed_message_signatures: Vec::new(),
         }))
     }
 
@@ -420,11 +404,11 @@ impl
             .map(TryInto::try_into)
             .collect::<Result<Vec<Creator>>>()?;
 
-        let payer = Keypair::from_bytes(&self.payer_keypair)?;
+        let payer = &self.payer;
         let owner = solana_collection.owner_pubkey.parse()?;
 
         let (mint, master_edition, ata, metadata, tx) =
-            create_drop_transaction(rpc, &payer, &owner, &collection, &metadata_json, &creators)?;
+            create_drop_transaction(rpc, payer, &owner, &collection, &metadata_json, &creators)?;
 
         // update solana collection record
         let mut sc: solana_collections::ActiveModel = solana_collection.into();
@@ -442,7 +426,7 @@ impl
 #[allow(clippy::too_many_lines)]
 fn create_drop_transaction(
     rpc: &RpcClient,
-    payer: &Keypair,
+    payer: &Pubkey,
     owner: &Pubkey,
     collection: &collections::Model,
     metadata_json: &metadata_jsons::Model,
@@ -472,7 +456,7 @@ fn create_drop_transaction(
     let blockhash = rpc.get_latest_blockhash()?;
 
     let create_account_ins = solana_program::system_instruction::create_account(
-        &payer.pubkey(),
+        payer,
         &mint.pubkey(),
         rent,
         len.try_into()?,
@@ -486,7 +470,7 @@ fn create_drop_transaction(
         0,
     )?;
     let ata_ins = spl_associated_token_account::instruction::create_associated_token_account(
-        &payer.pubkey(),
+        payer,
         owner,
         &mint.pubkey(),
         &spl_token::ID,
@@ -498,7 +482,7 @@ fn create_drop_transaction(
         metadata,
         mint.pubkey(),
         *owner,
-        payer.pubkey(),
+        *payer,
         *owner,
         metadata_json.name.clone(),
         metadata_json.symbol.clone(),
@@ -518,7 +502,7 @@ fn create_drop_transaction(
         *owner,
         *owner,
         metadata,
-        payer.pubkey(),
+        *payer,
         collection.supply.map(TryInto::try_into).transpose()?,
     );
     let instructions = vec![
@@ -532,13 +516,12 @@ fn create_drop_transaction(
 
     let message = solana_program::message::Message::new_with_blockhash(
         &instructions,
-        Some(&payer.pubkey()),
+        Some(payer),
         &blockhash,
     );
 
     let serialized_message = message.serialize();
     let mint_signature = mint.try_sign_message(&message.serialize())?;
-    let payer_signature = payer.try_sign_message(&message.serialize())?;
 
     Ok((
         mint.pubkey(),
@@ -547,10 +530,7 @@ fn create_drop_transaction(
         metadata,
         TransactionResponse {
             serialized_message,
-            signed_message_signatures: vec![
-                payer_signature.to_string(),
-                mint_signature.to_string(),
-            ],
+            signed_message_signatures: vec![mint_signature.to_string()],
         },
     ))
 }

@@ -1,6 +1,6 @@
 //!
 
-use std::{fs::File, sync::Arc};
+use std::sync::Arc;
 
 use async_graphql::futures_util::StreamExt;
 use holaplex_hub_nfts::{
@@ -45,10 +45,11 @@ pub fn main() {
             let nft_storage = NftStorageClient::new(nft_storage)?;
 
             let solana_rpc = Arc::new(RpcClient::new(solana.solana_endpoint));
-            let f = File::open(solana.solana_keypair_path).expect("unable to locate keypair file");
-            let solana_keypair: Vec<u8> =
-                serde_json::from_reader(f).expect("unable to read keypair bytes from the file");
-            let solana_blockchain = Solana::new(solana_rpc, connection.clone(), solana_keypair);
+            let solana_blockchain = Solana::new(
+                solana_rpc,
+                connection.clone(),
+                solana.solana_treasury_wallet.parse()?,
+            );
 
             let state = AppState::new(
                 schema,
