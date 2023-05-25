@@ -30,6 +30,11 @@ use crate::{
 #[derive(Default)]
 pub struct Mutation;
 
+enum CreateDrop {
+    Solana((Pubkey, TransactionResponse)),
+    Polygon(()),
+}
+
 #[Object(name = "DropMutation")]
 impl Mutation {
     /// This mutation creates a new NFT drop and its associated collection. The drop returns immediately with a creation status of CREATING. You can [set up a webhook](https://docs.holaplex.dev/hub/For%20Developers/webhooks-overview) to receive a notification when the drop is ready to be minted.
@@ -81,6 +86,8 @@ impl Mutation {
 
         input.validate()?;
 
+        let project_id = input.project;
+
         let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
 
         let collection = Collection::new(collections::ActiveModel {
@@ -100,14 +107,8 @@ impl Mutation {
             .save(collection.id, db)
             .await?;
 
-        let (
-            collection_address,
-            TransactionResponse {
-                serialized_message,
-                signed_message_signatures,
-            },
-        ) = match input.blockchain {
-            BlockchainEnum::Solana => {
+        let create_drop_initiated = match input.blockchain {
+            BlockchainEnum::Solana => CreateDrop::Solana(
                 solana
                     .edition()
                     .create(CreateDropRequest {
@@ -120,18 +121,50 @@ impl Mutation {
                         collection: collection.clone(),
                         metadata_json,
                     })
-                    .await?
+                    .await?,
+            ),
+            BlockchainEnum::Polygon => {
+                let creator = input
+                    .creators
+                    .get(0)
+                    .ok_or_else(|| Error::new("no creator found"))?;
+
+                let amount: i64 = input.supply.unwrap_or_default().try_into()?;
+                let fee_numerator: i32 = seller_fee_basis_points.try_into()?;
+
+                CreateDrop::Polygon(
+                    emit_create_polygon_drop_event(
+                        producer,
+                        collection.id,
+                        user_id,
+                        project_id.to_string(),
+                        metadata_json.description,
+                        metadata_json.image,
+                        metadata_json.name,
+                        metadata_json.uri,
+                        creator.address.clone(),
+                        owner_address,
+                        amount,
+                        fee_numerator,
+                        creator.address.clone(),
+                    )
+                    .await?,
+                )
             },
-            BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
-                return Err(Error::new("blockchain not supported as this time"));
-            },
+            _ => return Err(Error::new("blockchain not supported as this time")),
         };
 
-        let mut collection_am: collections::ActiveModel = collection.clone().try_into()?;
+        match create_drop_initiated {
+            CreateDrop::Solana((collection_address, _)) => {
+                let mut collection_am: collections::ActiveModel = collection.clone().try_into()?;
+                collection_am.address = Set(Some(collection_address.to_string()));
 
-        collection_am.address = Set(Some(collection_address.to_string()));
+                collection_am.update(conn).await?;
 
-        let collection = collection_am.update(conn).await?;
+                ()
+            },
+            CreateDrop::Polygon(_) => (),
+        };
 
         let drop = drops::ActiveModel {
             project_id: Set(input.project),
@@ -147,25 +180,40 @@ impl Mutation {
 
         let drop_model = drop.insert(conn).await?;
 
-        emit_drop_transaction_event(
-            producer,
-            drop_model.id,
-            user_id,
-            serialized_message,
-            signed_message_signatures,
-            input.project,
-            input.blockchain,
-        )
-        .await?;
+        match create_drop_initiated {
+            CreateDrop::Solana((
+                _,
+                TransactionResponse {
+                    serialized_message,
+                    signed_message_signatures,
+                },
+            )) => {
+                emit_drop_transaction_event(
+                    producer,
+                    drop_model.id,
+                    user_id,
+                    serialized_message,
+                    signed_message_signatures,
+                    input.project,
+                    input.blockchain,
+                )
+                .await?;
+            },
+            CreateDrop::Polygon(_) => (),
+        }
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            user_id,
-            org_id,
-            balance,
-            drop: drop_model.id,
-            blockchain: input.blockchain,
-            action: Actions::CreateDrop,
-        })
+        submit_pending_deduction(
+            credits,
+            db,
+            DeductionParams {
+                user_id,
+                org_id,
+                balance,
+                drop: drop_model.id,
+                blockchain: input.blockchain,
+                action: Actions::CreateDrop,
+            },
+        )
         .await?;
 
         Ok(CreateDropPayload {
@@ -238,14 +286,18 @@ impl Mutation {
         collection_am.address = Set(Some(collection_address.to_string()));
         let collection = collection_am.update(db.get()).await?;
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            balance,
-            user_id,
-            org_id,
-            drop: drop.id,
-            blockchain: collection.blockchain,
-            action: Actions::RetryDrop,
-        })
+        submit_pending_deduction(
+            credits,
+            db,
+            DeductionParams {
+                balance,
+                user_id,
+                org_id,
+                drop: drop.id,
+                blockchain: collection.blockchain,
+                action: Actions::RetryDrop,
+            },
+        )
         .await?;
 
         emit_retry_drop_event(
@@ -624,6 +676,55 @@ async fn emit_drop_transaction_event(
     Ok(())
 }
 
+/// This functions emits the create polygon drop transaction event
+/// # Errors
+/// This function fails if producer is unable to sent the event
+async fn emit_create_polygon_drop_event(
+    producer: &Producer<NftEvents>,
+    id: Uuid,
+    user_id: Uuid,
+    project_id: String,
+    description: String,
+    image_uri: String,
+    collection: String,
+    uri: String,
+    creator: String,
+    receiver: String,
+    amount: i64,
+    fee_numerator: i32,
+    fee_receiver: String,
+) -> Result<()> {
+    let event = NftEvents {
+        event: Some(nft_events::Event::CreatePolygonEdition(
+            proto::CreateEditionTransaction {
+                // TODO: add identifier to collection that auto-increments
+                edition_id: 1,
+                project_id,
+                edition_info: Some(proto::EditionInfo {
+                    description,
+                    image_uri,
+                    collection,
+                    uri,
+                    creator,
+                }),
+                receiver,
+                amount,
+                fee_numerator,
+                fee_receiver,
+            },
+        )),
+    };
+
+    let key = NftEventKey {
+        id: id.to_string(),
+        user_id: user_id.to_string(),
+    };
+
+    producer.send(Some(&event), Some(&key)).await?;
+
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn emit_update_metadata_transaction_event(
     producer: &Producer<NftEvents>,
@@ -693,7 +794,7 @@ async fn submit_pending_deduction(
     }
 
     let id = match blockchain {
-        BlockchainEnum::Solana => {
+        BlockchainEnum::Solana | BlockchainEnum::Polygon => {
             credits
                 .submit_pending_deduction(
                     org_id,
@@ -797,6 +898,7 @@ fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreato
                 }
             }
         },
+        BlockchainEnum::Polygon => (),
         _ => return Err(Error::new("Blockchain not supported yet")),
     }
 
