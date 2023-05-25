@@ -810,17 +810,13 @@ fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreato
 /// # Errors
 /// - Err with an appropriate error message if any JSON field is invalid.
 fn validate_json(json: &MetadataJsonInput) -> Result<()> {
-    json.animation_url
-        .as_ref()
-        .map(|animation_url| Url::from_str(animation_url))
-        .transpose()
-        .map_err(|_| Error::new("Invalid animation url"))?;
+    if let Some(animation_url) = json.animation_url.as_ref() {
+        Url::from_str(animation_url).map_err(|_| Error::new("Invalid animation url"))?;
+    }
 
-    json.external_url
-        .as_ref()
-        .map(|external_url| Url::from_str(external_url))
-        .transpose()
-        .map_err(|_| Error::new("Invalid external url"))?;
+    if let Some(external_url) = json.external_url.as_ref() {
+        Url::from_str(external_url).map_err(|_| Error::new("Invalid external url"))?;
+    }
 
     Url::from_str(&json.image).map_err(|_| Error::new("Invalid image url"))?;
 
