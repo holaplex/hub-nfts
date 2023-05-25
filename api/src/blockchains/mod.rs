@@ -7,7 +7,7 @@ use hub_core::{anyhow::Result, uuid::Uuid};
 pub struct TransactionResponse {
     /// The serialized version of the message from the transaction.
     pub serialized_message: Vec<u8>,
-    
+
     /// The signatures of the signed message from the transaction.
     pub signed_message_signatures: Vec<String>,
 }
