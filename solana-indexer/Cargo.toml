@@ -1,0 +1,40 @@
+[package]
+name = "solana-indexer"
+version = "0.1.0"
+publish = false
+authors = [
+  "Holaplex <engineering@holaplex.com>",
+]
+edition = "2021"
+description = "Holaplex Hub nfts service"
+license = "AGPL-3.0-or-later"
+keywords = ["hub", "holaplex", "web3"]
+categories = ["cryptography::cryptocurrencies", "web-programming"]
+
+[dependencies]
+sea-orm = { version = "^0.10.0", features = [
+  "debug-print",
+  "runtime-tokio-rustls",
+  "sqlx-postgres",
+] }
+bs58 = "0.4.0"
+futures = "0.3.24"
+hex = "0.4.3"
+solana-sdk = "=1.14.17"
+solana-program = "=1.14.17"
+yellowstone-grpc-client = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v0.8.0+solana.1.14.17" }
+yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v0.8.0+solana.1.14.17" }
+dashmap = "5.4.0"
+spl-token = "=3.5.0"
+solana-client = "=1.14.17"
+
+[dependencies.hub-core]
+package = "holaplex-hub-core"
+version = "0.1.0"
+git = "https://github.com/holaplex/hub-core"
+branch = "stable"
+
+[dependencies.hub-nfts-api]
+package = "holaplex-hub-nfts"
+version = "0.1.0"
+path = "../api"

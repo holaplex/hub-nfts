@@ -24,7 +24,7 @@ pub trait Edition<A, B, C, D, E, M> {
     /// Mints a new instance of the NFT on the blockchain. The specifics of the minting
     /// process, such as the parameters it takes and the values it returns,
     /// are dependent on the implementation of this method for the specific blockchain.
-    async fn mint(&self, payload: B) -> Result<(M, TransactionResponse)>;
+    async fn mint(&self, payload: B) -> Result<(M, M, TransactionResponse)>;
 
     /// Updates an existing collection on the blockchain. The specifics of the update
     /// process, such as the parameters it takes and the values it returns,

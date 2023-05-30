@@ -97,6 +97,7 @@ impl Mutation {
 
         let (
             mint_address,
+            ata,
             TransactionResponse {
                 serialized_message,
                 signed_message_signatures,
@@ -127,6 +128,7 @@ impl Mutation {
             seller_fee_basis_points: Set(collection.seller_fee_basis_points),
             created_by: Set(user_id),
             edition: Set(edition),
+            owner_ata: Set(Some(ata.to_string())),
             ..Default::default()
         };
 
@@ -267,6 +269,7 @@ impl Mutation {
             .wallet_address;
 
         let (
+            _,
             _,
             TransactionResponse {
                 serialized_message,

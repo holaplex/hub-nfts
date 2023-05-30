@@ -163,7 +163,10 @@ impl
     ///
     /// # Errors
     /// This function fails if unable to assemble solana mint transaction
-    async fn mint(&self, request: CreateEditionRequest) -> Result<(Pubkey, TransactionResponse)> {
+    async fn mint(
+        &self,
+        request: CreateEditionRequest,
+    ) -> Result<(Pubkey, Pubkey, TransactionResponse)> {
         let conn = self.db.get();
         let rpc = &self.rpc_client;
         let CreateEditionRequest {
@@ -192,7 +195,7 @@ impl
         let token_key = Pubkey::from_str(TOKEN_PROGRAM_PUBKEY)?;
 
         let new_mint_key = Keypair::new();
-        let added_token_account = get_associated_token_address(&recipient, &new_mint_key.pubkey());
+        let ata = get_associated_token_address(&recipient, &new_mint_key.pubkey());
         let new_mint_pub = new_mint_key.pubkey();
         let edition_seeds = &[
             PREFIX.as_bytes(),
@@ -227,7 +230,7 @@ impl
             mint_to(
                 &token_key,
                 &new_mint_key.pubkey(),
-                &added_token_account,
+                &ata,
                 &owner,
                 &[&owner],
                 1,
@@ -262,7 +265,7 @@ impl
         let mint_signature = new_mint_key.try_sign_message(&message.serialize())?;
         let payer_signature = payer.try_sign_message(&message.serialize())?;
 
-        Ok((new_mint_key.pubkey(), TransactionResponse {
+        Ok((new_mint_key.pubkey(), ata, TransactionResponse {
             serialized_message,
             signed_message_signatures: vec![
                 payer_signature.to_string(),
