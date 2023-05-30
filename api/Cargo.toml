@@ -36,7 +36,7 @@ async-graphql-poem = "5.0.3"
 prost = "0.11.5"
 reqwest = { version = "0.11.14", features = ["json"] }
 solana-program = "1.15.0"
-solana-client = "1.15.0"
+solana-client = "1.14.18"
 spl-token = "3.5.0"
 solana-sdk = "1.15.0"
 spl-associated-token-account = "1.1.2"
@@ -46,13 +46,13 @@ strum = { version = "0.24.1", features = ["derive"] }
 
 [dependencies.hub-core]
 package = "holaplex-hub-core"
-version = "0.1.0"
+version = "0.2.1"
 git = "https://github.com/holaplex/hub-core"
-branch = "stable"
+branch = "espi/clone-producer-config"
 features = ["kafka", "credits", "asset_proxy"]
 
 [build-dependencies.hub-core-build]
 package = "holaplex-hub-core-build"
-version = "0.1.0"
+version = "0.2.1"
 git = "https://github.com/holaplex/hub-core"
-branch = "stable"
+branch = "espi/clone-producer-config"

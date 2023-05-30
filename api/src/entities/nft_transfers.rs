@@ -8,6 +8,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub tx_signature: Option<String>,
+    // TODO: remove this field. replace with foreign key to collection_mints
     pub mint_address: String,
     pub sender: String,
     pub recipient: String,
