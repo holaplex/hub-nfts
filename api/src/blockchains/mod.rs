@@ -2,6 +2,8 @@ pub mod solana;
 
 use hub_core::{anyhow::Result, uuid::Uuid};
 
+use crate::proto::NftEventKey;
+
 /// Represents a response from a transaction on the blockchain. This struct
 /// provides the serialized message and the signatures of the signed message.
 pub struct TransactionResponse {
@@ -40,4 +42,14 @@ pub trait Edition<A, B, C, D, E, M> {
     /// process, such as the parameters it takes and the values it returns,
     /// are dependent on the implementation of this method for the specific blockchain.
     async fn retry_drop(&self, payload: E) -> Result<(M, TransactionResponse)>;
+}
+
+#[async_trait::async_trait]
+pub trait Event<A, B, C> {
+    async fn create_drop(&self, key: NftEventKey, payload: A) -> Result<()>;
+    async fn retry_create_drop(&self, key: NftEventKey, payload: A) -> Result<()>;
+    async fn update_drop(&self, key: NftEventKey, payload: A) -> Result<()>;
+    async fn mint_drop(&self, key: NftEventKey, payload: B) -> Result<()>;
+    async fn retry_mint_drop(&self, key: NftEventKey, payload: B) -> Result<()>;
+    async fn transfer_asset(&self, key: NftEventKey, payload: C) -> Result<()>;
 }

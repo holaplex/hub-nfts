@@ -20,7 +20,7 @@ use async_graphql::{
     extensions::{ApolloTracing, Logger},
     EmptySubscription, Schema,
 };
-use blockchains::solana::{Solana, SolanaArgs};
+use blockchains::solana::Solana;
 use dataloaders::{
     CollectionLoader, CollectionMintsLoader, CollectionMintsOwnerLoader, CollectionPurchasesLoader,
     CreatorsLoader, DropLoader, DropPurchasesLoader, HoldersLoader, MetadataJsonAttributesLoader,
@@ -52,6 +52,10 @@ pub mod proto {
 use proto::NftEvents;
 
 impl hub_core::producer::Message for proto::NftEvents {
+    type Key = proto::NftEventKey;
+}
+
+impl hub_core::producer::Message for proto::SolanaEvents {
     type Key = proto::NftEventKey;
 }
 
@@ -95,9 +99,6 @@ pub struct Args {
 
     #[command(flatten)]
     pub nft_storage: nft_storage::NftStorageArgs,
-
-    #[command(flatten)]
-    pub solana: SolanaArgs,
 }
 
 #[derive(Debug, Clone, Copy)]

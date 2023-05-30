@@ -18,7 +18,6 @@ use hub_core::{
     tracing::{info, warn},
 };
 use poem::{get, listener::TcpListener, middleware::AddData, post, EndpointExt, Route, Server};
-use solana_client::rpc_client::RpcClient;
 
 pub fn main() {
     let opts = hub_core::StartConfig {
@@ -28,7 +27,6 @@ pub fn main() {
     hub_core::run(opts, |common, args| {
         let Args {
             port,
-            solana,
             db,
             nft_storage,
         } = args;
@@ -40,15 +38,16 @@ pub fn main() {
 
             let schema = build_schema();
 
-            let producer = common.producer_cfg.build::<proto::NftEvents>().await?;
+            let producer = common
+                .producer_cfg
+                .clone()
+                .build::<proto::NftEvents>()
+                .await?;
+            let solana_producer = common.producer_cfg.build::<proto::SolanaEvents>().await?;
             let credits = common.credits_cfg.build::<Actions>().await?;
             let nft_storage = NftStorageClient::new(nft_storage)?;
 
-            let solana_rpc = Arc::new(RpcClient::new(solana.solana_endpoint));
-            let f = File::open(solana.solana_keypair_path).expect("unable to locate keypair file");
-            let solana_keypair: Vec<u8> =
-                serde_json::from_reader(f).expect("unable to read keypair bytes from the file");
-            let solana_blockchain = Solana::new(solana_rpc, connection.clone(), solana_keypair);
+            let solana_blockchain = Solana::new(solana_producer.clone());
 
             let state = AppState::new(
                 schema,
