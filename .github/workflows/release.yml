@@ -112,7 +112,6 @@ jobs:
           fi
 
       - name: Invoke workflow in hub-kubes repo
-        if: github.ref == 'refs/heads/main'
         uses: benc-uk/workflow-dispatch@v1
         with:
           ref: main

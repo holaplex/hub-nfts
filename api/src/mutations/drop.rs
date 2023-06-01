@@ -1,8 +1,12 @@
+use std::str::FromStr;
+
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{anyhow, chrono::Utc, credits::CreditsClient, producer::Producer};
 use mpl_token_metadata::state::Creator;
+use reqwest::Url;
 use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
+use solana_program::pubkey::Pubkey;
 
 use crate::{
     blockchains::{
@@ -74,11 +78,10 @@ impl Mutation {
                 ))
             })?
             .wallet_address;
-        let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
 
-        if input.supply == Some(0) {
-            return Err(Error::new("supply must be greater than 0 or null"));
-        }
+        input.validate()?;
+
+        let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
 
         let collection = Collection::new(collections::ActiveModel {
             blockchain: Set(input.blockchain),
@@ -394,8 +397,15 @@ impl Mutation {
 
         let collection = collection_model.ok_or_else(|| Error::new("collection not found"))?;
 
-        let mut collection_am: collections::ActiveModel = collection.into();
+        validate_end_time(&input.end_time.clone())?;
+        if let Some(creators) = &creators {
+            validate_creators(collection.blockchain, creators)?;
+        }
+        if let Some(metadata_json) = &metadata_json {
+            validate_json(metadata_json)?;
+        }
 
+        let mut collection_am: collections::ActiveModel = collection.into();
         if let Some(seller_fee_basis_points) = seller_fee_basis_points {
             collection_am.seller_fee_basis_points = Set(seller_fee_basis_points.try_into()?);
         }
@@ -724,6 +734,93 @@ pub struct CreateDropInput {
     pub blockchain: BlockchainEnum,
     pub creators: Vec<CollectionCreator>,
     pub metadata_json: MetadataJsonInput,
+}
+
+impl CreateDropInput {
+    /// This function is used to validate the data of a new NFT drop before it is saved or submitted to the blockchain.
+    /// Validation Steps:
+    ///  Validate the addresses of the creators. Each creator's address should be a valid address.
+    ///  Ensure that the supply is greater than 0 or undefined.
+    ///  Check if the end time (if provided) is in the future.
+    ///  Validates the metadata JSON.
+    ///
+    /// # Returns:
+    /// - Ok(()) if all validations pass successfully.
+    /// # Errors
+    /// - Err with an appropriate error message if any validation fails.
+    pub fn validate(&self) -> Result<()> {
+        if self.supply == Some(0) {
+            return Err(Error::new("Supply must be greater than 0 or undefined"));
+        };
+
+        validate_end_time(&self.end_time)?;
+        validate_creators(self.blockchain, &self.creators)?;
+        validate_json(&self.metadata_json)?;
+
+        Ok(())
+    }
+}
+
+/// Validates the end time of the NFT drop.
+/// # Returns
+/// - Ok(()) if the end time is in the future or if it's not provided.
+/// # Errors
+/// - Err with an appropriate error message if the end time is in the past.
+fn validate_end_time(end_time: &Option<DateTimeWithTimeZone>) -> Result<()> {
+    end_time.map_or(Ok(()), |end_time| {
+        if end_time > Utc::now() {
+            Ok(())
+        } else {
+            Err(Error::new("End time must be in the future"))
+        }
+    })?;
+
+    Ok(())
+}
+
+/// Validates the addresses of the creators for a given blockchain.
+/// # Returns
+/// - Ok(()) if all creator addresses are valid blockchain addresses.
+///
+/// # Errors
+/// - Err with an appropriate error message if any creator address is not a valid address.
+/// - Err if the blockchain is not supported.
+fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreator>) -> Result<()> {
+    match blockchain {
+        BlockchainEnum::Solana => {
+            for creator in creators {
+                if Pubkey::from_str(&creator.address).is_err() {
+                    return Err(Error::new(format!(
+                        "{:?} is not a valid Solana address",
+                        &creator.address
+                    )));
+                }
+            }
+        },
+        _ => return Err(Error::new("Blockchain not supported yet")),
+    }
+
+    Ok(())
+}
+
+/// Validates the JSON metadata input for the NFT drop.
+/// # Returns
+/// - Ok(()) if all JSON fields are valid.
+///
+/// # Errors
+/// - Err with an appropriate error message if any JSON field is invalid.
+fn validate_json(json: &MetadataJsonInput) -> Result<()> {
+    if let Some(animation_url) = json.animation_url.as_ref() {
+        Url::from_str(animation_url).map_err(|_| Error::new("Invalid animation url"))?;
+    }
+
+    if let Some(external_url) = json.external_url.as_ref() {
+        Url::from_str(external_url).map_err(|_| Error::new("Invalid external url"))?;
+    }
+
+    Url::from_str(&json.image).map_err(|_| Error::new("Invalid image url"))?;
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
