@@ -2,7 +2,6 @@ use std::str::FromStr;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{anyhow, chrono::Utc, credits::CreditsClient, producer::Producer};
-use mpl_token_metadata::state::Creator;
 use reqwest::Url;
 use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
@@ -14,15 +13,13 @@ use crate::{
     db::Connection,
     entities::{
         collection_creators, collections, drops, metadata_jsons,
-        prelude::{CollectionCreators, MetadataJsons},
-        prelude::{Collections, Drops},
+        prelude::{CollectionCreators, Collections, Drops, MetadataJsons},
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
-        solana_collections,
     },
     metadata_json::MetadataJson,
     objects::{CollectionCreator, Drop, MetadataJsonInput},
-    proto::{self, nft_events, NftEventKey, NftEvents},
+    proto::{self, NftEventKey, NftEvents},
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
 
@@ -49,7 +46,7 @@ impl Mutation {
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
         let conn = db.get();
-        let producer = ctx.data::<Producer<NftEvents>>()?;
+        let _producer = ctx.data::<Producer<NftEvents>>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let solana = ctx.data::<Solana>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
@@ -100,14 +97,6 @@ impl Mutation {
             .save(collection.id, db)
             .await?;
 
-        // TODO: update address when return trip or drop and store in hub-nfts-solana db
-
-        // let mut collection_am: collections::ActiveModel = collection.clone().try_into()?;
-
-        // collection_am.address = Set(Some(collection_address.to_string()));
-
-        // let collection = collection_am.update(conn).await?;
-
         let drop = drops::ActiveModel {
             project_id: Set(input.project),
             collection_id: Set(collection.id),
@@ -153,25 +142,21 @@ impl Mutation {
                             }),
                         },
                     )
-                    .await?
+                    .await?;
             },
             BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
 
-        submit_pending_deduction(
-            credits,
-            db,
-            DeductionParams {
-                user_id,
-                org_id,
-                balance,
-                drop: drop_model.id,
-                blockchain: input.blockchain,
-                action: Actions::CreateDrop,
-            },
-        )
+        submit_pending_deduction(credits, db, DeductionParams {
+            user_id,
+            org_id,
+            balance,
+            drop: drop_model.id,
+            blockchain: input.blockchain,
+            action: Actions::CreateDrop,
+        })
         .await?;
 
         Ok(CreateDropPayload {
@@ -201,7 +186,7 @@ impl Mutation {
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
         let conn = db.get();
-        let producer = ctx.data::<Producer<NftEvents>>()?;
+        let _producer = ctx.data::<Producer<NftEvents>>()?;
         let solana = ctx.data::<Solana>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
@@ -272,37 +257,27 @@ impl Mutation {
                                     .map(|c| proto::Creator {
                                         address: c.address,
                                         verified: c.verified,
-                                        share: c.share.into(),
+                                        share: c.share,
                                     })
                                     .collect(),
                             }),
                         },
                     )
-                    .await?
+                    .await?;
             },
             BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
 
-        // TODO: set on the collection creation confirmation or just save in hub-nfts-solana
-
-        // let mut collection_am: collections::ActiveModel = collection.clone().try_into()?;
-        // collection_am.address = Set(Some(collection_address.to_string()));
-        // let collection = collection_am.update(db.get()).await?;
-
-        submit_pending_deduction(
-            credits,
-            db,
-            DeductionParams {
-                balance,
-                user_id,
-                org_id,
-                drop: drop.id,
-                blockchain: collection.blockchain,
-                action: Actions::RetryDrop,
-            },
-        )
+        submit_pending_deduction(credits, db, DeductionParams {
+            balance,
+            user_id,
+            org_id,
+            drop: drop.id,
+            blockchain: collection.blockchain,
+            action: Actions::RetryDrop,
+        })
         .await?;
 
         Ok(CreateDropPayload {
@@ -431,7 +406,7 @@ impl Mutation {
 
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let conn = db.get();
-        let producer = ctx.data::<Producer<NftEvents>>()?;
+        let _producer = ctx.data::<Producer<NftEvents>>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
         let solana = ctx.data::<Solana>()?;
 
@@ -565,7 +540,7 @@ impl Mutation {
                         .map(|c| proto::Creator {
                             address: c.address.to_string(),
                             verified: c.verified,
-                            share: c.share.into(),
+                            share: c.share,
                         })
                         .collect()
                 };
@@ -582,7 +557,7 @@ impl Mutation {
                             collection_id: collection.id.to_string(),
                             master_edition: Some(proto::MasterEdition {
                                 owner_address,
-                                supply: collection.supply.map(TryInto::try_into).transpose()?,
+                                supply: None,
                                 name: metadata_json_model.name,
                                 symbol: metadata_json_model.symbol,
                                 metadata_uri: metadata_json_model.uri,
@@ -591,7 +566,7 @@ impl Mutation {
                             }),
                         },
                     )
-                    .await?
+                    .await?;
             },
             _ => {
                 return Err(Error::new("blockchain not supported yet"));
@@ -775,24 +750,6 @@ pub struct RetryDropInput {
 #[derive(Debug, Clone, SimpleObject)]
 pub struct RetryDropPayload {
     drop: Drop,
-}
-
-impl TryFrom<CollectionCreator> for Creator {
-    type Error = Error;
-
-    fn try_from(
-        CollectionCreator {
-            address,
-            verified,
-            share,
-        }: CollectionCreator,
-    ) -> Result<Self> {
-        Ok(Self {
-            address: address.parse()?,
-            verified: verified.unwrap_or_default(),
-            share,
-        })
-    }
 }
 
 /// Input object for patching a drop and associated collection by ID

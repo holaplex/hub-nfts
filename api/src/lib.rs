@@ -47,6 +47,7 @@ use queries::Query;
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/nfts.proto.rs"));
     include!(concat!(env!("OUT_DIR"), "/treasury.proto.rs"));
+    include!(concat!(env!("OUT_DIR"), "/solana_nfts.proto.rs"));
 }
 
 use proto::NftEvents;
@@ -61,11 +62,12 @@ impl hub_core::producer::Message for proto::SolanaEvents {
 
 #[derive(Debug)]
 pub enum Services {
-    Treasuries(proto::TreasuryEventKey, proto::TreasuryEvents),
+    Treasury(proto::TreasuryEventKey, proto::TreasuryEvents),
+    Solana(proto::SolanaNftEventKey, proto::SolanaNftEvents),
 }
 
 impl hub_core::consumer::MessageGroup for Services {
-    const REQUESTED_TOPICS: &'static [&'static str] = &["hub-treasuries"];
+    const REQUESTED_TOPICS: &'static [&'static str] = &["hub-treasuries", "hub-nfts-solana"];
 
     fn from_message<M: hub_core::consumer::Message>(msg: &M) -> Result<Self, RecvError> {
         let topic = msg.topic();
@@ -78,9 +80,14 @@ impl hub_core::consumer::MessageGroup for Services {
                 let key = proto::TreasuryEventKey::decode(key)?;
                 let val = proto::TreasuryEvents::decode(val)?;
 
-                Ok(Services::Treasuries(key, val))
+                Ok(Services::Treasury(key, val))
             },
+            "hub-nfts-solana" => {
+                let key = proto::SolanaNftEventKey::decode(key)?;
+                let val = proto::SolanaNftEvents::decode(val)?;
 
+                Ok(Services::Solana(key, val))
+            },
             t => Err(RecvError::BadTopic(t.into())),
         }
     }

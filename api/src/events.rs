@@ -17,11 +17,12 @@ use crate::{
         sea_orm_active_enums::{Blockchain, CreationStatus},
     },
     proto::{
+        solana_nft_events::Event as SolanaNftsEvent,
         treasury_events::{
-            Blockchain as ProtoBlockchainEnum, DropCreated, DropMinted, Event, MintTransfered,
-            ProjectWallet, TransactionStatus,
+            Blockchain as ProtoBlockchainEnum, Event as TreasuryEvent, ProjectWallet,
+            TransactionStatus,
         },
-        TreasuryEventKey,
+        SolanaNftEventKey, SolanaTransactionResponse,
     },
     Actions, Services,
 };
@@ -29,29 +30,32 @@ use crate::{
 /// Process the given message for various services.
 ///
 /// # Errors
-/// This functioncan return an error if it fails to process any event
+/// This function can return an error if it fails to process any event
 pub async fn process(msg: Services, db: Connection, credits: CreditsClient<Actions>) -> Result<()> {
     // match topics
     match msg {
-        Services::Treasuries(key, e) => match e.event {
-            Some(Event::DropCreated(payload)) => {
-                process_drop_created_event(db, credits, key, payload).await
-            },
-            Some(Event::DropMinted(payload)) => {
-                process_drop_minted_event(db, credits, key, payload).await
-            },
-            Some(Event::ProjectWalletCreated(payload)) => {
+        Services::Treasury(_key, e) => match e.event {
+            Some(TreasuryEvent::ProjectWalletCreated(payload)) => {
                 process_project_wallet_created_event(db, payload).await
             },
-            Some(Event::MintTransfered(payload)) => {
-                process_mint_transfered_event(db, credits, key, payload).await
+            None | Some(_) => Ok(()),
+        },
+        Services::Solana(SolanaNftEventKey { id, .. }, e) => match e.event {
+            Some(SolanaNftsEvent::CreateDropSubmitted(SolanaTransactionResponse { signature })) => {
+                process_drop_created_event(db, credits, id, signature).await
             },
-            Some(Event::MintRetried(payload)) => {
-                process_drop_minted_event(db, credits, key, payload).await
+            Some(SolanaNftsEvent::MintDropSubmitted(SolanaTransactionResponse { signature })) => {
+                process_drop_minted_event(db, credits, id, signature).await
             },
-            Some(Event::DropRetried(payload)) => {
-                process_drop_created_event(db, credits, key, payload).await
-            },
+            Some(SolanaNftsEvent::TransferAssetSubmitted(SolanaTransactionResponse {
+                signature,
+            })) => process_mint_transferred_event(db, credits, id, signature).await,
+            Some(SolanaNftsEvent::RetryMintDropSubmitted(SolanaTransactionResponse {
+                signature,
+            })) => process_drop_minted_event(db, credits, id, signature).await,
+            Some(SolanaNftsEvent::RetryCreateDropSubmitted(SolanaTransactionResponse {
+                signature,
+            })) => process_drop_created_event(db, credits, id, signature).await,
             None | Some(_) => Ok(()),
         },
     }
@@ -99,36 +103,34 @@ pub async fn process_project_wallet_created_event(
 pub async fn process_drop_created_event(
     db: Connection,
     credits: CreditsClient<Actions>,
-    key: TreasuryEventKey,
-    payload: DropCreated,
+    drop_id: String,
+    signature: Option<String>,
 ) -> Result<()> {
-    let DropCreated {
-        status,
-        tx_signature,
-        ..
-    } = payload;
+    let conn = db.get();
+    let status = signature
+        .clone()
+        .map_or_else(|| CreationStatus::Failed, |_| CreationStatus::Created);
 
-    let tx_status = TransactionStatus::from_i32(status).context("failed to parse the status")?;
-    let drop_id = Uuid::from_str(&key.id)?;
+    let drop_id = Uuid::from_str(&drop_id)?;
 
     let (drop, collection_model) = drops::Entity::find_by_id(drop_id)
         .select_also(collections::Entity)
         .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-        .one(db.get())
+        .one(conn)
         .await
         .context("failed to load drop from db")?
         .context("drop not found in db")?;
 
     let collection = collection_model.context("failed to get collection from db")?;
     let mut collection_active_model: collections::ActiveModel = collection.into();
-    collection_active_model.signature = Set(Some(tx_signature));
-    collection_active_model.creation_status = Set(tx_status.try_into()?);
-    collection_active_model.update(db.get()).await?;
+    collection_active_model.signature = Set(signature);
+    collection_active_model.creation_status = Set(status);
+    collection_active_model.update(conn).await?;
 
     let mut drops_active_model: drops::ActiveModel = drop.clone().into();
 
-    drops_active_model.creation_status = Set(tx_status.try_into()?);
-    drops_active_model.update(db.get()).await?;
+    drops_active_model.creation_status = Set(status);
+    drops_active_model.update(conn).await?;
 
     debug!("status updated for drop {:?}", drop_id);
 
@@ -152,17 +154,13 @@ pub async fn process_drop_created_event(
 pub async fn process_drop_minted_event(
     db: Connection,
     credits: CreditsClient<Actions>,
-    key: TreasuryEventKey,
-    payload: DropMinted,
+    collection_mint_id: String,
+    signature: Option<String>,
 ) -> Result<()> {
-    let DropMinted {
-        status,
-        tx_signature,
-        ..
-    } = payload;
-
-    let collection_mint_id = Uuid::from_str(&key.id)?;
-    let tx_status = TransactionStatus::from_i32(status).context("failed to parse the status")?;
+    let collection_mint_id = Uuid::from_str(&collection_mint_id)?;
+    let status = signature
+        .clone()
+        .map_or_else(|| CreationStatus::Failed, |_| CreationStatus::Created);
 
     let collection_mint = collection_mints::Entity::find_by_id(collection_mint_id)
         .one(db.get())
@@ -173,8 +171,8 @@ pub async fn process_drop_minted_event(
     let mut collection_mint_active_model: collection_mints::ActiveModel =
         collection_mint.clone().into();
 
-    collection_mint_active_model.creation_status = Set(tx_status.try_into()?);
-    collection_mint_active_model.signature = Set(Some(tx_signature.clone()));
+    collection_mint_active_model.creation_status = Set(status);
+    collection_mint_active_model.signature = Set(signature.clone());
     collection_mint_active_model.update(db.get()).await?;
 
     let purchase = Purchases::find()
@@ -186,8 +184,8 @@ pub async fn process_drop_minted_event(
 
     let mut purchase_am: purchases::ActiveModel = purchase.into();
 
-    purchase_am.status = Set(tx_status.try_into()?);
-    purchase_am.tx_signature = Set(Some(tx_signature));
+    purchase_am.status = Set(status);
+    purchase_am.tx_signature = Set(signature);
     purchase_am.update(db.get()).await?;
 
     let deduction_id = collection_mint
@@ -213,39 +211,29 @@ pub async fn process_drop_minted_event(
 /// This function returns an error if it fails to update the mint owner or
 /// if it fails to inserts the nft transfer
 
-pub async fn process_mint_transfered_event(
+pub async fn process_mint_transferred_event(
     db: Connection,
     credits: CreditsClient<Actions>,
-    key: TreasuryEventKey,
-    payload: MintTransfered,
+    transfer_id: String,
+    signature: Option<String>,
 ) -> Result<()> {
-    let MintTransfered {
-        recipient,
-        tx_signature,
-        transfer_id,
-        ..
-    } = payload;
-
-    let id = Uuid::from_str(&key.id)?;
+    let conn = db.get();
     let transfer_id = Uuid::from_str(&transfer_id)?;
 
-    let collection_mint = collection_mints::Entity::find_by_id(id)
-        .one(db.get())
-        .await
-        .context("failed to load collection mint from db")?
-        .context("collection mint not found in db")?;
+    let (nft_transfer, collection_mint) = nft_transfers::Entity::find_by_id(transfer_id)
+        .find_also_related(collection_mints::Entity)
+        .one(conn)
+        .await?
+        .context("failed to load nft transfer from db")?;
+
+    let collection_mint = collection_mint.ok_or(anyhow!("collection mint not found in db"))?;
 
     let mut collection_mint_am: collection_mints::ActiveModel = collection_mint.into();
-    collection_mint_am.owner = Set(recipient.clone());
+    collection_mint_am.owner = Set(nft_transfer.recipient.clone());
     collection_mint_am.update(db.get()).await?;
 
-    let nft_transfer = nft_transfers::Entity::find_by_id(transfer_id)
-        .one(db.get())
-        .await?
-        .ok_or_else(|| anyhow!("nft transfer record not found"))?;
-
     let mut nft_transfer_am: nft_transfers::ActiveModel = nft_transfer.clone().into();
-    nft_transfer_am.tx_signature = Set(Some(tx_signature));
+    nft_transfer_am.tx_signature = Set(signature);
 
     nft_transfer_am.insert(db.get()).await?;
 

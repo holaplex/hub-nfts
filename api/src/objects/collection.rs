@@ -23,8 +23,6 @@ pub struct Collection {
     pub supply: Option<i64>,
     /// The creation status of the collection. When the collection is in a `CREATED` status you can mint NFTs from the collection.
     pub creation_status: CreationStatus,
-    /// The blockchain address of the collection used to view it in blockchain explorers.
-    pub address: Option<String>,
     /// The current number of NFTs minted from the collection.
     pub total_mints: i64,
     /// The transaction signature of the collection.
@@ -52,11 +50,6 @@ impl Collection {
     /// The creation status of the collection. When the collection is in a `CREATED` status you can mint NFTs from the collection.
     async fn creation_status(&self) -> CreationStatus {
         self.creation_status
-    }
-
-    /// The blockchain address of the collection used to view it in blockchain explorers.
-    async fn address(&self) -> Option<String> {
-        self.address.clone()
     }
 
     /// The current number of NFTs minted from the collection.
@@ -133,7 +126,6 @@ impl From<Model> for Collection {
             blockchain,
             supply,
             creation_status,
-            address,
             total_mints,
             signature,
             seller_fee_basis_points,
@@ -144,7 +136,6 @@ impl From<Model> for Collection {
             blockchain,
             supply,
             creation_status,
-            address,
             total_mints,
             signature,
             seller_fee_basis_points,

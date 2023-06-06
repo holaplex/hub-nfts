@@ -12,7 +12,7 @@ use crate::{
         prelude::{Collections, Drops},
         sea_orm_active_enums::Blockchain,
     },
-    proto::{self, nft_events, NftEventKey, NftEvents, TransferMintTransaction},
+    proto::{self, NftEventKey, NftEvents},
     Actions, AppContext, OrganizationId, UserID,
 };
 
@@ -62,7 +62,7 @@ impl Mutation {
             .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
 
         let conn = db.get();
-        let producer = ctx.data::<Producer<NftEvents>>()?;
+        let _producer = ctx.data::<Producer<NftEvents>>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
 
         let TransferAssetInput { id, recipient } = input;
@@ -82,12 +82,11 @@ impl Mutation {
             .await?
             .ok_or(Error::new("drop not found"))?;
 
-        let proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
-
         let nft_transfer_am = nft_transfers::ActiveModel {
             tx_signature: Set(None),
+            collection_mint_id: Set(collection_mint_model.id),
             sender: Set(collection_mint_model.owner.to_string()),
-            recipient: Set(recipient.clone().to_string()),
+            recipient: Set(recipient.clone()),
             ..Default::default()
         };
 
@@ -101,11 +100,12 @@ impl Mutation {
                     .event()
                     .transfer_asset(
                         NftEventKey {
-                            id: collection_mint_model.id.to_string(),
+                            id: nft_transfer_model.id.to_string(),
                             user_id: user_id.to_string(),
                         },
                         proto::TransferMetaplexAssetTransaction {
                             project_id: drop.project_id.to_string(),
+                            collection_mint_id: collection_mint_model.id.to_string(),
                             recipient_address: recipient.to_string(),
                             owner_address: collection_mint_model.owner.to_string(),
                         },

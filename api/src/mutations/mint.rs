@@ -14,7 +14,7 @@ use crate::{
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
-    proto::{self, nft_events, MintTransaction, NftEventKey, NftEvents, Transaction},
+    proto::{self, NftEventKey, NftEvents},
     Actions, AppContext, OrganizationId, UserID,
 };
 
@@ -38,7 +38,7 @@ impl Mutation {
             balance,
             ..
         } = ctx.data::<AppContext>()?;
-        let producer = ctx.data::<Producer<NftEvents>>()?;
+        let _producer = ctx.data::<Producer<NftEvents>>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
@@ -121,7 +121,7 @@ impl Mutation {
                             edition: edition.try_into()?,
                         },
                     )
-                    .await?
+                    .await?;
             },
             BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
                 return Err(Error::new("blockchain not supported as this time"));
@@ -132,7 +132,7 @@ impl Mutation {
         collection_am.total_mints = Set(edition);
         collection_am.update(conn).await?;
 
-        let proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
+        let _proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
 
         MetadataJson::fetch(collection.id, db)
             .await?
@@ -153,18 +153,14 @@ impl Mutation {
 
         purchase_am.insert(conn).await?;
 
-        submit_pending_deduction(
-            credits,
-            db,
-            DeductionParams {
-                balance,
-                user_id,
-                org_id,
-                mint: collection_mint_model.id,
-                blockchain: collection.blockchain,
-                action: Actions::MintEdition,
-            },
-        )
+        submit_pending_deduction(credits, db, DeductionParams {
+            balance,
+            user_id,
+            org_id,
+            mint: collection_mint_model.id,
+            blockchain: collection.blockchain,
+            action: Actions::MintEdition,
+        })
         .await?;
 
         Ok(MintEditionPayload {
@@ -188,7 +184,7 @@ impl Mutation {
             ..
         } = ctx.data::<AppContext>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
-        let producer = ctx.data::<Producer<NftEvents>>()?;
+        let _producer = ctx.data::<Producer<NftEvents>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
 
@@ -262,30 +258,26 @@ impl Mutation {
                             collection_id: collection_mint_model.collection_id.to_string(),
                             recipient_address: recipient.to_string(),
                             owner_address: owner_address.to_string(),
-                            edition: edition.try_into()?,
+                            edition,
                         },
                     )
-                    .await?
+                    .await?;
             },
             BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
 
-        let proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
+        let _proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
 
-        submit_pending_deduction(
-            credits,
-            db,
-            DeductionParams {
-                balance,
-                user_id,
-                org_id,
-                mint: collection_mint_model.id,
-                blockchain: collection.blockchain,
-                action: Actions::RetryMint,
-            },
-        )
+        submit_pending_deduction(credits, db, DeductionParams {
+            balance,
+            user_id,
+            org_id,
+            mint: collection_mint_model.id,
+            blockchain: collection.blockchain,
+            action: Actions::RetryMint,
+        })
         .await?;
 
         Ok(RetryMintPayload {
