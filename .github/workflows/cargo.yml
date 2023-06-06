@@ -14,7 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-
   clippy:
     name: clippy/check/doc
     runs-on: amd64

@@ -11,7 +11,6 @@ concurrency:
 
 env:
   SERVICE_NAME: nfts
-  APOLLO_PROJECT: hub-dev@current
   DOCKERHUB_REPO: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}
   DOCKERHUB_MIGRATIONS_REPO: ${{ vars.DOCKERHUB_ORG }}/${{ github.event.repository.name }}-migrations
   CACHE_CONFIG: type=s3,region=${{ vars.AWS_REGION }},bucket=${{ vars.AWS_BUCKET }},access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }},secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -120,76 +119,3 @@ jobs:
           workflow: release.yml
           repo: holaplex/hub-kubes
           inputs: '{ "service": "${{ env.SERVICE_NAME }}", "environment": "${{ steps.vars.outputs.environment }}", "commit_hash": "${{ github.sha }}"}'
-
-  schemaUpdate:
-    name: Cargo Test
-    runs-on: amd64
-
-    steps:
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -y && \
-          sudo apt-get install -y --no-install-recommends \
-            cmake \
-            g++ \
-            libsasl2-dev \
-            libssl-dev \
-            libudev-dev \
-            pkg-config \
-            protobuf-compiler
-
-      - uses: actions/checkout@v3
-      - uses: isbang/compose-action@v1.4.1
-        with:
-          compose-file: "./docker-compose.yml"
-
-      - uses: actions-rs/toolchain@v1
-        with:
-            toolchain: 1.69.0
-            override: true
-            components: cargo, rustc
-
-      - uses: tespkg/actions-cache@v1
-        with:
-          accessKey: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          secretKey: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          bucket: ${{ vars.AWS_BUCKET }}
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ github.event.repository.name }}-${{ runner.arch }}-cargo-test-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
-
-      - name: Build $SERVICE_NAME service
-        run: cargo build --bin holaplex-hub-$SERVICE_NAME
-
-      - name: Run $SERVICE_NAME service
-        env:
-          PORT: 3000
-        run: export $(xargs < .env) && cargo run --bin holaplex-hub-$SERVICE_NAME &
-
-      -
-        name: Retrieve GraphQL schema and push to Apollo Studio
-        env:
-          APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
-        run: |
-          # install rover CLI
-          curl -sSL https://rover.apollo.dev/nix/latest | sh
-          export PATH="/home/runner/.rover/bin:$PATH"
-          # Instrospect Graphql Server and push schema
-          rover subgraph introspect http://localhost:3000/graphql | \
-          rover subgraph publish $APOLLO_PROJECT \
-            --name $APP_NAME \
-            --schema - \
-            --routing-url http://localhost:3000/graphql
-
-      -
-        name: Invoke schema update workflow in hub-permissions repo
-        uses: benc-uk/workflow-dispatch@v1
-        with:
-          ref: main
-          token: ${{ secrets.ACTIONS_TOKEN }}
-          workflow: opa_release.yml
-          repo: holaplex/hub-permissions
