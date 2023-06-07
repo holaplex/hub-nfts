@@ -112,9 +112,9 @@ impl Mutation {
                         NftEventKey {
                             id: collection_mint_model.id.to_string(),
                             user_id: user_id.to_string(),
+                            project_id: drop_model.project_id.to_string(),
                         },
                         proto::MintMetaplexEditionTransaction {
-                            project_id: drop_model.project_id.to_string(),
                             collection_id: collection_mint_model.collection_id.to_string(),
                             recipient_address: input.recipient.to_string(),
                             owner_address: owner_address.to_string(),
@@ -252,9 +252,9 @@ impl Mutation {
                         NftEventKey {
                             id: collection_mint_model.id.to_string(),
                             user_id: user_id.to_string(),
+                            project_id: project_id.to_string(),
                         },
                         proto::MintMetaplexEditionTransaction {
-                            project_id: project_id.to_string(),
                             collection_id: collection_mint_model.collection_id.to_string(),
                             recipient_address: recipient.to_string(),
                             owner_address: owner_address.to_string(),
@@ -267,8 +267,6 @@ impl Mutation {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
-
-        let _proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
 
         submit_pending_deduction(credits, db, DeductionParams {
             balance,

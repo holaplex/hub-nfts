@@ -102,9 +102,9 @@ impl Mutation {
                         NftEventKey {
                             id: nft_transfer_model.id.to_string(),
                             user_id: user_id.to_string(),
+                            project_id: drop.project_id.to_string(),
                         },
                         proto::TransferMetaplexAssetTransaction {
-                            project_id: drop.project_id.to_string(),
                             collection_mint_id: collection_mint_model.id.to_string(),
                             recipient_address: recipient.to_string(),
                             owner_address: collection_mint_model.owner.to_string(),

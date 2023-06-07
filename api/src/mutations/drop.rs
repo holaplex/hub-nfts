@@ -119,9 +119,9 @@ impl Mutation {
                         NftEventKey {
                             id: drop_model.id.to_string(),
                             user_id: user_id.to_string(),
+                            project_id: input.project.to_string(),
                         },
                         proto::MetaplexMasterEditionTransaction {
-                            project_id: input.project.to_string(),
                             collection_id: collection.id.to_string(),
                             master_edition: Some(proto::MasterEdition {
                                 owner_address,
@@ -241,9 +241,9 @@ impl Mutation {
                         NftEventKey {
                             id: drop.id.to_string(),
                             user_id: user_id.to_string(),
+                            project_id: drop.project_id.to_string(),
                         },
                         proto::MetaplexMasterEditionTransaction {
-                            project_id: drop.project_id.to_string(),
                             collection_id: collection.id.to_string(),
                             master_edition: Some(proto::MasterEdition {
                                 owner_address,
@@ -551,9 +551,9 @@ impl Mutation {
                         NftEventKey {
                             id: drop_model.id.to_string(),
                             user_id: user_id.to_string(),
+                            project_id: drop_model.project_id.to_string(),
                         },
                         proto::MetaplexMasterEditionTransaction {
-                            project_id: drop_model.project_id.to_string(),
                             collection_id: collection.id.to_string(),
                             master_edition: Some(proto::MasterEdition {
                                 owner_address,

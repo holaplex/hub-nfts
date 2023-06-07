@@ -132,8 +132,6 @@ pub async fn process_drop_created_event(
     drops_active_model.creation_status = Set(status);
     drops_active_model.update(conn).await?;
 
-    debug!("status updated for drop {:?}", drop_id);
-
     let deduction_id = drop
         .credits_deduction_id
         .context("drop has no deduction id")?;
