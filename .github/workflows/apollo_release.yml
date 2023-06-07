@@ -9,9 +9,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  APOLLO_GRAPH: hub-dev
-
 jobs:
   schemaUpdate:
     name: Apollo Schema update
@@ -87,7 +84,7 @@ jobs:
           export PATH="/home/runner/.rover/bin:$PATH"
           # Instrospect Graphql Server and push schema
           rover subgraph introspect http://localhost:3000/graphql | \
-          rover subgraph publish $APOLLO_GRAPH@${{ steps.vars.outputs.variant }} \
+          rover subgraph publish ${{ vars.APOLLO_GRAPH }}@${{ steps.vars.outputs.variant }} \
             --name ${{ github.event.repository.name }} \
             --schema - \
             --routing-url http://localhost:3000/graphql
