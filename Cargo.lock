@@ -2109,8 +2109,8 @@ dependencies = [
 
 [[package]]
 name = "holaplex-hub-core"
-version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=stable#b1c65dd6c2b9d8b5c940584ad43c539f4d9130a5"
+version = "0.2.1"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#c8eaef51ea8729686a1d74e2e8d9fc1a14f4dcb8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2143,8 +2143,8 @@ dependencies = [
 
 [[package]]
 name = "holaplex-hub-core-build"
-version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=stable#b1c65dd6c2b9d8b5c940584ad43c539f4d9130a5"
+version = "0.2.1"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#c8eaef51ea8729686a1d74e2e8d9fc1a14f4dcb8"
 dependencies = [
  "anyhow",
  "dotenv",
@@ -2162,8 +2162,8 @@ dependencies = [
 
 [[package]]
 name = "holaplex-hub-core-schemas"
-version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=stable#b1c65dd6c2b9d8b5c940584ad43c539f4d9130a5"
+version = "0.2.1"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#c8eaef51ea8729686a1d74e2e8d9fc1a14f4dcb8"
 dependencies = [
  "holaplex-hub-core-build",
  "prost",
