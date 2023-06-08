@@ -51,7 +51,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ github.event.repository.name }}-${{ runner.arch }}-cargo-test-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          key: ${{ github.event.repository.name }}-${{ runner.arch }}-cargo-build-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
 
       - name: Cargo Build
         run: cargo build --bin holaplex-${{ github.event.repository.name }}
@@ -87,7 +87,7 @@ jobs:
           rover subgraph publish ${{ vars.APOLLO_GRAPH }}@${{ steps.vars.outputs.variant }} \
             --name ${{ github.event.repository.name }} \
             --schema - \
-            --routing-url http://localhost:3000/graphql
+            --routing-url http://${{ github.event.repository.name }}:3000/graphql
 
       - name: Invoke schema update workflow in hub-permissions repo
         uses: benc-uk/workflow-dispatch@v1
