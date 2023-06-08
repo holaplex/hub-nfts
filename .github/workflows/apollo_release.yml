@@ -56,16 +56,16 @@ jobs:
       - name: Cargo Build
         run: cargo build --bin holaplex-${{ github.event.repository.name }}
 
-      - name: Cargo run
-        env:
-          PORT: 3000
-        run: export $(xargs < .env) && cargo run --bin holaplex-${{ github.event.repository.name }} &
-
       - name: Setup Solana tools
         run: |
           sh -c "$(curl -sSfL https://release.solana.com/v1.15.2/install)"
           export PATH="/home/runner/.local/share/solana/install/active_release/bin:$PATH"
           solana-keygen new --silent --outfile keypair.json --no-bip39-passphrase
+
+      - name: Cargo run
+        env:
+          PORT: 3000
+        run: export $(xargs < .env) && cargo run --bin holaplex-${{ github.event.repository.name }} &
 
       - name: Setup Apollo Studio variant
         id: vars
