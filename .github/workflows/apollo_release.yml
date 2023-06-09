@@ -72,8 +72,10 @@ jobs:
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/release" ]]; then
             echo "variant=current" >> $GITHUB_OUTPUT
+            echo "branch=release" >> $GITHUB_OUTPUT
           else
             echo "variant=stage" >> $GITHUB_OUTPUT
+            echo "branch=main" >> $GITHUB_OUTPUT
           fi
 
       - name: Retrieve GraphQL schema and push to Apollo Studio
@@ -87,12 +89,12 @@ jobs:
           rover subgraph publish ${{ vars.APOLLO_GRAPH }}@${{ steps.vars.outputs.variant }} \
             --name ${{ github.event.repository.name }} \
             --schema - \
-            --routing-url http://${{ github.event.repository.name }}:3000/graphql
+            --routing-url http://${{ github.event.repository.name }}/graphql
 
       - name: Invoke schema update workflow in hub-permissions repo
         uses: benc-uk/workflow-dispatch@v1
         with:
-          ref: main
+          ref: ${{ steps.vars.outputs.branch }}
           token: ${{ secrets.ACTIONS_TOKEN }}
           workflow: opa_release.yml
           repo: holaplex/hub-permissions
