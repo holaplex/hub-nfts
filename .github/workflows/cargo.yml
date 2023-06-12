@@ -18,6 +18,8 @@ jobs:
     name: clippy/check/doc
     runs-on: amd64
     steps:
+      - uses: actions/checkout@v3
+
       - name: Install dependencies
         run: |
           sudo apt-get update -y && \
@@ -27,10 +29,12 @@ jobs:
             libsasl2-dev \
             libssl-dev \
             libudev-dev \
-            pkg-config \
-            protobuf-compiler
+            pkg-config
 
-      - uses: actions/checkout@v3
+      - name: Get protoc from github releases
+        run: |
+          sudo ./ci/get-protoc.sh
+
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:

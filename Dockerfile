@@ -11,9 +11,13 @@ RUN apt-get update -y && \
     libssl-dev \
     libudev-dev \
     pkg-config \
-    protobuf-compiler \
+    wget \
   && \
   rm -rf /var/lib/apt/lists/*
+
+COPY ci/get-protoc.sh ./
+RUN chmod +x get-protoc.sh
+RUN /app/get-protoc.sh
 
 FROM chef AS planner
 
