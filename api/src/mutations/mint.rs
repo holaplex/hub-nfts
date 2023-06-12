@@ -118,7 +118,7 @@ impl Mutation {
                             collection_id: collection_mint_model.collection_id.to_string(),
                             recipient_address: input.recipient.to_string(),
                             owner_address: owner_address.to_string(),
-                            edition: edition.try_into()?,
+                            edition,
                         },
                     )
                     .await?;

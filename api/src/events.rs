@@ -22,7 +22,7 @@ use crate::{
             Blockchain as ProtoBlockchainEnum, Event as TreasuryEvent, ProjectWallet,
             TransactionStatus,
         },
-        SolanaNftEventKey, SolanaTransactionResponse,
+        SolanaNftEventKey, SolanaCompletedTransaction,
     },
     Actions, Services,
 };
@@ -41,19 +41,19 @@ pub async fn process(msg: Services, db: Connection, credits: CreditsClient<Actio
             None | Some(_) => Ok(()),
         },
         Services::Solana(SolanaNftEventKey { id, .. }, e) => match e.event {
-            Some(SolanaNftsEvent::CreateDropSubmitted(SolanaTransactionResponse { signature })) => {
+            Some(SolanaNftsEvent::CreateDropSubmitted(SolanaCompletedTransaction { signature })) => {
                 process_drop_created_event(db, credits, id, signature).await
             },
-            Some(SolanaNftsEvent::MintDropSubmitted(SolanaTransactionResponse { signature })) => {
+            Some(SolanaNftsEvent::MintDropSubmitted(SolanaCompletedTransaction { signature })) => {
                 process_drop_minted_event(db, credits, id, signature).await
             },
-            Some(SolanaNftsEvent::TransferAssetSubmitted(SolanaTransactionResponse {
+            Some(SolanaNftsEvent::TransferAssetSubmitted(SolanaCompletedTransaction {
                 signature,
             })) => process_mint_transferred_event(db, credits, id, signature).await,
-            Some(SolanaNftsEvent::RetryMintDropSubmitted(SolanaTransactionResponse {
+            Some(SolanaNftsEvent::RetryMintDropSubmitted(SolanaCompletedTransaction {
                 signature,
             })) => process_drop_minted_event(db, credits, id, signature).await,
-            Some(SolanaNftsEvent::RetryCreateDropSubmitted(SolanaTransactionResponse {
+            Some(SolanaNftsEvent::RetryCreateDropSubmitted(SolanaCompletedTransaction {
                 signature,
             })) => process_drop_created_event(db, credits, id, signature).await,
             None | Some(_) => Ok(()),

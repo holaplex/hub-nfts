@@ -1,5 +1,5 @@
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{credits::CreditsClient, producer::Producer};
+use hub_core::{credits::CreditsClient};
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 use serde::{Deserialize, Serialize};
 
@@ -12,7 +12,7 @@ use crate::{
         prelude::{Collections, Drops},
         sea_orm_active_enums::Blockchain,
     },
-    proto::{self, NftEventKey, NftEvents},
+    proto::{self, NftEventKey},
     Actions, AppContext, OrganizationId, UserID,
 };
 
@@ -62,7 +62,6 @@ impl Mutation {
             .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
 
         let conn = db.get();
-        let _producer = ctx.data::<Producer<NftEvents>>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
 
         let TransferAssetInput { id, recipient } = input;
