@@ -331,15 +331,9 @@ async fn submit_pending_deduction(
     }
 
     let id = match blockchain {
-        BlockchainEnum::Solana => {
+        BlockchainEnum::Solana | BlockchainEnum::Polygon => {
             credits
-                .submit_pending_deduction(
-                    org_id,
-                    user_id,
-                    action,
-                    hub_core::credits::Blockchain::Solana,
-                    balance,
-                )
+                .submit_pending_deduction(org_id, user_id, action, blockchain.into(), balance)
                 .await?
         },
         _ => {

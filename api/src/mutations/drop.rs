@@ -60,8 +60,7 @@ impl Mutation {
 
         let owner_address = fetch_owner(conn, &input).await?;
 
-        // let owner_address = "0x2c5742Ed9C8C0e2B12c4423fA2280c4A79468dE2".to_string();
-        // input.validate()?;
+        input.validate()?;
 
         let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
 
@@ -758,10 +757,35 @@ fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreato
                 }
             }
         },
+        BlockchainEnum::Polygon => {
+            for creator in creators {
+                if !is_valid_evm_address(&creator.address) {
+                    return Err(Error::new(format!(
+                        "{:?} is not a valid ethereum address",
+                        &creator.address
+                    )));
+                }
+            }
+        },
         _ => return Err(Error::new("Blockchain not supported yet")),
     }
 
     Ok(())
+}
+
+fn is_valid_evm_address(address: &str) -> bool {
+    // Ethereum address must start with '0x'
+    if !address.starts_with("0x") {
+        return false;
+    }
+
+    // Ethereum address must be exactly 40 characters long after removing '0x'
+    if address.len() != 42 {
+        return false;
+    }
+
+    // Check that the address contains only hexadecimal characters
+    address[2..].chars().all(|c| c.is_digit(16))
 }
 
 /// Validates the JSON metadata input for the NFT drop.
