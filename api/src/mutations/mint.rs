@@ -336,7 +336,7 @@ async fn submit_pending_deduction(
                 .submit_pending_deduction(org_id, user_id, action, blockchain.into(), balance)
                 .await?
         },
-        _ => {
+        BlockchainEnum::Ethereum => {
             return Err(Error::new("blockchain not supported yet"));
         },
     };

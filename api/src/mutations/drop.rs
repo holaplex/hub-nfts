@@ -767,7 +767,7 @@ fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreato
                 }
             }
         },
-        _ => return Err(Error::new("Blockchain not supported yet")),
+        BlockchainEnum::Ethereum => return Err(Error::new("Blockchain not supported yet")),
     }
 
     Ok(())
@@ -785,7 +785,7 @@ fn is_valid_evm_address(address: &str) -> bool {
     }
 
     // Check that the address contains only hexadecimal characters
-    address[2..].chars().all(|c| c.is_digit(16))
+    address[2..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Validates the JSON metadata input for the NFT drop.

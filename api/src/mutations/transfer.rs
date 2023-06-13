@@ -107,9 +107,9 @@ impl Mutation {
                 solana
                     .event()
                     .transfer_asset(event_key, proto::TransferMetaplexAssetTransaction {
-                        collection_mint_id,
                         recipient_address,
                         owner_address,
+                        collection_mint_id,
                     })
                     .await?;
             },
@@ -168,7 +168,7 @@ async fn submit_pending_deduction(
                 )
                 .await?
         },
-        _ => {
+        Blockchain::Ethereum => {
             return Err(Error::new("blockchain not supported yet"));
         },
     };
