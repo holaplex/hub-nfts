@@ -22,7 +22,7 @@ use crate::{
             Blockchain as ProtoBlockchainEnum, Event as TreasuryEvent, ProjectWallet,
             TransactionStatus,
         },
-        SolanaNftEventKey, SolanaCompletedTransaction,
+        SolanaCompletedTransaction, SolanaNftEventKey,
     },
     Actions, Services,
 };
@@ -41,9 +41,9 @@ pub async fn process(msg: Services, db: Connection, credits: CreditsClient<Actio
             None | Some(_) => Ok(()),
         },
         Services::Solana(SolanaNftEventKey { id, .. }, e) => match e.event {
-            Some(SolanaNftsEvent::CreateDropSubmitted(SolanaCompletedTransaction { signature })) => {
-                process_drop_created_event(db, credits, id, signature).await
-            },
+            Some(SolanaNftsEvent::CreateDropSubmitted(SolanaCompletedTransaction {
+                signature,
+            })) => process_drop_created_event(db, credits, id, signature).await,
             Some(SolanaNftsEvent::MintDropSubmitted(SolanaCompletedTransaction { signature })) => {
                 process_drop_minted_event(db, credits, id, signature).await
             },
@@ -104,12 +104,10 @@ pub async fn process_drop_created_event(
     db: Connection,
     credits: CreditsClient<Actions>,
     drop_id: String,
-    signature: Option<String>,
+    signature: String,
 ) -> Result<()> {
     let conn = db.get();
-    let status = signature
-        .clone()
-        .map_or_else(|| CreationStatus::Failed, |_| CreationStatus::Created);
+    let status = CreationStatus::Created;
 
     let drop_id = Uuid::from_str(&drop_id)?;
 
@@ -123,7 +121,7 @@ pub async fn process_drop_created_event(
 
     let collection = collection_model.context("failed to get collection from db")?;
     let mut collection_active_model: collections::ActiveModel = collection.into();
-    collection_active_model.signature = Set(signature);
+    collection_active_model.signature = Set(Some(signature));
     collection_active_model.creation_status = Set(status);
     collection_active_model.update(conn).await?;
 
@@ -153,12 +151,10 @@ pub async fn process_drop_minted_event(
     db: Connection,
     credits: CreditsClient<Actions>,
     collection_mint_id: String,
-    signature: Option<String>,
+    signature: String,
 ) -> Result<()> {
     let collection_mint_id = Uuid::from_str(&collection_mint_id)?;
-    let status = signature
-        .clone()
-        .map_or_else(|| CreationStatus::Failed, |_| CreationStatus::Created);
+    let status = CreationStatus::Created;
 
     let collection_mint = collection_mints::Entity::find_by_id(collection_mint_id)
         .one(db.get())
@@ -170,7 +166,7 @@ pub async fn process_drop_minted_event(
         collection_mint.clone().into();
 
     collection_mint_active_model.creation_status = Set(status);
-    collection_mint_active_model.signature = Set(signature.clone());
+    collection_mint_active_model.signature = Set(Some(signature.clone()));
     collection_mint_active_model.update(db.get()).await?;
 
     let purchase = Purchases::find()
@@ -183,7 +179,7 @@ pub async fn process_drop_minted_event(
     let mut purchase_am: purchases::ActiveModel = purchase.into();
 
     purchase_am.status = Set(status);
-    purchase_am.tx_signature = Set(signature);
+    purchase_am.tx_signature = Set(Some(signature));
     purchase_am.update(db.get()).await?;
 
     let deduction_id = collection_mint
@@ -213,7 +209,7 @@ pub async fn process_mint_transferred_event(
     db: Connection,
     credits: CreditsClient<Actions>,
     transfer_id: String,
-    signature: Option<String>,
+    signature: String,
 ) -> Result<()> {
     let conn = db.get();
     let transfer_id = Uuid::from_str(&transfer_id)?;
@@ -231,7 +227,7 @@ pub async fn process_mint_transferred_event(
     collection_mint_am.update(db.get()).await?;
 
     let mut nft_transfer_am: nft_transfers::ActiveModel = nft_transfer.clone().into();
-    nft_transfer_am.tx_signature = Set(signature);
+    nft_transfer_am.tx_signature = Set(Some(signature));
 
     nft_transfer_am.insert(db.get()).await?;
 
