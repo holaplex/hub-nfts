@@ -4,7 +4,7 @@ use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    blockchains::{solana::Solana, Event},
+    blockchains::{polygon::Polygon, solana::Solana, Event},
     db::Connection,
     entities::{
         collection_mints::{self, CollectionMint},
@@ -12,7 +12,7 @@ use crate::{
         prelude::{Collections, Drops},
         sea_orm_active_enums::Blockchain,
     },
-    proto::{self, NftEventKey},
+    proto::{self, NftEventKey, TransferPolygonAsset},
     Actions, AppContext, OrganizationId, UserID,
 };
 
@@ -90,6 +90,15 @@ impl Mutation {
         };
 
         let nft_transfer_model = nft_transfer_am.insert(conn).await?;
+        let event_key = NftEventKey {
+            id: nft_transfer_model.id.to_string(),
+            user_id: user_id.to_string(),
+            project_id: drop.project_id.to_string(),
+        };
+
+        let collection_mint_id = collection_mint_model.id.to_string();
+        let recipient_address = recipient.to_string();
+        let owner_address = collection_mint_model.owner.to_string();
 
         match collection.blockchain {
             Blockchain::Solana => {
@@ -97,21 +106,26 @@ impl Mutation {
 
                 solana
                     .event()
-                    .transfer_asset(
-                        NftEventKey {
-                            id: nft_transfer_model.id.to_string(),
-                            user_id: user_id.to_string(),
-                            project_id: drop.project_id.to_string(),
-                        },
-                        proto::TransferMetaplexAssetTransaction {
-                            collection_mint_id: collection_mint_model.id.to_string(),
-                            recipient_address: recipient.to_string(),
-                            owner_address: collection_mint_model.owner.to_string(),
-                        },
-                    )
+                    .transfer_asset(event_key, proto::TransferMetaplexAssetTransaction {
+                        collection_mint_id,
+                        recipient_address,
+                        owner_address,
+                    })
                     .await?;
             },
-            Blockchain::Polygon | Blockchain::Ethereum => {
+            Blockchain::Polygon => {
+                let polygon = ctx.data::<Polygon>()?;
+                polygon
+                    .event()
+                    .transfer_asset(event_key, TransferPolygonAsset {
+                        collection_mint_id,
+                        owner_address,
+                        recipient_address,
+                        amount: 1,
+                    })
+                    .await?;
+            },
+            Blockchain::Ethereum => {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };

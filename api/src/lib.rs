@@ -20,7 +20,7 @@ use async_graphql::{
     extensions::{ApolloTracing, Logger},
     EmptySubscription, Schema,
 };
-use blockchains::solana::Solana;
+use blockchains::{polygon::Polygon, solana::Solana};
 use dataloaders::{
     CollectionLoader, CollectionMintsLoader, CollectionMintsOwnerLoader, CollectionPurchasesLoader,
     CreatorsLoader, DropLoader, DropPurchasesLoader, HoldersLoader, MetadataJsonAttributesLoader,
@@ -57,6 +57,10 @@ impl hub_core::producer::Message for proto::NftEvents {
 }
 
 impl hub_core::producer::Message for proto::SolanaEvents {
+    type Key = proto::NftEventKey;
+}
+
+impl hub_core::producer::Message for proto::PolygonEvents {
     type Key = proto::NftEventKey;
 }
 
@@ -214,6 +218,7 @@ pub struct AppState {
     pub producer: Producer<NftEvents>,
     pub credits: CreditsClient<Actions>,
     pub solana: Solana,
+    pub polygon: Polygon,
     pub nft_storage: NftStorageClient,
     pub asset_proxy: AssetProxy,
 }
@@ -226,6 +231,7 @@ impl AppState {
         producer: Producer<NftEvents>,
         credits: CreditsClient<Actions>,
         solana: Solana,
+        polygon: Polygon,
         nft_storage: NftStorageClient,
         asset_proxy: AssetProxy,
     ) -> Self {
@@ -235,6 +241,7 @@ impl AppState {
             producer,
             credits,
             solana,
+            polygon,
             nft_storage,
             asset_proxy,
         }

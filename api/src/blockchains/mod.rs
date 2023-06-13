@@ -1,3 +1,4 @@
+pub mod polygon;
 pub mod solana;
 
 use hub_core::{anyhow::Result, uuid::Uuid};
@@ -45,10 +46,10 @@ pub trait Edition<A, B, C, D, E, M> {
 }
 
 #[async_trait::async_trait]
-pub trait Event<A, B, C> {
+pub trait Event<A, B, C, D> {
     async fn create_drop(&self, key: NftEventKey, payload: A) -> Result<()>;
     async fn retry_create_drop(&self, key: NftEventKey, payload: A) -> Result<()>;
-    async fn update_drop(&self, key: NftEventKey, payload: A) -> Result<()>;
+    async fn update_drop(&self, key: NftEventKey, payload: D) -> Result<()>;
     async fn mint_drop(&self, key: NftEventKey, payload: B) -> Result<()>;
     async fn retry_mint_drop(&self, key: NftEventKey, payload: B) -> Result<()>;
     async fn transfer_asset(&self, key: NftEventKey, payload: C) -> Result<()>;

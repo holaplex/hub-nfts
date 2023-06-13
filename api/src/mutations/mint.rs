@@ -1,11 +1,11 @@
 use std::ops::Add;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
+use hub_core::{chrono::Utc, credits::CreditsClient};
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 
 use crate::{
-    blockchains::{solana::Solana, Event},
+    blockchains::{polygon::Polygon, solana::Solana, Event},
     db::Connection,
     entities::{
         collection_mints, collections, drops,
@@ -14,7 +14,7 @@ use crate::{
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
-    proto::{self, NftEventKey, NftEvents},
+    proto::{self, NftEventKey},
     Actions, AppContext, OrganizationId, UserID,
 };
 
@@ -38,10 +38,10 @@ impl Mutation {
             balance,
             ..
         } = ctx.data::<AppContext>()?;
-        let _producer = ctx.data::<Producer<NftEvents>>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
+        let polygon = ctx.data::<Polygon>()?;
 
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
@@ -103,27 +103,35 @@ impl Mutation {
         };
 
         let collection_mint_model = collection_mint_active_model.insert(conn).await?;
+        let event_key = NftEventKey {
+            id: collection_mint_model.id.to_string(),
+            user_id: user_id.to_string(),
+            project_id: drop_model.project_id.to_string(),
+        };
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .mint_drop(
-                        NftEventKey {
-                            id: collection_mint_model.id.to_string(),
-                            user_id: user_id.to_string(),
-                            project_id: drop_model.project_id.to_string(),
-                        },
-                        proto::MintMetaplexEditionTransaction {
-                            collection_id: collection_mint_model.collection_id.to_string(),
-                            recipient_address: input.recipient.to_string(),
-                            owner_address: owner_address.to_string(),
-                            edition,
-                        },
-                    )
+                    .mint_drop(event_key, proto::MintMetaplexEditionTransaction {
+                        collection_id: collection_mint_model.collection_id.to_string(),
+                        recipient_address: input.recipient.to_string(),
+                        owner_address: owner_address.to_string(),
+                        edition,
+                    })
                     .await?;
             },
-            BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
+            BlockchainEnum::Polygon => {
+                polygon
+                    .event()
+                    .mint_drop(event_key, proto::MintEditionTransaction {
+                        receiver: input.recipient.to_string(),
+                        collection_id: collection_mint_model.collection_id.to_string(),
+                        amount: 1,
+                    })
+                    .await?;
+            },
+            BlockchainEnum::Ethereum => {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
@@ -131,8 +139,6 @@ impl Mutation {
         let mut collection_am = collections::ActiveModel::from(collection.clone());
         collection_am.total_mints = Set(edition);
         collection_am.update(conn).await?;
-
-        let _proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
 
         MetadataJson::fetch(collection.id, db)
             .await?
@@ -184,9 +190,9 @@ impl Mutation {
             ..
         } = ctx.data::<AppContext>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
-        let _producer = ctx.data::<Producer<NftEvents>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
+        let polygon = ctx.data::<Polygon>()?;
 
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
@@ -244,26 +250,35 @@ impl Mutation {
             })?
             .wallet_address;
 
+        let event_key = NftEventKey {
+            id: collection_mint_model.id.to_string(),
+            user_id: user_id.to_string(),
+            project_id: project_id.to_string(),
+        };
+        let collection_id = collection_mint_model.collection_id.to_string();
         match collection.blockchain {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .retry_mint_drop(
-                        NftEventKey {
-                            id: collection_mint_model.id.to_string(),
-                            user_id: user_id.to_string(),
-                            project_id: project_id.to_string(),
-                        },
-                        proto::MintMetaplexEditionTransaction {
-                            collection_id: collection_mint_model.collection_id.to_string(),
-                            recipient_address: recipient.to_string(),
-                            owner_address: owner_address.to_string(),
-                            edition,
-                        },
-                    )
+                    .retry_mint_drop(event_key, proto::MintMetaplexEditionTransaction {
+                        collection_id,
+                        recipient_address: recipient.to_string(),
+                        owner_address: owner_address.to_string(),
+                        edition,
+                    })
                     .await?;
             },
-            BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
+            BlockchainEnum::Polygon => {
+                polygon
+                    .event()
+                    .retry_mint_drop(event_key, proto::MintEditionTransaction {
+                        receiver: recipient.to_string(),
+                        collection_id,
+                        amount: 1,
+                    })
+                    .await?;
+            },
+            BlockchainEnum::Ethereum => {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };

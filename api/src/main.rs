@@ -2,7 +2,7 @@
 
 use async_graphql::futures_util::StreamExt;
 use holaplex_hub_nfts::{
-    blockchains::solana::Solana,
+    blockchains::{polygon::Polygon, solana::Solana},
     build_schema,
     db::Connection,
     events,
@@ -41,18 +41,25 @@ pub fn main() {
                 .clone()
                 .build::<proto::NftEvents>()
                 .await?;
-            let solana_producer = common.producer_cfg.build::<proto::SolanaEvents>().await?;
+            let solana_producer = common
+                .producer_cfg
+                .clone()
+                .build::<proto::SolanaEvents>()
+                .await?;
+            let polygon_producer = common.producer_cfg.build::<proto::PolygonEvents>().await?;
             let credits = common.credits_cfg.build::<Actions>().await?;
             let nft_storage = NftStorageClient::new(nft_storage)?;
 
-            let solana_blockchain = Solana::new(solana_producer.clone());
+            let solana = Solana::new(solana_producer.clone());
+            let polygon = Polygon::new(polygon_producer.clone());
 
             let state = AppState::new(
                 schema,
                 connection.clone(),
                 producer.clone(),
                 credits.clone(),
-                solana_blockchain,
+                solana,
+                polygon,
                 nft_storage,
                 common.asset_proxy,
             );

@@ -27,6 +27,7 @@ impl Solana {
         MetaplexMasterEditionTransaction,
         MintMetaplexEditionTransaction,
         TransferMetaplexAssetTransaction,
+        MetaplexMasterEditionTransaction,
     > {
         self.clone()
     }
@@ -38,6 +39,7 @@ impl
         MetaplexMasterEditionTransaction,
         MintMetaplexEditionTransaction,
         TransferMetaplexAssetTransaction,
+        MetaplexMasterEditionTransaction,
     > for Solana
 {
     async fn create_drop(
