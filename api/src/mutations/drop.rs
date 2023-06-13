@@ -57,7 +57,6 @@ impl Mutation {
         let solana = ctx.data::<Solana>()?;
         let polygon = ctx.data::<Polygon>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
-
         let owner_address = fetch_owner(conn, &input).await?;
 
         input.validate()?;
@@ -234,6 +233,7 @@ impl Mutation {
                 ))
             })?
             .wallet_address;
+
         let event_key = NftEventKey {
             id: drop.id.to_string(),
             user_id: user_id.to_string(),

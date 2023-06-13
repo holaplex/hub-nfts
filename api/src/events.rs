@@ -19,10 +19,10 @@ use crate::{
     proto::{
         solana_nft_events::Event as SolanaNftsEvent,
         treasury_events::{
-            Blockchain as ProtoBlockchainEnum, Event as TreasuryEvent, ProjectWallet,
-            TransactionStatus,
+            Blockchain as ProtoBlockchainEnum, Event as TreasuryEvent, PolygonTransactionResult,
+            ProjectWallet, TransactionStatus,
         },
-        SolanaCompletedTransaction, SolanaNftEventKey,
+        SolanaCompletedTransaction, SolanaNftEventKey, TreasuryEventKey,
     },
     Actions, Services,
 };
@@ -34,10 +34,30 @@ use crate::{
 pub async fn process(msg: Services, db: Connection, credits: CreditsClient<Actions>) -> Result<()> {
     // match topics
     match msg {
-        Services::Treasury(_key, e) => match e.event {
+        Services::Treasury(TreasuryEventKey { id, .. }, e) => match e.event {
             Some(TreasuryEvent::ProjectWalletCreated(payload)) => {
                 process_project_wallet_created_event(db, payload).await
             },
+            Some(TreasuryEvent::PolygonCreateDropTxnSubmitted(PolygonTransactionResult {
+                hash,
+                ..
+            })) => process_drop_created_event(db, credits, id, hash).await,
+            Some(TreasuryEvent::PolygonMintDropSubmitted(PolygonTransactionResult {
+                hash,
+                ..
+            })) => process_drop_minted_event(db, credits, id, hash).await,
+            Some(TreasuryEvent::PolygonTransferAssetSubmitted(PolygonTransactionResult {
+                hash,
+                ..
+            })) => process_mint_transferred_event(db, credits, id, hash).await,
+            Some(TreasuryEvent::PolygonRetryMintDropSubmitted(PolygonTransactionResult {
+                hash,
+                ..
+            })) => process_drop_minted_event(db, credits, id, hash).await,
+            Some(TreasuryEvent::PolygonRetryCreateDropSubmitted(PolygonTransactionResult {
+                hash,
+                ..
+            })) => process_drop_created_event(db, credits, id, hash).await,
             None | Some(_) => Ok(()),
         },
         Services::Solana(SolanaNftEventKey { id, .. }, e) => match e.event {
@@ -233,7 +253,7 @@ pub async fn process_mint_transferred_event(
     let mut nft_transfer_am: nft_transfers::ActiveModel = nft_transfer.clone().into();
     nft_transfer_am.tx_signature = Set(signature);
 
-    nft_transfer_am.insert(db.get()).await?;
+    nft_transfer_am.update(db.get()).await?;
 
     let deduction_id = nft_transfer
         .credits_deduction_id
