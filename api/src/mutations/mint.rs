@@ -111,6 +111,11 @@ impl Mutation {
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
+                MetadataJson::fetch(collection.id, db)
+                    .await?
+                    .save(collection_mint_model.id, db)
+                    .await?;
+
                 solana
                     .event()
                     .mint_drop(event_key, proto::MintMetaplexEditionTransaction {
@@ -139,11 +144,6 @@ impl Mutation {
         let mut collection_am = collections::ActiveModel::from(collection.clone());
         collection_am.total_mints = Set(edition);
         collection_am.update(conn).await?;
-
-        MetadataJson::fetch(collection.id, db)
-            .await?
-            .save(collection_mint_model.id, db)
-            .await?;
 
         // inserts a purchase record in the database
         let purchase_am = purchases::ActiveModel {

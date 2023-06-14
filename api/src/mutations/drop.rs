@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{anyhow, chrono::Utc, credits::CreditsClient};
+use hub_core::{chrono::Utc, credits::CreditsClient};
 use reqwest::Url;
 use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
@@ -130,7 +130,7 @@ impl Mutation {
                         amount: amount.try_into()?,
                         edition_info: Some(proto::EditionInfo {
                             // creator should be input.creator
-                            creator: owner_address.clone(),
+                            creator: input.creators[0].clone().address,
                             collection: String::new(),
                             uri: metadata_json.uri,
                             description: metadata_json.description,
@@ -482,10 +482,9 @@ impl Mutation {
             })
             .transpose()?);
 
-        if creators.clone().is_some() {
+        if let Some(creators) = creators.clone() {
             let creators = creators
                 .clone()
-                .unwrap_or_default()
                 .into_iter()
                 .map(|creator| {
                     Ok(collection_creators::ActiveModel {
@@ -495,7 +494,7 @@ impl Mutation {
                         share: Set(creator.share.try_into()?),
                     })
                 })
-                .collect::<anyhow::Result<Vec<collection_creators::ActiveModel>>>()?;
+                .collect::<Result<Vec<_>>>()?;
 
             conn.transaction::<_, (), DbErr>(|txn| {
                 Box::pin(async move {
@@ -553,9 +552,8 @@ impl Mutation {
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
-                let creators = if creators.clone().is_some() {
+                let creators = if let Some(creators) = creators.clone() {
                     creators
-                        .unwrap_or_default()
                         .into_iter()
                         .map(TryFrom::try_from)
                         .collect::<Result<_>>()?
@@ -580,6 +578,16 @@ impl Mutation {
                     .await?;
             },
             BlockchainEnum::Polygon => {
+                let creator = if let Some(creators) = creators {
+                    creators[0].address.clone()
+                } else {
+                    current_creators
+                        .get(0)
+                        .ok_or(Error::new("No current creator found in db"))?
+                        .address
+                        .clone()
+                };
+
                 polygon
                     .event()
                     .update_drop(event_key, proto::UpdateEdtionTransaction {
@@ -589,7 +597,7 @@ impl Mutation {
                             image_uri: metadata_json_model.image,
                             collection: String::new(),
                             uri: metadata_json_model.uri,
-                            creator: owner_address,
+                            creator,
                         }),
                     })
                     .await?;
@@ -748,6 +756,12 @@ fn validate_end_time(end_time: &Option<DateTimeWithTimeZone>) -> Result<()> {
 fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreator>) -> Result<()> {
     match blockchain {
         BlockchainEnum::Solana => {
+            if creators.len() > 5 {
+                return Err(Error::new(
+                    "Maximum number of creators is 5 for Solana Blockchain",
+                ));
+            }
+
             for creator in creators {
                 if Pubkey::from_str(&creator.address).is_err() {
                     return Err(Error::new(format!(
@@ -758,13 +772,17 @@ fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreato
             }
         },
         BlockchainEnum::Polygon => {
-            for creator in creators {
-                if !is_valid_evm_address(&creator.address) {
-                    return Err(Error::new(format!(
-                        "{:?} is not a valid ethereum address",
-                        &creator.address
-                    )));
-                }
+            if creators.len() != 1 {
+                return Err(Error::new(
+                    "Only one creator is allowed for Polygon Blockchain",
+                ));
+            }
+
+            let address = &creators[0].clone().address;
+            if !is_valid_evm_address(address) {
+                return Err(Error::new(format!(
+                    "{address} is not a valid Polygon address",
+                )));
             }
         },
         BlockchainEnum::Ethereum => return Err(Error::new("Blockchain not supported yet")),
