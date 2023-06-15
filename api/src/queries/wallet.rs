@@ -17,6 +17,8 @@ impl Query {
         _ctx: &Context<'_>,
         #[graphql(key)] address: String,
     ) -> Result<Wallet> {
-        Ok(Wallet { address })
+        Ok(Wallet {
+            address: Some(address),
+        })
     }
 }

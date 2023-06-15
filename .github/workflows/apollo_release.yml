@@ -1,0 +1,100 @@
+name: Apollo Graph schema update
+on:
+  push:
+    branches:
+      - main
+      - release
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  schemaUpdate:
+    name: Apollo Schema update
+    runs-on: amd64
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y && \
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            g++ \
+            libsasl2-dev \
+            libssl-dev \
+            libudev-dev \
+            pkg-config \
+            protobuf-compiler
+
+      - uses: actions/checkout@v3
+
+      - uses: isbang/compose-action@v1.4.1
+        name: Start docker-compose
+        with:
+          compose-file: ./docker-compose.yaml
+
+      - uses: actions-rs/toolchain@v1
+        with:
+            toolchain: 1.69.0
+            override: true
+            components: cargo, rustc
+
+      - uses: tespkg/actions-cache@v1
+        with:
+          accessKey: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          secretKey: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          bucket: ${{ vars.AWS_BUCKET }}
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ github.event.repository.name }}-${{ runner.arch }}-cargo-build-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Cargo Build
+        run: cargo build --bin holaplex-${{ github.event.repository.name }}
+
+      - name: Setup Solana tools
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/v1.15.2/install)"
+          export PATH="/home/runner/.local/share/solana/install/active_release/bin:$PATH"
+          solana-keygen new --silent --outfile keypair.json --no-bip39-passphrase
+
+      - name: Cargo run
+        env:
+          PORT: 3000
+        run: export $(xargs < .env) && cargo run --bin holaplex-${{ github.event.repository.name }} &
+
+      - name: Setup Apollo Studio variant
+        id: vars
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/release" ]]; then
+            echo "variant=current" >> $GITHUB_OUTPUT
+            echo "branch=release" >> $GITHUB_OUTPUT
+          else
+            echo "variant=stage" >> $GITHUB_OUTPUT
+            echo "branch=main" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Retrieve GraphQL schema and push to Apollo Studio
+        env:
+          APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
+        run: |
+          curl -sSL https://rover.apollo.dev/nix/latest | sh
+          export PATH="/home/runner/.rover/bin:$PATH"
+          # Instrospect Graphql Server and push schema
+          rover subgraph introspect http://localhost:3000/graphql | \
+          rover subgraph publish ${{ vars.APOLLO_GRAPH }}@${{ steps.vars.outputs.variant }} \
+            --name ${{ github.event.repository.name }} \
+            --schema - \
+            --routing-url http://${{ github.event.repository.name }}/graphql
+
+      - name: Invoke schema update workflow in hub-permissions repo
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          ref: ${{ steps.vars.outputs.branch }}
+          token: ${{ secrets.ACTIONS_TOKEN }}
+          workflow: opa_release.yml
+          repo: holaplex/hub-permissions

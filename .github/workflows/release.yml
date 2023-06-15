@@ -106,9 +106,9 @@ jobs:
         id: vars
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/release" ]]; then
-            echo "::set-output name=environment::prod"
+            echo "environment=prod" >> $GITHUB_OUTPUT
           else
-            echo "::set-output name=environment::stage"
+            echo "environment=stage" >> $GITHUB_OUTPUT
           fi
 
       - name: Invoke workflow in hub-kubes repo

@@ -8,7 +8,7 @@ use crate::{entities::collection_mints, AppContext};
 pub struct Wallet {
     /// A blockchain wallet address is a unique identifier that represents a destination for transactions on a blockchain network. It is a string of alphanumeric characters that can be used to receive and send digital assets, such as cryptocurrencies, on the blockchain network.
     #[graphql(external)]
-    pub address: String,
+    pub address: Option<String>,
 }
 
 #[ComplexObject]
@@ -24,7 +24,7 @@ impl Wallet {
         } = ctx.data::<AppContext>()?;
 
         collection_mints_owner_loader
-            .load_one(self.address.clone())
+            .load_one(self.address.clone().unwrap_or(String::new()))
             .await
     }
 }
