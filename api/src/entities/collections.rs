@@ -13,6 +13,9 @@ pub struct Model {
     pub supply: Option<i64>,
     pub creation_status: CreationStatus,
     pub total_mints: i64,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub address: Option<String>,
+    #[sea_orm(nullable)]
     pub signature: Option<String>,
     pub seller_fee_basis_points: i16,
 }
@@ -23,8 +26,8 @@ pub enum Relation {
     CollectionCreators,
     #[sea_orm(has_many = "super::collection_mints::Entity")]
     CollectionMints,
-    #[sea_orm(has_many = "super::drops::Entity")]
-    Drops,
+    #[sea_orm(has_one = "super::drops::Entity")]
+    Drop,
 }
 
 impl Related<super::collection_creators::Entity> for Entity {
@@ -41,7 +44,7 @@ impl Related<super::collection_mints::Entity> for Entity {
 
 impl Related<super::drops::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Drops.def()
+        Relation::Drop.def()
     }
 }
 

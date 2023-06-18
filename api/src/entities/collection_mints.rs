@@ -15,11 +15,14 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub collection_id: Uuid,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub address: Option<String>,
     #[sea_orm(column_type = "Text")]
     pub owner: String,
     pub creation_status: CreationStatus,
     pub created_by: Uuid,
     pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(nullable)]
     pub signature: Option<String>,
     pub edition: i64,
     pub seller_fee_basis_points: i16,
@@ -34,6 +37,10 @@ pub struct CollectionMint {
     pub id: Uuid,
     /// The ID of the collection the NFT was minted from.
     pub collection_id: Uuid,
+    /// The address of the NFT
+    /// On Solana this is the mint address.
+    /// On EVM chains it is the concatenation of the contract address and the token id `{contractAddress}:{tokenId}`.
+    pub address: Option<String>,
     /// The wallet address of the owner of the NFT.
     pub owner: String,
     /// The status of the NFT creation.
@@ -88,6 +95,7 @@ impl From<Model> for CollectionMint {
         Model {
             id,
             collection_id,
+            address,
             owner,
             creation_status,
             created_by,
@@ -101,6 +109,7 @@ impl From<Model> for CollectionMint {
         Self {
             id,
             collection_id,
+            address,
             owner,
             creation_status,
             created_by,
@@ -125,8 +134,6 @@ pub enum Relation {
     Collections,
     #[sea_orm(has_many = "super::purchases::Entity")]
     Purchases,
-    #[sea_orm(has_many = "super::nft_transfers::Entity")]
-    NftTransfers,
 }
 
 impl Related<super::collections::Entity> for Entity {
@@ -138,12 +145,6 @@ impl Related<super::collections::Entity> for Entity {
 impl Related<super::purchases::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Purchases.def()
-    }
-}
-
-impl Related<super::nft_transfers::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::NftTransfers.def()
     }
 }
 

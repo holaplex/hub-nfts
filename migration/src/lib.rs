@@ -39,8 +39,6 @@ mod m20230501_130939_add_credits_deduction_id_to_nft_transfers_table;
 mod m20230510_160600_change_datatype_to_tz_utc;
 mod m20230518_034021_set_default_timestamp;
 mod m20230606_121315_add_collection_mint_id_to_nft_transfers;
-mod m20230606_134748_drop_address_from_collection_mints;
-mod m20230606_135330_drop_address_from_collections;
 
 pub struct Migrator;
 
@@ -87,8 +85,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20230510_160600_change_datatype_to_tz_utc::Migration),
             Box::new(m20230518_034021_set_default_timestamp::Migration),
             Box::new(m20230606_121315_add_collection_mint_id_to_nft_transfers::Migration),
-            Box::new(m20230606_134748_drop_address_from_collection_mints::Migration),
-            Box::new(m20230606_135330_drop_address_from_collections::Migration),
         ]
     }
 }

@@ -49,6 +49,7 @@ pub fn main() {
             let polygon_producer = common.producer_cfg.build::<proto::PolygonEvents>().await?;
             let credits = common.credits_cfg.build::<Actions>().await?;
             let nft_storage = NftStorageClient::new(nft_storage)?;
+            let event_processor = events::Processor::new(connection.clone(), credits.clone());
 
             let solana = Solana::new(solana_producer.clone());
             let polygon = Polygon::new(polygon_producer.clone());
@@ -70,16 +71,13 @@ pub fn main() {
                 {
                     let mut stream = cons.stream();
                     loop {
-                        let connection = connection.clone();
-                        let credits = credits.clone();
+                        let event_processor = event_processor.clone();
 
                         match stream.next().await {
                             Some(Ok(msg)) => {
                                 info!(?msg, "message received");
 
-                                tokio::spawn(async move {
-                                    events::process(msg, connection.clone(), credits.clone()).await
-                                });
+                                tokio::spawn(async move { event_processor.process(msg).await });
                                 task::yield_now().await;
                             },
                             None => (),

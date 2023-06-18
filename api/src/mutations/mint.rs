@@ -119,7 +119,6 @@ impl Mutation {
                 solana
                     .event()
                     .mint_drop(event_key, proto::MintMetaplexEditionTransaction {
-                        collection_id: collection_mint_model.collection_id.to_string(),
                         recipient_address: input.recipient.to_string(),
                         owner_address: owner_address.to_string(),
                         edition,
@@ -131,7 +130,6 @@ impl Mutation {
                     .event()
                     .mint_drop(event_key, proto::MintEditionTransaction {
                         receiver: input.recipient.to_string(),
-                        collection_id: collection_mint_model.collection_id.to_string(),
                         amount: 1,
                     })
                     .await?;
@@ -208,7 +206,7 @@ impl Mutation {
                 JoinType::InnerJoin,
                 collection_mints::Relation::Collections.def(),
             )
-            .join(JoinType::InnerJoin, collections::Relation::Drops.def())
+            .join(JoinType::InnerJoin, collections::Relation::Drop.def())
             .select_also(drops::Entity)
             .filter(collection_mints::Column::Id.eq(input.id))
             .one(conn)
@@ -255,13 +253,12 @@ impl Mutation {
             user_id: user_id.to_string(),
             project_id: project_id.to_string(),
         };
-        let collection_id = collection_mint_model.collection_id.to_string();
+
         match collection.blockchain {
             BlockchainEnum::Solana => {
                 solana
                     .event()
                     .retry_mint_drop(event_key, proto::MintMetaplexEditionTransaction {
-                        collection_id,
                         recipient_address: recipient.to_string(),
                         owner_address: owner_address.to_string(),
                         edition,
@@ -273,7 +270,6 @@ impl Mutation {
                     .event()
                     .retry_mint_drop(event_key, proto::MintEditionTransaction {
                         receiver: recipient.to_string(),
-                        collection_id,
                         amount: 1,
                     })
                     .await?;

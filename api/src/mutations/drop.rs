@@ -96,7 +96,7 @@ impl Mutation {
 
         let drop_model = drop.insert(conn).await?;
         let event_key = NftEventKey {
-            id: drop_model.id.to_string(),
+            id: collection.id.to_string(),
             user_id: user_id.to_string(),
             project_id: input.project.to_string(),
         };
@@ -106,7 +106,6 @@ impl Mutation {
                 solana
                     .event()
                     .create_drop(event_key, proto::MetaplexMasterEditionTransaction {
-                        collection_id: collection.id.to_string(),
                         master_edition: Some(proto::MasterEdition {
                             owner_address,
                             supply: input.supply.map(TryInto::try_into).transpose()?,
@@ -129,19 +128,20 @@ impl Mutation {
                     .create_drop(event_key, proto::CreateEditionTransaction {
                         amount: amount.try_into()?,
                         edition_info: Some(proto::EditionInfo {
-                            // creator should be input.creator
-                            creator: input.creators[0].clone().address,
-                            collection: String::new(),
+                            creator: input
+                                .creators
+                                .get(0)
+                                .ok_or(Error::new("creator is required"))?
+                                .clone()
+                                .address,
+                            collection: metadata_json.name,
                             uri: metadata_json.uri,
                             description: metadata_json.description,
                             image_uri: metadata_json.image,
                         }),
-                        // fee receiver == owner address
                         fee_receiver: owner_address.clone(),
                         fee_numerator: seller_fee_basis_points.into(),
-                        // AUTHORITY OVER THE TOKEN i.e proj treasury
                         receiver: owner_address,
-                        collection_id: collection.id.to_string(),
                     })
                     .await?;
             },
@@ -235,7 +235,7 @@ impl Mutation {
             .wallet_address;
 
         let event_key = NftEventKey {
-            id: drop.id.to_string(),
+            id: collection.id.to_string(),
             user_id: user_id.to_string(),
             project_id: drop.project_id.to_string(),
         };
@@ -245,7 +245,6 @@ impl Mutation {
                 solana
                     .event()
                     .retry_create_drop(event_key, proto::MetaplexMasterEditionTransaction {
-                        collection_id: collection.id.to_string(),
                         master_edition: Some(proto::MasterEdition {
                             owner_address,
                             supply: collection.supply.map(TryInto::try_into).transpose()?,
@@ -278,7 +277,6 @@ impl Mutation {
                         amount,
                         fee_receiver: owner_address,
                         fee_numerator: collection.seller_fee_basis_points.into(),
-                        collection_id: collection.id.to_string(),
                     })
                     .await?;
             },
@@ -286,12 +284,6 @@ impl Mutation {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
-
-        // TODO: set on the collection creation confirmation or just save in hub-nfts-solana
-
-        // let mut collection_am: collections::ActiveModel = collection.clone().try_into()?;
-        // collection_am.address = Set(Some(collection_address.to_string()));
-        // let collection = collection_am.update(db.get()).await?;
 
         submit_pending_deduction(credits, db, DeductionParams {
             balance,
@@ -545,7 +537,7 @@ impl Mutation {
         };
 
         let event_key = NftEventKey {
-            id: drop_model.id.to_string(),
+            id: collection.id.to_string(),
             user_id: user_id.to_string(),
             project_id: drop_model.project_id.to_string(),
         };
@@ -564,7 +556,6 @@ impl Mutation {
                 solana
                     .event()
                     .update_drop(event_key, proto::MetaplexMasterEditionTransaction {
-                        collection_id: collection.id.to_string(),
                         master_edition: Some(proto::MasterEdition {
                             owner_address,
                             supply: collection.supply.map(TryInto::try_into).transpose()?,
@@ -591,7 +582,6 @@ impl Mutation {
                 polygon
                     .event()
                     .update_drop(event_key, proto::UpdateEdtionTransaction {
-                        collection_id: collection.id.to_string(),
                         edition_info: Some(EditionInfo {
                             description: metadata_json_model.description,
                             image_uri: metadata_json_model.image,
