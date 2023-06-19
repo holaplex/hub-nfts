@@ -20,7 +20,7 @@ use async_graphql::{
     extensions::{ApolloTracing, Logger},
     EmptySubscription, Schema,
 };
-use blockchains::solana::{Solana, SolanaArgs};
+use blockchains::{polygon::Polygon, solana::Solana};
 use dataloaders::{
     CollectionLoader, CollectionMintsLoader, CollectionMintsOwnerLoader, CollectionPurchasesLoader,
     CreatorsLoader, DropLoader, DropPurchasesLoader, HoldersLoader, MetadataJsonAttributesLoader,
@@ -47,6 +47,7 @@ use queries::Query;
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/nfts.proto.rs"));
     include!(concat!(env!("OUT_DIR"), "/treasury.proto.rs"));
+    include!(concat!(env!("OUT_DIR"), "/solana_nfts.proto.rs"));
 }
 
 use proto::NftEvents;
@@ -55,13 +56,22 @@ impl hub_core::producer::Message for proto::NftEvents {
     type Key = proto::NftEventKey;
 }
 
+impl hub_core::producer::Message for proto::SolanaEvents {
+    type Key = proto::NftEventKey;
+}
+
+impl hub_core::producer::Message for proto::PolygonEvents {
+    type Key = proto::NftEventKey;
+}
+
 #[derive(Debug)]
 pub enum Services {
-    Treasuries(proto::TreasuryEventKey, proto::TreasuryEvents),
+    Treasury(proto::TreasuryEventKey, proto::TreasuryEvents),
+    Solana(proto::SolanaNftEventKey, proto::SolanaNftEvents),
 }
 
 impl hub_core::consumer::MessageGroup for Services {
-    const REQUESTED_TOPICS: &'static [&'static str] = &["hub-treasuries"];
+    const REQUESTED_TOPICS: &'static [&'static str] = &["hub-treasuries", "hub-nfts-solana"];
 
     fn from_message<M: hub_core::consumer::Message>(msg: &M) -> Result<Self, RecvError> {
         let topic = msg.topic();
@@ -74,9 +84,14 @@ impl hub_core::consumer::MessageGroup for Services {
                 let key = proto::TreasuryEventKey::decode(key)?;
                 let val = proto::TreasuryEvents::decode(val)?;
 
-                Ok(Services::Treasuries(key, val))
+                Ok(Services::Treasury(key, val))
             },
+            "hub-nfts-solana" => {
+                let key = proto::SolanaNftEventKey::decode(key)?;
+                let val = proto::SolanaNftEvents::decode(val)?;
 
+                Ok(Services::Solana(key, val))
+            },
             t => Err(RecvError::BadTopic(t.into())),
         }
     }
@@ -95,9 +110,6 @@ pub struct Args {
 
     #[command(flatten)]
     pub nft_storage: nft_storage::NftStorageArgs,
-
-    #[command(flatten)]
-    pub solana: SolanaArgs,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -206,6 +218,7 @@ pub struct AppState {
     pub producer: Producer<NftEvents>,
     pub credits: CreditsClient<Actions>,
     pub solana: Solana,
+    pub polygon: Polygon,
     pub nft_storage: NftStorageClient,
     pub asset_proxy: AssetProxy,
 }
@@ -218,6 +231,7 @@ impl AppState {
         producer: Producer<NftEvents>,
         credits: CreditsClient<Actions>,
         solana: Solana,
+        polygon: Polygon,
         nft_storage: NftStorageClient,
         asset_proxy: AssetProxy,
     ) -> Self {
@@ -227,6 +241,7 @@ impl AppState {
             producer,
             credits,
             solana,
+            polygon,
             nft_storage,
             asset_proxy,
         }

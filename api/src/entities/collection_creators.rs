@@ -3,6 +3,8 @@
 use async_graphql::SimpleObject;
 use sea_orm::entity::prelude::*;
 
+use crate::proto;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
 #[sea_orm(table_name = "collection_creators")]
 #[graphql(concrete(name = "CollectionCreator", params()))]
@@ -13,6 +15,23 @@ pub struct Model {
     pub address: String,
     pub verified: bool,
     pub share: i32,
+}
+
+impl From<Model> for proto::Creator {
+    fn from(
+        Model {
+            address,
+            verified,
+            share,
+            ..
+        }: Model,
+    ) -> Self {
+        Self {
+            address,
+            verified,
+            share,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

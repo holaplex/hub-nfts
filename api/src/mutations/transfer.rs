@@ -1,13 +1,10 @@
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{credits::CreditsClient, producer::Producer};
+use hub_core::credits::CreditsClient;
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    blockchains::{
-        solana::{Solana, TransferAssetRequest},
-        Edition, TransactionResponse,
-    },
+    blockchains::{polygon::Polygon, solana::Solana, Event},
     db::Connection,
     entities::{
         collection_mints::{self, CollectionMint},
@@ -15,7 +12,7 @@ use crate::{
         prelude::{Collections, Drops},
         sea_orm_active_enums::Blockchain,
     },
-    proto::{self, nft_events, NftEventKey, NftEvents, TransferMintTransaction},
+    proto::{self, NftEventKey, TransferPolygonAsset},
     Actions, AppContext, OrganizationId, UserID,
 };
 
@@ -58,14 +55,13 @@ impl Mutation {
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
 
-        let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
-        let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
+        let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
+        let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
         let balance = balance
             .0
-            .ok_or_else(|| Error::new("X-CREDIT-BALANCE header not found"))?;
+            .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
 
         let conn = db.get();
-        let producer = ctx.data::<Producer<NftEvents>>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
 
         let TransferAssetInput { id, recipient } = input;
@@ -74,62 +70,65 @@ impl Mutation {
             .find_also_related(Collections)
             .one(conn)
             .await?
-            .ok_or_else(|| Error::new("mint not found"))?;
+            .ok_or(Error::new("mint not found"))?;
 
-        let collection = collection.ok_or_else(|| Error::new("collection not found"))?;
+        let collection = collection.ok_or(Error::new("collection not found"))?;
 
         let drop = Drops::find()
             .join(JoinType::InnerJoin, drops::Relation::Collections.def())
             .filter(collections::Column::Id.eq(collection.id))
             .one(conn)
             .await?
-            .ok_or_else(|| Error::new("drop not found"))?;
+            .ok_or(Error::new("drop not found"))?;
 
-        let proto_blockchain_enum: proto::Blockchain = collection.blockchain.into();
+        let nft_transfer_am = nft_transfers::ActiveModel {
+            tx_signature: Set(None),
+            collection_mint_id: Set(collection_mint_model.id),
+            sender: Set(collection_mint_model.owner.to_string()),
+            recipient: Set(recipient.clone()),
+            ..Default::default()
+        };
 
-        let (
-            transfer_id,
-            TransactionResponse {
-                serialized_message,
-                signed_message_signatures,
-            },
-        ) = match collection.blockchain {
+        let nft_transfer_model = nft_transfer_am.insert(conn).await?;
+        let event_key = NftEventKey {
+            id: nft_transfer_model.id.to_string(),
+            user_id: user_id.to_string(),
+            project_id: drop.project_id.to_string(),
+        };
+
+        let collection_mint_id = collection_mint_model.id.to_string();
+        let recipient_address = recipient.to_string();
+        let owner_address = collection_mint_model.owner.to_string();
+
+        match collection.blockchain {
             Blockchain::Solana => {
                 let solana = ctx.data::<Solana>()?;
+
                 solana
-                    .transfer(TransferAssetRequest {
-                        sender: collection_mint_model.owner.clone(),
-                        recipient: recipient.clone(),
-                        mint_address: collection_mint_model.address.clone(),
+                    .event()
+                    .transfer_asset(event_key, proto::TransferMetaplexAssetTransaction {
+                        recipient_address,
+                        owner_address,
+                        collection_mint_id,
                     })
-                    .await?
+                    .await?;
             },
-            Blockchain::Polygon | Blockchain::Ethereum => {
+            Blockchain::Polygon => {
+                let polygon = ctx.data::<Polygon>()?;
+                polygon
+                    .event()
+                    .transfer_asset(event_key, TransferPolygonAsset {
+                        collection_mint_id,
+                        owner_address,
+                        recipient_address,
+                        amount: 1,
+                    })
+                    .await?;
+            },
+            Blockchain::Ethereum => {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
-
-        // emit `TransferAsset` event
-        let event = NftEvents {
-            event: Some(nft_events::Event::TransferMint(TransferMintTransaction {
-                transaction: Some(proto::Transaction {
-                    serialized_message,
-                    signed_message_signatures,
-                    blockchain: proto_blockchain_enum as i32,
-                }),
-                address: collection_mint_model.address.to_string(),
-                sender: collection_mint_model.owner.to_string(),
-                recipient: recipient.to_string(),
-                project_id: drop.project_id.to_string(),
-                transfer_id: transfer_id.to_string(),
-            })),
-        };
-        let key = NftEventKey {
-            id: id.to_string(),
-            user_id: user_id.to_string(),
-        };
-
-        producer.send(Some(&event), Some(&key)).await?;
 
         submit_pending_deduction(
             credits,
@@ -137,7 +136,7 @@ impl Mutation {
             balance,
             org_id,
             user_id,
-            transfer_id,
+            nft_transfer_model.id,
             collection.blockchain,
         )
         .await?;
@@ -158,28 +157,28 @@ async fn submit_pending_deduction(
     blockchain: Blockchain,
 ) -> Result<()> {
     let id = match blockchain {
-        Blockchain::Solana => {
+        Blockchain::Solana | Blockchain::Polygon => {
             credits
                 .submit_pending_deduction(
                     org_id,
                     user_id,
                     Actions::TransferAsset,
-                    hub_core::credits::Blockchain::Solana,
+                    blockchain.into(),
                     balance,
                 )
                 .await?
         },
-        _ => {
+        Blockchain::Ethereum => {
             return Err(Error::new("blockchain not supported yet"));
         },
     };
 
-    let deduction_id = id.ok_or_else(|| Error::new("failed to generate credits deduction id"))?;
+    let deduction_id = id.ok_or(Error::new("failed to generate credits deduction id"))?;
 
     let nft_transfer_model = nft_transfers::Entity::find_by_id(transfer_id)
         .one(db.get())
         .await?
-        .ok_or_else(|| Error::new("drop not found"))?;
+        .ok_or(Error::new("drop not found"))?;
 
     let mut nft_transfer: nft_transfers::ActiveModel = nft_transfer_model.into();
     nft_transfer.credits_deduction_id = Set(Some(deduction_id.0));

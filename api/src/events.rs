@@ -17,247 +17,246 @@ use crate::{
         sea_orm_active_enums::{Blockchain, CreationStatus},
     },
     proto::{
+        solana_nft_events::Event as SolanaNftsEvent,
         treasury_events::{
-            Blockchain as ProtoBlockchainEnum, DropCreated, DropMinted, Event, MintTransfered,
+            Blockchain as ProtoBlockchainEnum, Event as TreasuryEvent, PolygonTransactionResult,
             ProjectWallet, TransactionStatus,
         },
+        SolanaCompletedMintTransaction, SolanaCompletedTransferTransaction, SolanaNftEventKey,
         TreasuryEventKey,
     },
     Actions, Services,
 };
 
-/// Process the given message for various services.
-///
-/// # Errors
-/// This functioncan return an error if it fails to process any event
-pub async fn process(msg: Services, db: Connection, credits: CreditsClient<Actions>) -> Result<()> {
-    // match topics
-    match msg {
-        Services::Treasuries(key, e) => match e.event {
-            Some(Event::DropCreated(payload)) => {
-                process_drop_created_event(db, credits, key, payload).await
-            },
-            Some(Event::DropMinted(payload)) => {
-                process_drop_minted_event(db, credits, key, payload).await
-            },
-            Some(Event::ProjectWalletCreated(payload)) => {
-                process_project_wallet_created_event(db, payload).await
-            },
-            Some(Event::MintTransfered(payload)) => {
-                process_mint_transfered_event(db, credits, key, payload).await
-            },
-            Some(Event::MintRetried(payload)) => {
-                process_drop_minted_event(db, credits, key, payload).await
-            },
-            Some(Event::DropRetried(payload)) => {
-                process_drop_created_event(db, credits, key, payload).await
-            },
-            None | Some(_) => Ok(()),
-        },
+#[derive(Clone)]
+pub struct Processor {
+    pub db: Connection,
+    pub credits: CreditsClient<Actions>,
+}
+
+#[derive(Clone)]
+struct MintTransaction {
+    signature: String,
+    address: String,
+}
+
+#[derive(Clone)]
+enum MintResult {
+    Success(MintTransaction),
+    Failure,
+}
+
+#[derive(Clone)]
+enum TransferResult {
+    Success(String),
+    Failure,
+}
+
+impl Processor {
+    #[must_use]
+    pub fn new(db: Connection, credits: CreditsClient<Actions>) -> Self {
+        Self { db, credits }
     }
-}
 
-/// Process a project wallet created event.
-///
-/// # Errors
-/// This function can return an error in the following cases:
-/// - Failed to parse UUID from string
-/// - Failed to get blockchain enum variant
-/// - Failed to insert project wallet into the database
-pub async fn process_project_wallet_created_event(
-    db: Connection,
-    payload: ProjectWallet,
-) -> Result<()> {
-    let project_id = Uuid::from_str(&payload.project_id)?;
+    pub async fn process(&self, msg: Services) -> Result<()> {
+        match msg {
+            Services::Treasury(TreasuryEventKey { id, .. }, e) => match e.event {
+                Some(TreasuryEvent::ProjectWalletCreated(payload)) => {
+                    self.project_wallet_created(payload).await
+                },
+                Some(
+                    TreasuryEvent::PolygonCreateDropTxnSubmitted(payload)
+                    | TreasuryEvent::PolygonRetryCreateDropSubmitted(payload),
+                ) => self.drop_created(id, payload.into()).await,
+                Some(
+                    TreasuryEvent::PolygonMintDropSubmitted(payload)
+                    | TreasuryEvent::PolygonRetryMintDropSubmitted(payload),
+                ) => self.drop_minted(id, payload.into()).await,
+                Some(TreasuryEvent::PolygonTransferAssetSubmitted(payload)) => {
+                    self.mint_transferred(id, payload.into()).await
+                },
+                None | Some(_) => Ok(()),
+            },
+            Services::Solana(SolanaNftEventKey { id, .. }, e) => match e.event {
+                Some(
+                    SolanaNftsEvent::CreateDropSubmitted(payload)
+                    | SolanaNftsEvent::RetryCreateDropSubmitted(payload),
+                ) => {
+                    self.drop_created(id, MintResult::Success(payload.into()))
+                        .await
+                },
+                Some(
+                    SolanaNftsEvent::MintDropSubmitted(payload)
+                    | SolanaNftsEvent::RetryMintDropSubmitted(payload),
+                ) => {
+                    self.drop_minted(id, MintResult::Success(payload.into()))
+                        .await
+                },
+                Some(SolanaNftsEvent::TransferAssetSubmitted(
+                    SolanaCompletedTransferTransaction { signature },
+                )) => {
+                    self.mint_transferred(id, TransferResult::Success(signature))
+                        .await
+                },
+                Some(SolanaNftsEvent::CreateDropFailed(_)) => {
+                    self.drop_created(id, MintResult::Failure).await
+                },
+                Some(SolanaNftsEvent::MintDropFailed(_)) => {
+                    self.drop_minted(id, MintResult::Failure).await
+                },
+                Some(SolanaNftsEvent::TransferAssetFailed(_)) => {
+                    self.mint_transferred(id, TransferResult::Failure).await
+                },
+                Some(SolanaNftsEvent::RetryMintDropFailed(_)) => {
+                    self.drop_minted(id, MintResult::Failure).await
+                },
+                Some(SolanaNftsEvent::RetryCreateDropFailed(_)) => {
+                    self.drop_created(id, MintResult::Failure).await
+                },
+                None | Some(_) => Ok(()),
+            },
+        }
+    }
 
-    let blockchain = ProtoBlockchainEnum::from_i32(payload.blockchain)
-        .context("failed to get blockchain enum variant")?;
+    async fn project_wallet_created(&self, payload: ProjectWallet) -> Result<()> {
+        let conn = self.db.get();
+        let project_id = Uuid::from_str(&payload.project_id)?;
 
-    let active_model = project_wallets::ActiveModel {
-        project_id: Set(project_id),
-        wallet_address: Set(payload.wallet_address),
-        blockchain: Set(blockchain.try_into()?),
-        ..Default::default()
-    };
+        let blockchain = ProtoBlockchainEnum::from_i32(payload.blockchain)
+            .context("failed to get blockchain enum variant")?;
 
-    active_model
-        .insert(db.get())
-        .await
-        .context("failed to insert project wallet")?;
+        let active_model = project_wallets::ActiveModel {
+            project_id: Set(project_id),
+            wallet_address: Set(payload.wallet_address),
+            blockchain: Set(blockchain.try_into()?),
+            ..Default::default()
+        };
 
-    Ok(())
-}
+        active_model
+            .insert(conn)
+            .await
+            .context("failed to insert project wallet")?;
 
-/// Process a drop created event.
-///
-/// # Errors
-/// This function can return an error in the following cases:
-/// - Failed to parse transaction status from i32
-/// - Failed to parse UUID from string
-/// - Failed to load drop from the database
-/// - Failed to update collection in the database
-pub async fn process_drop_created_event(
-    db: Connection,
-    credits: CreditsClient<Actions>,
-    key: TreasuryEventKey,
-    payload: DropCreated,
-) -> Result<()> {
-    let DropCreated {
-        status,
-        tx_signature,
-        ..
-    } = payload;
+        Ok(())
+    }
 
-    let tx_status = TransactionStatus::from_i32(status).context("failed to parse the status")?;
-    let drop_id = Uuid::from_str(&key.id)?;
+    async fn drop_created(&self, id: String, payload: MintResult) -> Result<()> {
+        let conn = self.db.get();
+        let collection_id = Uuid::from_str(&id)?;
 
-    let (drop, collection_model) = drops::Entity::find_by_id(drop_id)
-        .select_also(collections::Entity)
-        .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-        .one(db.get())
-        .await
-        .context("failed to load drop from db")?
-        .context("drop not found in db")?;
+        let (collection_model, drop) = collections::Entity::find_by_id(collection_id)
+            .join(JoinType::InnerJoin, collections::Relation::Drop.def())
+            .select_also(drops::Entity)
+            .one(conn)
+            .await
+            .context("failed to load collection from db")?
+            .context("collection not found in db")?;
+        let drop_model = drop.context("failed to get drop from db")?;
 
-    let collection = collection_model.context("failed to get collection from db")?;
-    let mut collection_active_model: collections::ActiveModel = collection.into();
-    collection_active_model.signature = Set(Some(tx_signature));
-    collection_active_model.creation_status = Set(tx_status.try_into()?);
-    collection_active_model.update(db.get()).await?;
+        let mut drops_active_model: drops::ActiveModel = drop_model.clone().into();
+        let mut collection_active_model: collections::ActiveModel = collection_model.into();
 
-    let mut drops_active_model: drops::ActiveModel = drop.clone().into();
+        if let MintResult::Success(MintTransaction { signature, address }) = payload {
+            collection_active_model.signature = Set(Some(signature));
+            collection_active_model.address = Set(Some(address));
+            collection_active_model.creation_status = Set(CreationStatus::Created);
 
-    drops_active_model.creation_status = Set(tx_status.try_into()?);
-    drops_active_model.update(db.get()).await?;
+            let deduction_id = drop_model
+                .credits_deduction_id
+                .context("drop has no deduction id")?;
+            self.credits
+                .confirm_deduction(TransactionId(deduction_id))
+                .await?;
+        } else {
+            collection_active_model.creation_status = Set(CreationStatus::Failed);
+            drops_active_model.creation_status = Set(CreationStatus::Failed);
+        }
 
-    debug!("status updated for drop {:?}", drop_id);
+        collection_active_model.update(conn).await?;
+        drops_active_model.update(conn).await?;
 
-    let deduction_id = drop
-        .credits_deduction_id
-        .context("drop has no deduction id")?;
-    credits
-        .confirm_deduction(TransactionId(deduction_id))
-        .await?;
+        Ok(())
+    }
 
-    Ok(())
-}
+    async fn drop_minted(&self, id: String, payload: MintResult) -> Result<()> {
+        let conn = self.db.get();
+        let collection_mint_id = Uuid::from_str(&id)?;
 
-/// Process a drop minted event.
-///
-/// # Errors
-/// This function can return an error in the following cases:
-/// - Failed to parse UUID from string
-/// - Failed to parse transaction status from i32
-/// - Failed to load or update collection mint or purchase from the database
-pub async fn process_drop_minted_event(
-    db: Connection,
-    credits: CreditsClient<Actions>,
-    key: TreasuryEventKey,
-    payload: DropMinted,
-) -> Result<()> {
-    let DropMinted {
-        status,
-        tx_signature,
-        ..
-    } = payload;
+        let collection_mint = collection_mints::Entity::find_by_id(collection_mint_id)
+            .one(conn)
+            .await
+            .context("failed to load collection mint from db")?
+            .context("collection mint not found in db")?;
 
-    let collection_mint_id = Uuid::from_str(&key.id)?;
-    let tx_status = TransactionStatus::from_i32(status).context("failed to parse the status")?;
+        let purchase = Purchases::find()
+            .filter(purchases::Column::MintId.eq(collection_mint_id))
+            .one(conn)
+            .await
+            .context("failed to load purchase from db")?
+            .context("purchase not found in db")?;
 
-    let collection_mint = collection_mints::Entity::find_by_id(collection_mint_id)
-        .one(db.get())
-        .await
-        .context("failed to load collection mint from db")?
-        .context("collection mint not found in db")?;
+        let mut collection_mint_active_model: collection_mints::ActiveModel =
+            collection_mint.clone().into();
+        let mut purchase_am: purchases::ActiveModel = purchase.into();
 
-    let mut collection_mint_active_model: collection_mints::ActiveModel =
-        collection_mint.clone().into();
+        if let MintResult::Success(MintTransaction { signature, address }) = payload {
+            purchase_am.status = Set(CreationStatus::Created);
+            purchase_am.tx_signature = Set(Some(signature.clone()));
+            collection_mint_active_model.creation_status = Set(CreationStatus::Created);
+            collection_mint_active_model.signature = Set(Some(signature));
+            collection_mint_active_model.address = Set(Some(address));
 
-    collection_mint_active_model.creation_status = Set(tx_status.try_into()?);
-    collection_mint_active_model.signature = Set(Some(tx_signature.clone()));
-    collection_mint_active_model.update(db.get()).await?;
+            let deduction_id = collection_mint
+                .credits_deduction_id
+                .context("deduction id not found")?;
 
-    let purchase = Purchases::find()
-        .filter(purchases::Column::MintId.eq(collection_mint_id))
-        .one(db.get())
-        .await
-        .context("failed to load purchase from db")?
-        .context("purchase not found in db")?;
+            self.credits
+                .confirm_deduction(TransactionId(deduction_id))
+                .await?;
+        } else {
+            purchase_am.status = Set(CreationStatus::Failed);
+            collection_mint_active_model.creation_status = Set(CreationStatus::Failed);
+        }
 
-    let mut purchase_am: purchases::ActiveModel = purchase.into();
+        collection_mint_active_model.update(conn).await?;
+        purchase_am.update(conn).await?;
 
-    purchase_am.status = Set(tx_status.try_into()?);
-    purchase_am.tx_signature = Set(Some(tx_signature));
-    purchase_am.update(db.get()).await?;
+        Ok(())
+    }
 
-    let deduction_id = collection_mint
-        .credits_deduction_id
-        .context("deduction id not found")?;
+    async fn mint_transferred(&self, id: String, payload: TransferResult) -> Result<()> {
+        let conn = self.db.get();
+        let transfer_id = Uuid::from_str(&id)?;
 
-    credits
-        .confirm_deduction(TransactionId(deduction_id))
-        .await?;
+        let (nft_transfer, collection_mint) = nft_transfers::Entity::find_by_id(transfer_id)
+            .find_also_related(collection_mints::Entity)
+            .one(conn)
+            .await?
+            .context("failed to load nft transfer from db")?;
 
-    Ok(())
-}
+        let collection_mint = collection_mint.context("collection mint not found")?;
 
-/// Processes a `MintTransfered` event and updates the corresponding entities in the database.
-///
-/// # Arguments
-///
-/// * `db` - A database connection object used to interact with the database.
-/// * `key` - A `TreasuryEventKey` representing the key of the event.
-/// * `payload` - A `MintTransfered` struct representing the payload of the event.
-/// # Errors
-///
-/// This function returns an error if it fails to update the mint owner or
-/// if it fails to inserts the nft transfer
+        let mut collection_mint_am: collection_mints::ActiveModel = collection_mint.into();
+        let mut nft_transfer_am: nft_transfers::ActiveModel = nft_transfer.clone().into();
 
-pub async fn process_mint_transfered_event(
-    db: Connection,
-    credits: CreditsClient<Actions>,
-    key: TreasuryEventKey,
-    payload: MintTransfered,
-) -> Result<()> {
-    let MintTransfered {
-        recipient,
-        tx_signature,
-        transfer_id,
-        ..
-    } = payload;
+        if let TransferResult::Success(signature) = payload {
+            collection_mint_am.owner = Set(nft_transfer.recipient.clone());
+            nft_transfer_am.tx_signature = Set(Some(signature));
 
-    let id = Uuid::from_str(&key.id)?;
-    let transfer_id = Uuid::from_str(&transfer_id)?;
+            let deduction_id = nft_transfer
+                .credits_deduction_id
+                .context("deduction id not found")?;
 
-    let collection_mint = collection_mints::Entity::find_by_id(id)
-        .one(db.get())
-        .await
-        .context("failed to load collection mint from db")?
-        .context("collection mint not found in db")?;
+            self.credits
+                .confirm_deduction(TransactionId(deduction_id))
+                .await?;
+        }
 
-    let mut collection_mint_am: collection_mints::ActiveModel = collection_mint.into();
-    collection_mint_am.owner = Set(recipient.clone());
-    collection_mint_am.update(db.get()).await?;
+        collection_mint_am.update(conn).await?;
+        nft_transfer_am.insert(conn).await?;
 
-    let nft_transfer = nft_transfers::Entity::find_by_id(transfer_id)
-        .one(db.get())
-        .await?
-        .ok_or_else(|| anyhow!("nft transfer record not found"))?;
-
-    let mut nft_transfer_am: nft_transfers::ActiveModel = nft_transfer.clone().into();
-    nft_transfer_am.tx_signature = Set(Some(tx_signature));
-
-    nft_transfer_am.insert(db.get()).await?;
-
-    let deduction_id = nft_transfer
-        .credits_deduction_id
-        .context("deduction id not found")?;
-
-    credits
-        .confirm_deduction(TransactionId(deduction_id))
-        .await?;
-
-    Ok(())
+        Ok(())
+    }
 }
 
 impl TryFrom<ProtoBlockchainEnum> for Blockchain {
@@ -285,6 +284,36 @@ impl TryFrom<TransactionStatus> for CreationStatus {
             TransactionStatus::Cancelled => Ok(Self::Canceled),
             TransactionStatus::Rejected => Ok(Self::Rejected),
             _ => Ok(Self::Pending),
+        }
+    }
+}
+
+impl From<SolanaCompletedMintTransaction> for MintTransaction {
+    fn from(i: SolanaCompletedMintTransaction) -> Self {
+        Self {
+            signature: i.signature,
+            address: i.address,
+        }
+    }
+}
+
+impl From<PolygonTransactionResult> for MintResult {
+    fn from(i: PolygonTransactionResult) -> Self {
+        match i.hash {
+            None => Self::Failure,
+            Some(signature) => Self::Success(MintTransaction {
+                signature,
+                address: format!("{}:{}", i.contract_address, i.edition_id),
+            }),
+        }
+    }
+}
+
+impl From<PolygonTransactionResult> for TransferResult {
+    fn from(i: PolygonTransactionResult) -> Self {
+        match i.hash {
+            None => Self::Failure,
+            Some(signature) => Self::Success(signature),
         }
     }
 }
