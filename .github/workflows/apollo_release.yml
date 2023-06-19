@@ -15,6 +15,7 @@ jobs:
     runs-on: amd64
 
     steps:
+      - uses: actions/checkout@v3
       - name: Install dependencies
         run: |
           sudo apt-get update -y && \
@@ -29,8 +30,6 @@ jobs:
       - name: Get protoc from github releases
         run: |
           sudo ./ci/get-protoc.sh
-
-      - uses: actions/checkout@v3
 
       - uses: isbang/compose-action@v1.4.1
         name: Start docker-compose
