@@ -124,6 +124,7 @@ impl Mutation {
                         recipient_address: input.recipient.to_string(),
                         owner_address: owner_address.to_string(),
                         edition,
+                        collection_id: collection.id.to_string(),
                     })
                     .await?;
             },
@@ -278,6 +279,7 @@ impl Mutation {
                         recipient_address: recipient.to_string(),
                         owner_address: owner_address.to_string(),
                         edition,
+                        collection_id: collection.id.to_string(),
                     })
                     .await?;
             },
