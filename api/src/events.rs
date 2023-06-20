@@ -219,7 +219,6 @@ impl Processor {
             .context("collection mint not found in db")?;
 
         let (purchase, drop) = Purchases::find()
-            .join(JoinType::InnerJoin, purchases::Relation::Drop.def())
             .find_also_related(drops::Entity)
             .filter(purchases::Column::MintId.eq(collection_mint_id))
             .one(conn)
