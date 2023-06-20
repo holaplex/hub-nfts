@@ -1,7 +1,7 @@
 use std::ops::Add;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{chrono::Utc, credits::CreditsClient};
+use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 
 use crate::{
@@ -14,7 +14,10 @@ use crate::{
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
-    proto::{self, NftEventKey},
+    proto::{
+        self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, NftEventKey,
+        NftEvents,
+    },
     Actions, AppContext, OrganizationId, UserID,
 };
 
@@ -42,6 +45,7 @@ impl Mutation {
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
         let polygon = ctx.data::<Polygon>()?;
+        let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
@@ -166,6 +170,19 @@ impl Mutation {
             action: Actions::MintEdition,
         })
         .await?;
+
+        nfts_producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::DropMinted(NftCreationStatus::InProgress as i32)),
+                }),
+                Some(&NftEventKey {
+                    id: collection_mint_model.id.to_string(),
+                    project_id: drop_model.project_id.to_string(),
+                    user_id: user_id.to_string(),
+                }),
+            )
+            .await?;
 
         Ok(MintEditionPayload {
             collection_mint: collection_mint_model.into(),
