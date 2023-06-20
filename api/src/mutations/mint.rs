@@ -15,8 +15,8 @@ use crate::{
     },
     metadata_json::MetadataJson,
     proto::{
-        self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, NftEventKey,
-        NftEvents,
+        self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, MintCreation,
+        NftEventKey, NftEvents,
     },
     Actions, AppContext, OrganizationId, UserID,
 };
@@ -87,12 +87,10 @@ impl Mutation {
             .await?;
 
         let owner_address = wallet
-            .ok_or_else(|| {
-                Error::new(format!(
-                    "no project wallet found for {} blockchain",
-                    collection.blockchain
-                ))
-            })?
+            .ok_or(Error::new(format!(
+                "no project wallet found for {} blockchain",
+                collection.blockchain
+            )))?
             .wallet_address;
 
         // insert a collection mint record into database
@@ -174,7 +172,10 @@ impl Mutation {
         nfts_producer
             .send(
                 Some(&NftEvents {
-                    event: Some(NftEvent::DropMinted(NftCreationStatus::InProgress as i32)),
+                    event: Some(NftEvent::DropMinted(MintCreation {
+                        drop_id: drop_model.id.to_string(),
+                        status: NftCreationStatus::InProgress as i32,
+                    })),
                 }),
                 Some(&NftEventKey {
                     id: collection_mint_model.id.to_string(),
@@ -257,12 +258,10 @@ impl Mutation {
             .await?;
 
         let owner_address = wallet
-            .ok_or_else(|| {
-                Error::new(format!(
-                    "no project wallet found for {} blockchain",
-                    collection.blockchain
-                ))
-            })?
+            .ok_or(Error::new(format!(
+                "no project wallet found for {} blockchain",
+                collection.blockchain
+            )))?
             .wallet_address;
 
         let event_key = NftEventKey {

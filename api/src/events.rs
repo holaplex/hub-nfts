@@ -24,7 +24,7 @@ use crate::{
             Blockchain as ProtoBlockchainEnum, Event as TreasuryEvent, PolygonTransactionResult,
             ProjectWallet, TransactionStatus,
         },
-        CreationStatus as NftCreationStatus, NftEventKey, NftEvents,
+        CreationStatus as NftCreationStatus, DropCreation, MintCreation, NftEventKey, NftEvents,
         SolanaCompletedMintTransaction, SolanaCompletedTransferTransaction, SolanaNftEventKey,
         TreasuryEventKey,
     },
@@ -190,7 +190,9 @@ impl Processor {
         self.producer
             .send(
                 Some(&NftEvents {
-                    event: Some(NftEvent::DropCreated(creation_status as i32)),
+                    event: Some(NftEvent::DropCreated(DropCreation {
+                        status: creation_status as i32,
+                    })),
                 }),
                 Some(&NftEventKey {
                     id: drop_model.id.to_string(),
@@ -255,7 +257,10 @@ impl Processor {
         self.producer
             .send(
                 Some(&NftEvents {
-                    event: Some(NftEvent::DropMinted(creation_status as i32)),
+                    event: Some(NftEvent::DropMinted(MintCreation {
+                        drop_id: drop.id.to_string(),
+                        status: creation_status as i32,
+                    })),
                 }),
                 Some(&NftEventKey {
                     id: collection_mint.id.to_string(),
