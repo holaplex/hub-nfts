@@ -49,7 +49,8 @@ pub fn main() {
             let polygon_producer = common.producer_cfg.build::<proto::PolygonEvents>().await?;
             let credits = common.credits_cfg.build::<Actions>().await?;
             let nft_storage = NftStorageClient::new(nft_storage)?;
-            let event_processor = events::Processor::new(connection.clone(), credits.clone());
+            let event_processor =
+                events::Processor::new(connection.clone(), credits.clone(), producer.clone());
 
             let solana = Solana::new(solana_producer.clone());
             let polygon = Polygon::new(polygon_producer.clone());

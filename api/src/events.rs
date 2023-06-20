@@ -1,6 +1,7 @@
 use hub_core::{
     credits::{CreditsClient, TransactionId},
     prelude::*,
+    producer::Producer,
     uuid::Uuid,
 };
 use sea_orm::{
@@ -17,11 +18,13 @@ use crate::{
         sea_orm_active_enums::{Blockchain, CreationStatus},
     },
     proto::{
+        nft_events::Event as NftEvent,
         solana_nft_events::Event as SolanaNftsEvent,
         treasury_events::{
             Blockchain as ProtoBlockchainEnum, Event as TreasuryEvent, PolygonTransactionResult,
             ProjectWallet, TransactionStatus,
         },
+        CreationStatus as NftCreationStatus, NftEventKey, NftEvents,
         SolanaCompletedMintTransaction, SolanaCompletedTransferTransaction, SolanaNftEventKey,
         TreasuryEventKey,
     },
@@ -32,6 +35,7 @@ use crate::{
 pub struct Processor {
     pub db: Connection,
     pub credits: CreditsClient<Actions>,
+    pub producer: Producer<NftEvents>,
 }
 
 #[derive(Clone)]
@@ -54,8 +58,16 @@ enum TransferResult {
 
 impl Processor {
     #[must_use]
-    pub fn new(db: Connection, credits: CreditsClient<Actions>) -> Self {
-        Self { db, credits }
+    pub fn new(
+        db: Connection,
+        credits: CreditsClient<Actions>,
+        producer: Producer<NftEvents>,
+    ) -> Self {
+        Self {
+            db,
+            credits,
+            producer,
+        }
     }
 
     pub async fn process(&self, msg: Services) -> Result<()> {
@@ -155,6 +167,7 @@ impl Processor {
 
         let mut drops_active_model: drops::ActiveModel = drop_model.clone().into();
         let mut collection_active_model: collections::ActiveModel = collection_model.into();
+        let mut creation_status = NftCreationStatus::Completed;
 
         if let MintResult::Success(MintTransaction { signature, address }) = payload {
             collection_active_model.signature = Set(Some(signature));
@@ -171,7 +184,21 @@ impl Processor {
         } else {
             collection_active_model.creation_status = Set(CreationStatus::Failed);
             drops_active_model.creation_status = Set(CreationStatus::Failed);
+            creation_status = NftCreationStatus::Failed;
         }
+
+        self.producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::DropCreated(creation_status as i32)),
+                }),
+                Some(&NftEventKey {
+                    id: drop_model.id.to_string(),
+                    project_id: drop_model.project_id.to_string(),
+                    user_id: drop_model.created_by.to_string(),
+                }),
+            )
+            .await?;
 
         collection_active_model.update(conn).await?;
         drops_active_model.update(conn).await?;
@@ -189,16 +216,21 @@ impl Processor {
             .context("failed to load collection mint from db")?
             .context("collection mint not found in db")?;
 
-        let purchase = Purchases::find()
+        let (purchase, drop) = Purchases::find()
+            .join(JoinType::InnerJoin, purchases::Relation::Drop.def())
+            .find_also_related(drops::Entity)
             .filter(purchases::Column::MintId.eq(collection_mint_id))
             .one(conn)
             .await
             .context("failed to load purchase from db")?
             .context("purchase not found in db")?;
 
+        let drop = drop.context("drop not found")?;
+
         let mut collection_mint_active_model: collection_mints::ActiveModel =
             collection_mint.clone().into();
         let mut purchase_am: purchases::ActiveModel = purchase.into();
+        let mut creation_status = NftCreationStatus::Completed;
 
         if let MintResult::Success(MintTransaction { signature, address }) = payload {
             purchase_am.status = Set(CreationStatus::Created);
@@ -217,7 +249,21 @@ impl Processor {
         } else {
             purchase_am.status = Set(CreationStatus::Failed);
             collection_mint_active_model.creation_status = Set(CreationStatus::Failed);
+            creation_status = NftCreationStatus::Failed;
         }
+
+        self.producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::DropMinted(creation_status as i32)),
+                }),
+                Some(&NftEventKey {
+                    id: collection_mint.id.to_string(),
+                    project_id: drop.project_id.to_string(),
+                    user_id: collection_mint.created_by.to_string(),
+                }),
+            )
+            .await?;
 
         collection_mint_active_model.update(conn).await?;
         purchase_am.update(conn).await?;

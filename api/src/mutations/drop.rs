@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{chrono::Utc, credits::CreditsClient};
+use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
 use reqwest::Url;
 use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,10 @@ use crate::{
     },
     metadata_json::MetadataJson,
     objects::{CollectionCreator, Drop, MetadataJsonInput},
-    proto::{self, EditionInfo, NftEventKey},
+    proto::{
+        self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, EditionInfo,
+        NftEventKey, NftEvents,
+    },
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
 
@@ -57,6 +60,7 @@ impl Mutation {
         let solana = ctx.data::<Solana>()?;
         let polygon = ctx.data::<Polygon>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
+        let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
         let owner_address = fetch_owner(conn, &input).await?;
 
         input.validate()?;
@@ -159,6 +163,19 @@ impl Mutation {
             action: Actions::CreateDrop,
         })
         .await?;
+
+        nfts_producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::DropCreated(NftCreationStatus::InProgress as i32)),
+                }),
+                Some(&NftEventKey {
+                    id: drop_model.id.to_string(),
+                    project_id: input.project.to_string(),
+                    user_id: user_id.to_string(),
+                }),
+            )
+            .await?;
 
         Ok(CreateDropPayload {
             drop: Drop::new(drop_model, collection),
