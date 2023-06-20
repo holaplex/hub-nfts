@@ -160,6 +160,7 @@ impl Processor {
             collection_active_model.signature = Set(Some(signature));
             collection_active_model.address = Set(Some(address));
             collection_active_model.creation_status = Set(CreationStatus::Created);
+            drops_active_model.creation_status = Set(CreationStatus::Created);
 
             let deduction_id = drop_model
                 .credits_deduction_id
