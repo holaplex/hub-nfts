@@ -167,7 +167,9 @@ impl Mutation {
         nfts_producer
             .send(
                 Some(&NftEvents {
-                    event: Some(NftEvent::DropCreated(NftCreationStatus::InProgress as i32)),
+                    event: Some(NftEvent::DropCreated(proto::DropCreation {
+                        status: NftCreationStatus::InProgress as i32,
+                    })),
                 }),
                 Some(&NftEventKey {
                     id: drop_model.id.to_string(),
