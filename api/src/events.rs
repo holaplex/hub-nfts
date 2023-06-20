@@ -1,5 +1,5 @@
 use hub_core::{
-    chrono::Utc,
+    chrono::{DateTime, NaiveDateTime, Utc},
     credits::{CreditsClient, TransactionId},
     prelude::*,
     producer::Producer,
@@ -7,7 +7,7 @@ use hub_core::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait,
-    Set,
+    Set, TransactionTrait,
 };
 
 use crate::{
@@ -20,14 +20,15 @@ use crate::{
     },
     proto::{
         nft_events::Event as NftEvent,
+        polygon_nft_events::Event as PolygonNftEvents,
         solana_nft_events::Event as SolanaNftsEvent,
         treasury_events::{
             Blockchain as ProtoBlockchainEnum, CustomerWallet, Event as TreasuryEvent,
             PolygonTransactionResult, ProjectWallet, TransactionStatus,
         },
         CreationStatus as NftCreationStatus, DropCreation, MintCreation, MintOwnershipUpdate,
-        NftEventKey, NftEvents, SolanaCompletedMintTransaction, SolanaCompletedTransferTransaction,
-        SolanaNftEventKey, TreasuryEventKey,
+        MintedTokensOwnershipUpdate, NftEventKey, NftEvents, SolanaCompletedMintTransaction,
+        SolanaCompletedTransferTransaction, SolanaNftEventKey, TreasuryEventKey,
     },
     Actions, Services,
 };
@@ -132,6 +133,12 @@ impl Processor {
                 Some(SolanaNftsEvent::UpdateMintOwner(e)) => self.update_mint_owner(id, e).await,
                 None | Some(_) => Ok(()),
             },
+            Services::Polygon(_, e) => match e.event {
+                Some(PolygonNftEvents::UpdateMintsOwner(p)) => {
+                    self.update_polygon_mints_owner(p).await
+                },
+                None | Some(_) => Ok(()),
+            },
         }
     }
 
@@ -161,6 +168,56 @@ impl Processor {
         };
 
         nft_transfer.insert(db).await?;
+        Ok(())
+    }
+    async fn update_polygon_mints_owner(&self, payload: MintedTokensOwnershipUpdate) -> Result<()> {
+        let MintedTokensOwnershipUpdate {
+            mint_ids,
+            new_owner,
+            timestamp,
+            transaction_hash,
+        } = payload;
+
+        let ts = timestamp.context("No timestamp found")?;
+        let created_at = DateTime::<Utc>::from_utc(
+            NaiveDateTime::from_timestamp_opt(ts.seconds, ts.nanos.try_into()?)
+                .context("failed to parse to NaiveDateTime")?,
+            Utc,
+        )
+        .into();
+
+        let db = self.db.get();
+        let txn = db.begin().await?;
+
+        let mint_ids = mint_ids
+            .into_iter()
+            .map(|s| Uuid::from_str(&s))
+            .collect::<Result<Vec<Uuid>, _>>()?;
+
+        let mints = CollectionMints::find()
+            .filter(collection_mints::Column::Id.is_in(mint_ids))
+            .all(db)
+            .await?;
+
+        for mint in mints {
+            let mut mint_am: collection_mints::ActiveModel = mint.clone().into();
+            mint_am.owner = Set(new_owner.clone());
+            mint_am.update(&txn).await?;
+
+            let nft_transfers = nft_transfers::ActiveModel {
+                tx_signature: Set(Some(transaction_hash.clone())),
+                collection_mint_id: Set(mint.id),
+                sender: Set(mint.owner),
+                recipient: Set(new_owner.clone()),
+                created_at: Set(created_at),
+                credits_deduction_id: Set(None),
+                ..Default::default()
+            };
+
+            nft_transfers.insert(&txn).await?;
+        }
+
+        txn.commit().await?;
 
         Ok(())
     }

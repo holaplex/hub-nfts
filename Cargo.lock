@@ -1712,6 +1712,7 @@ dependencies = [
  "holaplex-hub-core-build",
  "poem",
  "prost",
+ "prost-types",
  "reqwest",
  "sea-orm",
  "serde",
