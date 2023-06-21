@@ -145,7 +145,6 @@ impl Mutation {
                         }),
                         fee_receiver: owner_address.clone(),
                         fee_numerator: seller_fee_basis_points.into(),
-                        receiver: owner_address,
                     })
                     .await?;
             },
@@ -292,7 +291,6 @@ impl Mutation {
                     .event()
                     .retry_create_drop(event_key, proto::CreateEditionTransaction {
                         edition_info: None,
-                        receiver: owner_address.clone(),
                         amount,
                         fee_receiver: owner_address,
                         fee_numerator: collection.seller_fee_basis_points.into(),
