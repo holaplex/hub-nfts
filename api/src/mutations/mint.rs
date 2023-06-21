@@ -134,6 +134,7 @@ impl Mutation {
                     .mint_drop(event_key, proto::MintEditionTransaction {
                         receiver: input.recipient.to_string(),
                         amount: 1,
+                        collection_id: collection.id.to_string(),
                     })
                     .await?;
             },
@@ -289,6 +290,7 @@ impl Mutation {
                     .retry_mint_drop(event_key, proto::MintEditionTransaction {
                         receiver: recipient.to_string(),
                         amount: 1,
+                        collection_id: collection.id.to_string(),
                     })
                     .await?;
             },
