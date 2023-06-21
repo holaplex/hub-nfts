@@ -1,4 +1,5 @@
 use hub_core::{
+    chrono::Utc,
     credits::{CreditsClient, TransactionId},
     prelude::*,
     producer::Producer,
@@ -13,7 +14,7 @@ use crate::{
     db::Connection,
     entities::{
         collection_mints, collections, drops, nft_transfers,
-        prelude::Purchases,
+        prelude::{CollectionMints, Purchases},
         project_wallets, purchases,
         sea_orm_active_enums::{Blockchain, CreationStatus},
     },
@@ -24,9 +25,9 @@ use crate::{
             Blockchain as ProtoBlockchainEnum, Event as TreasuryEvent, PolygonTransactionResult,
             ProjectWallet, TransactionStatus,
         },
-        CreationStatus as NftCreationStatus, DropCreation, MintCreation, NftEventKey, NftEvents,
-        SolanaCompletedMintTransaction, SolanaCompletedTransferTransaction, SolanaNftEventKey,
-        TreasuryEventKey,
+        CreationStatus as NftCreationStatus, DropCreation, MintCreation, MintOwnershipUpdate,
+        NftEventKey, NftEvents, SolanaCompletedMintTransaction, SolanaCompletedTransferTransaction,
+        SolanaNftEventKey, TreasuryEventKey,
     },
     Actions, Services,
 };
@@ -125,9 +126,40 @@ impl Processor {
                 Some(SolanaNftsEvent::RetryCreateDropFailed(_)) => {
                     self.drop_created(id, MintResult::Failure).await
                 },
+                Some(SolanaNftsEvent::UpdateMintOwner(e)) => self.update_mint_owner(id, e).await,
                 None | Some(_) => Ok(()),
             },
         }
+    }
+
+    async fn update_mint_owner(&self, id: String, payload: MintOwnershipUpdate) -> Result<()> {
+        let id = Uuid::from_str(&id)?;
+        let db = self.db.get();
+
+        let mint = CollectionMints::find_by_id(id)
+            .one(db)
+            .await
+            .context("failed to load mint from db")?
+            .context("mint not found in db")?;
+
+        let mut mint_am: collection_mints::ActiveModel = mint.into();
+        mint_am.owner = Set(payload.recipient.clone());
+
+        mint_am.update(self.db.get()).await?;
+
+        let nft_transfer = nft_transfers::ActiveModel {
+            tx_signature: Set(Some(payload.tx_signature)),
+            collection_mint_id: Set(id),
+            sender: Set(payload.sender),
+            recipient: Set(payload.recipient),
+            created_at: Set(Utc::now().into()),
+            credits_deduction_id: Set(None),
+            ..Default::default()
+        };
+
+        nft_transfer.insert(db).await?;
+
+        Ok(())
     }
 
     async fn project_wallet_created(&self, payload: ProjectWallet) -> Result<()> {
