@@ -357,7 +357,7 @@ async fn submit_pending_deduction(
         },
     };
 
-    let deduction_id = id.ok_or(Error::new("failed to generate credits deduction id"))?;
+    let deduction_id = id.ok_or(Error::new("Organization does not have enough credits"))?;
 
     let mut mint: collection_mints::ActiveModel = mint_model.into();
     mint.credits_deduction_id = Set(Some(deduction_id.0));

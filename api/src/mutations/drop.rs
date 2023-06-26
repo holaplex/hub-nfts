@@ -61,9 +61,14 @@ impl Mutation {
         let polygon = ctx.data::<Polygon>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
-        let owner_address = fetch_owner(conn, &input).await?;
+
+        let owner_address = fetch_owner(conn, input.project, input.blockchain).await?;
 
         input.validate()?;
+
+        if input.blockchain == BlockchainEnum::Solana {
+            validate_solana_creator_verification(&owner_address, &input.creators)?;
+        }
 
         let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
 
@@ -234,23 +239,7 @@ impl Mutation {
             .all(conn)
             .await?;
 
-        let wallet = project_wallets::Entity::find()
-            .filter(
-                project_wallets::Column::ProjectId
-                    .eq(drop.project_id)
-                    .and(project_wallets::Column::Blockchain.eq(collection.blockchain)),
-            )
-            .one(conn)
-            .await?;
-
-        let owner_address = wallet
-            .ok_or_else(|| {
-                Error::new(format!(
-                    "no project wallet found for {} blockchain",
-                    collection.blockchain
-                ))
-            })?
-            .wallet_address;
+        let owner_address = fetch_owner(conn, drop.project_id, collection.blockchain).await?;
 
         let event_key = NftEventKey {
             id: collection.id.to_string(),
@@ -454,9 +443,16 @@ impl Mutation {
 
         let collection = collection_model.ok_or(Error::new("collection not found"))?;
 
+        let owner_address = fetch_owner(conn, drop_model.project_id, collection.blockchain).await?;
+
         validate_end_time(&input.end_time.clone())?;
+
         if let Some(creators) = &creators {
             validate_creators(collection.blockchain, creators)?;
+
+            if collection.blockchain == BlockchainEnum::Solana {
+                validate_solana_creator_verification(&owner_address, creators)?;
+            }
         }
         if let Some(metadata_json) = &metadata_json {
             validate_json(metadata_json)?;
@@ -523,17 +519,6 @@ impl Mutation {
         }
 
         let drop_model = drop_am.update(conn).await?;
-
-        let owner_address = project_wallets::Entity::find()
-            .filter(
-                project_wallets::Column::ProjectId
-                    .eq(drop_model.project_id)
-                    .and(project_wallets::Column::Blockchain.eq(BlockchainEnum::Solana)),
-            )
-            .one(conn)
-            .await?
-            .ok_or(Error::new("no project wallet found"))?
-            .wallet_address;
 
         let metadata_json_model = metadata_jsons::Entity::find()
             .filter(metadata_jsons::Column::Id.eq(collection.id))
@@ -602,7 +587,7 @@ impl Mutation {
                         edition_info: Some(EditionInfo {
                             description: metadata_json_model.description,
                             image_uri: metadata_json_model.image,
-                            collection: String::new(),
+                            collection: metadata_json_model.name,
                             uri: metadata_json_model.uri,
                             creator,
                         }),
@@ -663,7 +648,7 @@ async fn submit_pending_deduction(
         },
     };
 
-    let deduction_id = id.ok_or(Error::new("failed to generate credits deduction id"))?;
+    let deduction_id = id.ok_or(Error::new("Organization does not have enough credits"))?;
 
     let mut drop: drops::ActiveModel = drop_model.into();
     drop.credits_deduction_id = Set(Some(deduction_id.0));
@@ -672,23 +657,24 @@ async fn submit_pending_deduction(
     Ok(())
 }
 
-async fn fetch_owner(conn: &DatabaseConnection, input: &CreateDropInput) -> Result<String> {
+async fn fetch_owner(
+    conn: &DatabaseConnection,
+    project: Uuid,
+    blockchain: BlockchainEnum,
+) -> Result<String> {
     let wallet = project_wallets::Entity::find()
         .filter(
             project_wallets::Column::ProjectId
-                .eq(input.project)
-                .and(project_wallets::Column::Blockchain.eq(input.blockchain)),
+                .eq(project)
+                .and(project_wallets::Column::Blockchain.eq(blockchain)),
         )
         .one(conn)
         .await?;
 
     let owner = wallet
-        .ok_or_else(|| {
-            Error::new(format!(
-                "no project wallet found for {} blockchain",
-                input.blockchain
-            ))
-        })?
+        .ok_or(Error::new(format!(
+            "no project wallet found for {blockchain} blockchain"
+        )))?
         .wallet_address;
     Ok(owner)
 }
@@ -753,6 +739,23 @@ fn validate_end_time(end_time: &Option<DateTimeWithTimeZone>) -> Result<()> {
     Ok(())
 }
 
+fn validate_solana_creator_verification(
+    project_treasury_wallet_address: &str,
+    creators: &Vec<CollectionCreator>,
+) -> Result<()> {
+    for creator in creators {
+        if creator.verified.unwrap_or_default()
+            && creator.address != project_treasury_wallet_address
+        {
+            return Err(Error::new(format!(
+                "Only the project treasury wallet of {project_treasury_wallet_address} can be verified in the mutation. Other creators must be verified independently. See the Metaplex documentation for more details."
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 /// Validates the addresses of the creators for a given blockchain.
 /// # Returns
 /// - Ok(()) if all creator addresses are valid blockchain addresses.
@@ -761,6 +764,14 @@ fn validate_end_time(end_time: &Option<DateTimeWithTimeZone>) -> Result<()> {
 /// - Err with an appropriate error message if any creator address is not a valid address.
 /// - Err if the blockchain is not supported.
 fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreator>) -> Result<()> {
+    let royalty_share = creators.iter().map(|c| c.share).sum::<u8>();
+
+    if royalty_share != 100 {
+        return Err(Error::new(
+            "The sum of all creator shares must be equal to 100",
+        ));
+    }
+
     match blockchain {
         BlockchainEnum::Solana => {
             if creators.len() > 5 {
