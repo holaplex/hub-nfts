@@ -25,9 +25,9 @@ use crate::{
             Blockchain as ProtoBlockchainEnum, Event as TreasuryEvent, PolygonTransactionResult,
             ProjectWallet, TransactionStatus,
         },
-        CreationStatus as NftCreationStatus, DropCreation, MintCreation, MintOwnershipUpdate,
-        NftEventKey, NftEvents, SolanaCompletedMintTransaction, SolanaCompletedTransferTransaction,
-        SolanaNftEventKey, TreasuryEventKey,
+        CreationStatus as NftCreationStatus, DropCreation, EventType, MintCreation,
+        MintOwnershipUpdate, NftEventKey, NftEvents, SolanaCompletedMintTransaction,
+        SolanaCompletedTransferTransaction, SolanaNftEventKey, TreasuryEventKey,
     },
     Actions, Services,
 };
@@ -230,6 +230,7 @@ impl Processor {
                     id: drop_model.id.to_string(),
                     project_id: drop_model.project_id.to_string(),
                     user_id: drop_model.created_by.to_string(),
+                    event_type: EventType::Nfts as i32,
                 }),
             )
             .await?;
@@ -297,6 +298,7 @@ impl Processor {
                     id: collection_mint.id.to_string(),
                     project_id: drop.project_id.to_string(),
                     user_id: collection_mint.created_by.to_string(),
+                    event_type: EventType::Nfts as i32,
                 }),
             )
             .await?;

@@ -21,7 +21,7 @@ use crate::{
     objects::{CollectionCreator, Drop, MetadataJsonInput},
     proto::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, EditionInfo,
-        NftEventKey, NftEvents,
+        EventType, NftEventKey, NftEvents,
     },
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
@@ -104,10 +104,12 @@ impl Mutation {
         };
 
         let drop_model = drop.insert(conn).await?;
+        let event_type: EventType = collection.blockchain.try_into()?;
         let event_key = NftEventKey {
             id: collection.id.to_string(),
             user_id: user_id.to_string(),
             project_id: input.project.to_string(),
+            event_type: event_type as i32,
         };
 
         match input.blockchain {
@@ -179,6 +181,7 @@ impl Mutation {
                     id: drop_model.id.to_string(),
                     project_id: input.project.to_string(),
                     user_id: user_id.to_string(),
+                    event_type: EventType::Nfts as i32,
                 }),
             )
             .await?;
@@ -240,11 +243,13 @@ impl Mutation {
             .await?;
 
         let owner_address = fetch_owner(conn, drop.project_id, collection.blockchain).await?;
+        let event_type: EventType = collection.blockchain.try_into()?;
 
         let event_key = NftEventKey {
             id: collection.id.to_string(),
             user_id: user_id.to_string(),
             project_id: drop.project_id.to_string(),
+            event_type: event_type as i32,
         };
 
         match collection.blockchain {
@@ -538,10 +543,13 @@ impl Mutation {
             metadata_json_model
         };
 
+        let event_type: EventType = collection.blockchain.try_into()?;
+
         let event_key = NftEventKey {
             id: collection.id.to_string(),
             user_id: user_id.to_string(),
             project_id: drop_model.project_id.to_string(),
+            event_type: event_type as i32,
         };
 
         match collection.blockchain {

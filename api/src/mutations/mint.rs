@@ -15,8 +15,8 @@ use crate::{
     },
     metadata_json::MetadataJson,
     proto::{
-        self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, MintCreation,
-        NftEventKey, NftEvents,
+        self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, EventType,
+        MintCreation, NftEventKey, NftEvents,
     },
     Actions, AppContext, OrganizationId, UserID,
 };
@@ -105,10 +105,12 @@ impl Mutation {
         };
 
         let collection_mint_model = collection_mint_active_model.insert(conn).await?;
+        let event_type: EventType = collection.blockchain.try_into()?;
         let event_key = NftEventKey {
             id: collection_mint_model.id.to_string(),
             user_id: user_id.to_string(),
             project_id: drop_model.project_id.to_string(),
+            event_type: event_type as i32,
         };
 
         match collection.blockchain {
@@ -183,6 +185,7 @@ impl Mutation {
                     id: collection_mint_model.id.to_string(),
                     project_id: drop_model.project_id.to_string(),
                     user_id: user_id.to_string(),
+                    event_type: EventType::Nfts as i32,
                 }),
             )
             .await?;
@@ -266,10 +269,13 @@ impl Mutation {
             )))?
             .wallet_address;
 
+        let event_type: EventType = collection.blockchain.try_into()?;
+
         let event_key = NftEventKey {
             id: collection_mint_model.id.to_string(),
             user_id: user_id.to_string(),
             project_id: project_id.to_string(),
+            event_type: event_type as i32,
         };
 
         match collection.blockchain {

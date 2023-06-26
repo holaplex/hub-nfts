@@ -12,7 +12,7 @@ use crate::{
         prelude::{Collections, Drops},
         sea_orm_active_enums::Blockchain,
     },
-    proto::{self, NftEventKey, TransferPolygonAsset},
+    proto::{self, EventType, NftEventKey, TransferPolygonAsset},
     Actions, AppContext, OrganizationId, UserID,
 };
 
@@ -90,10 +90,13 @@ impl Mutation {
         };
 
         let nft_transfer_model = nft_transfer_am.insert(conn).await?;
+        let event_type: EventType = collection.blockchain.try_into()?;
+
         let event_key = NftEventKey {
             id: nft_transfer_model.id.to_string(),
             user_id: user_id.to_string(),
             project_id: drop.project_id.to_string(),
+            event_type: event_type as i32,
         };
 
         let collection_mint_id = collection_mint_model.id.to_string();
@@ -115,6 +118,7 @@ impl Mutation {
             },
             Blockchain::Polygon => {
                 let polygon = ctx.data::<Polygon>()?;
+
                 polygon
                     .event()
                     .transfer_asset(event_key, TransferPolygonAsset {
