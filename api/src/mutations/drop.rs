@@ -455,7 +455,7 @@ impl Mutation {
             }
         }
         if let Some(metadata_json) = &metadata_json {
-            validate_json(metadata_json)?;
+            validate_json(collection.blockchain, metadata_json)?;
         }
 
         let mut collection_am: collections::ActiveModel = collection.into();
@@ -716,7 +716,7 @@ impl CreateDropInput {
 
         validate_end_time(&self.end_time)?;
         validate_creators(self.blockchain, &self.creators)?;
-        validate_json(&self.metadata_json)?;
+        validate_json(self.blockchain, &self.metadata_json)?;
 
         Ok(())
     }
@@ -830,7 +830,7 @@ fn is_valid_evm_address(address: &str) -> bool {
 ///
 /// # Errors
 /// - Err with an appropriate error message if any JSON field is invalid.
-fn validate_json(json: &MetadataJsonInput) -> Result<()> {
+fn validate_json(blockchain: BlockchainEnum, json: &MetadataJsonInput) -> Result<()> {
     json.animation_url
         .as_ref()
         .map(|animation_url| Url::from_str(animation_url))
@@ -844,6 +844,18 @@ fn validate_json(json: &MetadataJsonInput) -> Result<()> {
         .map_err(|_| Error::new("Invalid external url"))?;
 
     Url::from_str(&json.image).map_err(|_| Error::new("Invalid image url"))?;
+
+    if blockchain != BlockchainEnum::Solana {
+        return Ok(());
+    }
+
+    if json.name.chars().count() > 32 {
+        return Err(Error::new("Name must be less than 32 characters"));
+    }
+
+    if json.symbol.chars().count() > 10 {
+        return Err(Error::new("Symbol must be less than 10 characters"));
+    }
 
     Ok(())
 }
