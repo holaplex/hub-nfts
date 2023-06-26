@@ -173,7 +173,7 @@ async fn submit_pending_deduction(
         },
     };
 
-    let deduction_id = id.ok_or(Error::new("failed to generate credits deduction id"))?;
+    let deduction_id = id.ok_or(Error::new("Organization does not have enough credits"))?;
 
     let nft_transfer_model = nft_transfers::Entity::find_by_id(transfer_id)
         .one(db.get())
