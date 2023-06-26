@@ -6,6 +6,7 @@ pub mod prelude;
 pub mod collection_creators;
 pub mod collection_mints;
 pub mod collections;
+pub mod customer_wallets;
 pub mod drops;
 pub mod metadata_json_attributes;
 pub mod metadata_json_files;

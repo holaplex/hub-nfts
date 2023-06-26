@@ -8,8 +8,8 @@ use crate::{
     db::Connection,
     entities::{
         collection_mints::{self, CollectionMint},
-        collections, drops, nft_transfers,
-        prelude::{Collections, Drops},
+        collections, customer_wallets, drops, nft_transfers,
+        prelude::{Collections, CustomerWallets, Drops},
         sea_orm_active_enums::Blockchain,
     },
     proto::{self, NftEventKey, TransferPolygonAsset},
@@ -81,10 +81,18 @@ impl Mutation {
             .await?
             .ok_or(Error::new("drop not found"))?;
 
+        let owner_address = collection_mint_model.owner.clone();
+
+        CustomerWallets::find()
+            .filter(customer_wallets::Column::Address.eq(owner_address.clone()))
+            .one(conn)
+            .await?
+            .ok_or(Error::new("Sender wallet is not managed by Hub"))?;
+
         let nft_transfer_am = nft_transfers::ActiveModel {
             tx_signature: Set(None),
             collection_mint_id: Set(collection_mint_model.id),
-            sender: Set(collection_mint_model.owner.to_string()),
+            sender: Set(owner_address.clone()),
             recipient: Set(recipient.clone()),
             ..Default::default()
         };
@@ -98,7 +106,6 @@ impl Mutation {
 
         let collection_mint_id = collection_mint_model.id.to_string();
         let recipient_address = recipient.to_string();
-        let owner_address = collection_mint_model.owner.to_string();
 
         match collection.blockchain {
             Blockchain::Solana => {
@@ -106,7 +113,7 @@ impl Mutation {
 
                 solana
                     .event()
-                    .transfer_asset(event_key, proto::TransferMetaplexAssetTransaction {
+                    .transfer_asset(event_key.into(), proto::TransferMetaplexAssetTransaction {
                         recipient_address,
                         owner_address,
                         collection_mint_id,
@@ -117,7 +124,7 @@ impl Mutation {
                 let polygon = ctx.data::<Polygon>()?;
                 polygon
                     .event()
-                    .transfer_asset(event_key, TransferPolygonAsset {
+                    .transfer_asset(event_key.into(), TransferPolygonAsset {
                         collection_mint_id,
                         owner_address,
                         recipient_address,

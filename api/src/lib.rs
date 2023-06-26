@@ -50,7 +50,7 @@ pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/solana_nfts.proto.rs"));
 }
 
-use proto::NftEvents;
+use proto::{NftEvents, PolygonEvents, SolanaEvents};
 
 impl hub_core::producer::Message for proto::NftEvents {
     type Key = proto::NftEventKey;

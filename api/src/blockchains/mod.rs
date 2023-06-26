@@ -1,9 +1,8 @@
 pub mod polygon;
 pub mod solana;
 
-use hub_core::{anyhow::Result, uuid::Uuid};
-
 use crate::proto::NftEventKey;
+use hub_core::{anyhow::Result, uuid::Uuid};
 
 /// Represents a response from a transaction on the blockchain. This struct
 /// provides the serialized message and the signatures of the signed message.

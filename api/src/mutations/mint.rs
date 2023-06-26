@@ -120,7 +120,7 @@ impl Mutation {
 
                 solana
                     .event()
-                    .mint_drop(event_key, proto::MintMetaplexEditionTransaction {
+                    .mint_drop(event_key.into(), proto::MintMetaplexEditionTransaction {
                         recipient_address: input.recipient.to_string(),
                         owner_address: owner_address.to_string(),
                         edition,
@@ -131,7 +131,7 @@ impl Mutation {
             BlockchainEnum::Polygon => {
                 polygon
                     .event()
-                    .mint_drop(event_key, proto::MintEditionTransaction {
+                    .mint_drop(event_key.into(), proto::MintEditionTransaction {
                         receiver: input.recipient.to_string(),
                         amount: 1,
                         collection_id: collection.id.to_string(),
@@ -276,7 +276,7 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .retry_mint_drop(event_key, proto::MintMetaplexEditionTransaction {
+                    .retry_mint_drop(event_key.into(), proto::MintMetaplexEditionTransaction {
                         recipient_address: recipient.to_string(),
                         owner_address: owner_address.to_string(),
                         edition,
@@ -287,7 +287,7 @@ impl Mutation {
             BlockchainEnum::Polygon => {
                 polygon
                     .event()
-                    .retry_mint_drop(event_key, proto::MintEditionTransaction {
+                    .retry_mint_drop(event_key.into(), proto::MintEditionTransaction {
                         receiver: recipient.to_string(),
                         amount: 1,
                         collection_id: collection.id.to_string(),

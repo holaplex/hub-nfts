@@ -13,7 +13,7 @@ use sea_orm::{
 use crate::{
     db::Connection,
     entities::{
-        collection_mints, collections, drops, nft_transfers,
+        collection_mints, collections, customer_wallets, drops, nft_transfers,
         prelude::{CollectionMints, Purchases},
         project_wallets, purchases,
         sea_orm_active_enums::{Blockchain, CreationStatus},
@@ -22,8 +22,8 @@ use crate::{
         nft_events::Event as NftEvent,
         solana_nft_events::Event as SolanaNftsEvent,
         treasury_events::{
-            Blockchain as ProtoBlockchainEnum, Event as TreasuryEvent, PolygonTransactionResult,
-            ProjectWallet, TransactionStatus,
+            Blockchain as ProtoBlockchainEnum, CustomerWallet, Event as TreasuryEvent,
+            PolygonTransactionResult, ProjectWallet, TransactionStatus,
         },
         CreationStatus as NftCreationStatus, DropCreation, MintCreation, MintOwnershipUpdate,
         NftEventKey, NftEvents, SolanaCompletedMintTransaction, SolanaCompletedTransferTransaction,
@@ -76,6 +76,9 @@ impl Processor {
             Services::Treasury(TreasuryEventKey { id, .. }, e) => match e.event {
                 Some(TreasuryEvent::ProjectWalletCreated(payload)) => {
                     self.project_wallet_created(payload).await
+                },
+                Some(TreasuryEvent::CustomerWalletCreated(payload)) => {
+                    self.customer_wallet_created(id, payload).await
                 },
                 Some(
                     TreasuryEvent::PolygonCreateDropTxnSubmitted(payload)
@@ -180,6 +183,27 @@ impl Processor {
             .insert(conn)
             .await
             .context("failed to insert project wallet")?;
+
+        Ok(())
+    }
+
+    async fn customer_wallet_created(&self, id: String, payload: CustomerWallet) -> Result<()> {
+        let conn = self.db.get();
+
+        let blockchain = ProtoBlockchainEnum::from_i32(payload.blockchain)
+            .context("failed to get blockchain enum variant")?;
+
+        let active_model = customer_wallets::ActiveModel {
+            id: Set(id.parse()?),
+            customer_id: Set(payload.customer_id.parse()?),
+            address: Set(payload.address),
+            blockchain: Set(blockchain.try_into()?),
+        };
+
+        active_model
+            .insert(conn)
+            .await
+            .context("failed to insert customer wallet")?;
 
         Ok(())
     }

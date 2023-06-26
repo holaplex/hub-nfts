@@ -1,13 +1,16 @@
 use hub_core::{anyhow::Result, producer::Producer};
 
 use super::Event;
-use crate::proto::{
-    nft_events::Event::{
-        PolygonCreateDrop, PolygonMintDrop, PolygonRetryDrop, PolygonRetryMintDrop,
-        PolygonTransferAsset, PolygonUpdateDrop,
+use crate::{
+    nft_storage::Nft,
+    proto::{
+        nft_events::Event::{
+            PolygonCreateDrop, PolygonMintDrop, PolygonRetryDrop, PolygonRetryMintDrop,
+            PolygonTransferAsset, PolygonUpdateDrop,
+        },
+        CreateEditionTransaction, MintEditionTransaction, NftEventKey, NftEvents,
+        TransferPolygonAsset, UpdateEdtionTransaction,
     },
-    CreateEditionTransaction, MintEditionTransaction, NftEventKey, NftEvents, TransferPolygonAsset,
-    UpdateEdtionTransaction,
 };
 
 #[derive(Clone)]

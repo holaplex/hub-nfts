@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
+use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer, tracing::debug};
 use reqwest::Url;
 use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,7 @@ use crate::{
     objects::{CollectionCreator, Drop, MetadataJsonInput},
     proto::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, EditionInfo,
-        NftEventKey, NftEvents,
+        NftEventKey, NftEvents, PolygonEventKey, SolanaEventKey,
     },
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
@@ -112,9 +112,11 @@ impl Mutation {
 
         match input.blockchain {
             BlockchainEnum::Solana => {
+                debug!("creating drop on solana");
+
                 solana
                     .event()
-                    .create_drop(event_key, proto::MetaplexMasterEditionTransaction {
+                    .create_drop(event_key.into(), proto::MetaplexMasterEditionTransaction {
                         master_edition: Some(proto::MasterEdition {
                             owner_address,
                             supply: input.supply.map(TryInto::try_into).transpose()?,
@@ -134,7 +136,7 @@ impl Mutation {
             BlockchainEnum::Polygon => {
                 let amount = input.supply.ok_or(Error::new("supply is required"))?;
                 polygon
-                    .create_drop(event_key, proto::CreateEditionTransaction {
+                    .create_drop(event_key.into(), proto::CreateEditionTransaction {
                         amount: amount.try_into()?,
                         edition_info: Some(proto::EditionInfo {
                             creator: input
@@ -251,7 +253,7 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .retry_create_drop(event_key, proto::MetaplexMasterEditionTransaction {
+                    .retry_create_drop(event_key.into(), proto::MetaplexMasterEditionTransaction {
                         master_edition: Some(proto::MasterEdition {
                             owner_address,
                             supply: collection.supply.map(TryInto::try_into).transpose()?,
@@ -278,7 +280,7 @@ impl Mutation {
 
                 polygon
                     .event()
-                    .retry_create_drop(event_key, proto::CreateEditionTransaction {
+                    .retry_create_drop(event_key.into(), proto::CreateEditionTransaction {
                         edition_info: None,
                         amount,
                         fee_receiver: owner_address,
@@ -557,7 +559,7 @@ impl Mutation {
 
                 solana
                     .event()
-                    .update_drop(event_key, proto::MetaplexMasterEditionTransaction {
+                    .update_drop(event_key.into(), proto::MetaplexMasterEditionTransaction {
                         master_edition: Some(proto::MasterEdition {
                             owner_address,
                             supply: collection.supply.map(TryInto::try_into).transpose()?,
@@ -583,7 +585,7 @@ impl Mutation {
 
                 polygon
                     .event()
-                    .update_drop(event_key, proto::UpdateEdtionTransaction {
+                    .update_drop(event_key.into(), proto::UpdateEdtionTransaction {
                         edition_info: Some(EditionInfo {
                             description: metadata_json_model.description,
                             image_uri: metadata_json_model.image,
@@ -938,6 +940,38 @@ impl From<BlockchainEnum> for proto::Blockchain {
             BlockchainEnum::Ethereum => Self::Ethereum,
             BlockchainEnum::Polygon => Self::Polygon,
             BlockchainEnum::Solana => Self::Solana,
+        }
+    }
+}
+
+impl From<NftEventKey> for SolanaEventKey {
+    fn from(key: NftEventKey) -> Self {
+        let NftEventKey {
+            user_id,
+            project_id,
+            id,
+        } = key;
+
+        Self {
+            id,
+            user_id,
+            project_id,
+        }
+    }
+}
+
+impl From<NftEventKey> for PolygonEventKey {
+    fn from(key: NftEventKey) -> Self {
+        let NftEventKey {
+            user_id,
+            project_id,
+            id,
+        } = key;
+
+        Self {
+            id,
+            user_id,
+            project_id,
         }
     }
 }
