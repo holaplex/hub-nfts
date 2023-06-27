@@ -2,21 +2,22 @@ use hub_core::{anyhow::Result, producer::Producer};
 
 use super::Event;
 use crate::proto::{
-    solana_events::Event::{
-        CreateDrop, MintDrop, RetryDrop, RetryMintDrop, TransferAsset, UpdateDrop,
+    nft_events::Event::{
+        SolanaCreateDrop, SolanaMintDrop, SolanaRetryDrop, SolanaRetryMintDrop,
+        SolanaTransferAsset, SolanaUpdateDrop,
     },
-    MetaplexMasterEditionTransaction, MintMetaplexEditionTransaction, NftEventKey, SolanaEvents,
+    MetaplexMasterEditionTransaction, MintMetaplexEditionTransaction, NftEventKey, NftEvents,
     TransferMetaplexAssetTransaction,
 };
 
 #[derive(Clone)]
 pub struct Solana {
-    producer: Producer<SolanaEvents>,
+    producer: Producer<NftEvents>,
 }
 
 impl Solana {
     #[must_use]
-    pub fn new(producer: Producer<SolanaEvents>) -> Self {
+    pub fn new(producer: Producer<NftEvents>) -> Self {
         Self { producer }
     }
 
@@ -47,8 +48,8 @@ impl
         key: NftEventKey,
         payload: MetaplexMasterEditionTransaction,
     ) -> Result<()> {
-        let event = SolanaEvents {
-            event: Some(CreateDrop(payload)),
+        let event = NftEvents {
+            event: Some(SolanaCreateDrop(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
@@ -61,8 +62,8 @@ impl
         key: NftEventKey,
         payload: MetaplexMasterEditionTransaction,
     ) -> Result<()> {
-        let event = SolanaEvents {
-            event: Some(RetryDrop(payload)),
+        let event = NftEvents {
+            event: Some(SolanaRetryDrop(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
@@ -75,8 +76,8 @@ impl
         key: NftEventKey,
         payload: MetaplexMasterEditionTransaction,
     ) -> Result<()> {
-        let event = SolanaEvents {
-            event: Some(UpdateDrop(payload)),
+        let event = NftEvents {
+            event: Some(SolanaUpdateDrop(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
@@ -89,8 +90,8 @@ impl
         key: NftEventKey,
         payload: MintMetaplexEditionTransaction,
     ) -> Result<()> {
-        let event = SolanaEvents {
-            event: Some(MintDrop(payload)),
+        let event = NftEvents {
+            event: Some(SolanaMintDrop(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
@@ -103,8 +104,8 @@ impl
         key: NftEventKey,
         payload: MintMetaplexEditionTransaction,
     ) -> Result<()> {
-        let event = SolanaEvents {
-            event: Some(RetryMintDrop(payload)),
+        let event = NftEvents {
+            event: Some(SolanaRetryMintDrop(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
@@ -117,8 +118,8 @@ impl
         key: NftEventKey,
         payload: TransferMetaplexAssetTransaction,
     ) -> Result<()> {
-        let event: SolanaEvents = SolanaEvents {
-            event: Some(TransferAsset(payload)),
+        let event: NftEvents = NftEvents {
+            event: Some(SolanaTransferAsset(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
