@@ -1,29 +1,28 @@
 use std::str::FromStr;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{anyhow, chrono::Utc, credits::CreditsClient, producer::Producer};
-use mpl_token_metadata::state::Creator;
+use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
 use reqwest::Url;
 use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use solana_program::pubkey::Pubkey;
 
 use crate::{
-    blockchains::{
-        solana::{CreateDropRequest, RetryDropRequest, Solana, UpdateEditionRequest},
-        Edition, TransactionResponse,
-    },
+    blockchains::{polygon::Polygon, solana::Solana, Event},
     collection::Collection,
     db::Connection,
     entities::{
         collection_creators, collections, drops, metadata_jsons,
-        prelude::{Collections, Drops},
+        prelude::{CollectionCreators, Collections, Drops, MetadataJsons},
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
     objects::{CollectionCreator, Drop, MetadataJsonInput},
-    proto::{self, nft_events, NftEventKey, NftEvents},
+    proto::{
+        self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, EditionInfo,
+        NftEventKey, NftEvents,
+    },
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
 
@@ -47,91 +46,50 @@ impl Mutation {
             balance,
             ..
         } = ctx.data::<AppContext>()?;
-        let UserID(id) = user_id;
-        let OrganizationId(org) = organization_id;
-        let conn = db.get();
-        let producer = ctx.data::<Producer<NftEvents>>()?;
-        let credits = ctx.data::<CreditsClient<Actions>>()?;
-        let solana = ctx.data::<Solana>()?;
-        let nft_storage = ctx.data::<NftStorageClient>()?;
 
-        let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
-        let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
+        let user_id = user_id.0.ok_or(Error::new("X-USER-ID header not found"))?;
+        let org_id = organization_id
+            .0
+            .ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
         let balance = balance
             .0
-            .ok_or_else(|| Error::new("X-CREDIT-BALANCE header not found"))?;
+            .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
 
-        let wallet = project_wallets::Entity::find()
-            .filter(
-                project_wallets::Column::ProjectId
-                    .eq(input.project)
-                    .and(project_wallets::Column::Blockchain.eq(input.blockchain)),
-            )
-            .one(conn)
-            .await?;
+        let conn = db.get();
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
+        let solana = ctx.data::<Solana>()?;
+        let polygon = ctx.data::<Polygon>()?;
+        let nft_storage = ctx.data::<NftStorageClient>()?;
+        let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
-        let owner_address = wallet
-            .ok_or_else(|| {
-                Error::new(format!(
-                    "no project wallet found for {} blockchain",
-                    input.blockchain
-                ))
-            })?
-            .wallet_address;
+        let owner_address = fetch_owner(conn, input.project, input.blockchain).await?;
 
         input.validate()?;
 
+        if input.blockchain == BlockchainEnum::Solana {
+            validate_solana_creator_verification(&owner_address, &input.creators)?;
+        }
+
         let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
 
-        let collection = Collection::new(collections::ActiveModel {
+        let collection_am = collections::ActiveModel {
             blockchain: Set(input.blockchain),
             supply: Set(input.supply.map(TryFrom::try_from).transpose()?),
             creation_status: Set(CreationStatus::Pending),
             seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
             ..Default::default()
-        })
-        .creators(input.creators.clone())
-        .save(db)
-        .await?;
+        };
+
+        let collection = Collection::new(collection_am)
+            .creators(input.creators.clone())
+            .save(db)
+            .await?;
 
         let metadata_json = MetadataJson::new(input.metadata_json)
             .upload(nft_storage)
             .await?
             .save(collection.id, db)
             .await?;
-
-        let (
-            collection_address,
-            TransactionResponse {
-                serialized_message,
-                signed_message_signatures,
-            },
-        ) = match input.blockchain {
-            BlockchainEnum::Solana => {
-                solana
-                    .edition()
-                    .create(CreateDropRequest {
-                        owner_address,
-                        creators: input
-                            .creators
-                            .into_iter()
-                            .map(TryInto::try_into)
-                            .collect::<Result<Vec<Creator>>>()?,
-                        collection: collection.clone(),
-                        metadata_json,
-                    })
-                    .await?
-            },
-            BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
-                return Err(Error::new("blockchain not supported as this time"));
-            },
-        };
-
-        let mut collection_am: collections::ActiveModel = collection.clone().try_into()?;
-
-        collection_am.address = Set(Some(collection_address.to_string()));
-
-        let collection = collection_am.update(conn).await?;
 
         let drop = drops::ActiveModel {
             project_id: Set(input.project),
@@ -146,17 +104,59 @@ impl Mutation {
         };
 
         let drop_model = drop.insert(conn).await?;
+        let event_key = NftEventKey {
+            id: collection.id.to_string(),
+            user_id: user_id.to_string(),
+            project_id: input.project.to_string(),
+        };
 
-        emit_drop_transaction_event(
-            producer,
-            drop_model.id,
-            user_id,
-            serialized_message,
-            signed_message_signatures,
-            input.project,
-            input.blockchain,
-        )
-        .await?;
+        match input.blockchain {
+            BlockchainEnum::Solana => {
+                solana
+                    .event()
+                    .create_drop(event_key, proto::MetaplexMasterEditionTransaction {
+                        master_edition: Some(proto::MasterEdition {
+                            owner_address,
+                            supply: input.supply.map(TryInto::try_into).transpose()?,
+                            name: metadata_json.name,
+                            symbol: metadata_json.symbol,
+                            metadata_uri: metadata_json.uri,
+                            seller_fee_basis_points: seller_fee_basis_points.into(),
+                            creators: input
+                                .creators
+                                .into_iter()
+                                .map(TryFrom::try_from)
+                                .collect::<Result<_>>()?,
+                        }),
+                    })
+                    .await?;
+            },
+            BlockchainEnum::Polygon => {
+                let amount = input.supply.ok_or(Error::new("supply is required"))?;
+                polygon
+                    .create_drop(event_key, proto::CreateEditionTransaction {
+                        amount: amount.try_into()?,
+                        edition_info: Some(proto::EditionInfo {
+                            creator: input
+                                .creators
+                                .get(0)
+                                .ok_or(Error::new("creator is required"))?
+                                .clone()
+                                .address,
+                            collection: metadata_json.name,
+                            uri: metadata_json.uri,
+                            description: metadata_json.description,
+                            image_uri: metadata_json.image,
+                        }),
+                        fee_receiver: owner_address.clone(),
+                        fee_numerator: seller_fee_basis_points.into(),
+                    })
+                    .await?;
+            },
+            BlockchainEnum::Ethereum => {
+                return Err(Error::new("blockchain not supported as this time"));
+            },
+        };
 
         submit_pending_deduction(credits, db, DeductionParams {
             user_id,
@@ -167,6 +167,21 @@ impl Mutation {
             action: Actions::CreateDrop,
         })
         .await?;
+
+        nfts_producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::DropCreated(proto::DropCreation {
+                        status: NftCreationStatus::InProgress as i32,
+                    })),
+                }),
+                Some(&NftEventKey {
+                    id: drop_model.id.to_string(),
+                    project_id: input.project.to_string(),
+                    user_id: user_id.to_string(),
+                }),
+            )
+            .await?;
 
         Ok(CreateDropPayload {
             drop: Drop::new(drop_model, collection),
@@ -194,49 +209,87 @@ impl Mutation {
         } = ctx.data::<AppContext>()?;
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
-        let producer = ctx.data::<Producer<NftEvents>>()?;
+        let conn = db.get();
         let solana = ctx.data::<Solana>()?;
+        let polygon = ctx.data::<Polygon>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
-        let user_id = id.ok_or_else(|| Error::new("X-USER-ID header not found"))?;
-        let org_id = org.ok_or_else(|| Error::new("X-ORGANIZATION-ID header not found"))?;
+        let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
+        let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
         let balance = balance
             .0
-            .ok_or_else(|| Error::new("X-ORGANIZATION-BALANCE header not found"))?;
+            .ok_or(Error::new("X-ORGANIZATION-BALANCE header not found"))?;
         let (drop, collection) = Drops::find_by_id(input.drop)
             .find_also_related(Collections)
             .one(db.get())
             .await?
-            .ok_or_else(|| Error::new("drop not found"))?;
+            .ok_or(Error::new("drop not found"))?;
 
-        let collection = collection.ok_or_else(|| Error::new("collection not found"))?;
+        let collection = collection.ok_or(Error::new("collection not found"))?;
 
         if drop.creation_status == CreationStatus::Created {
             return Err(Error::new("drop already created"));
         }
 
-        let (
-            collection_address,
-            TransactionResponse {
-                serialized_message,
-                signed_message_signatures,
-            },
-        ) = match collection.blockchain {
+        let metadata_json = MetadataJsons::find_by_id(collection.id)
+            .one(conn)
+            .await?
+            .ok_or(Error::new("metadata json not found"))?;
+        let creators = CollectionCreators::find()
+            .filter(collection_creators::Column::CollectionId.eq(collection.id))
+            .all(conn)
+            .await?;
+
+        let owner_address = fetch_owner(conn, drop.project_id, collection.blockchain).await?;
+
+        let event_key = NftEventKey {
+            id: collection.id.to_string(),
+            user_id: user_id.to_string(),
+            project_id: drop.project_id.to_string(),
+        };
+
+        match collection.blockchain {
             BlockchainEnum::Solana => {
                 solana
-                    .edition()
-                    .retry_drop(RetryDropRequest {
-                        collection: collection.clone(),
+                    .event()
+                    .retry_create_drop(event_key, proto::MetaplexMasterEditionTransaction {
+                        master_edition: Some(proto::MasterEdition {
+                            owner_address,
+                            supply: collection.supply.map(TryInto::try_into).transpose()?,
+                            name: metadata_json.name,
+                            symbol: metadata_json.symbol,
+                            metadata_uri: metadata_json.uri,
+                            seller_fee_basis_points: collection.seller_fee_basis_points.into(),
+                            creators: creators
+                                .into_iter()
+                                .map(|c| proto::Creator {
+                                    address: c.address,
+                                    verified: c.verified,
+                                    share: c.share,
+                                })
+                                .collect(),
+                        }),
                     })
-                    .await?
+                    .await?;
             },
-            BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
+            BlockchainEnum::Polygon => {
+                let amount = collection
+                    .supply
+                    .ok_or(Error::new("Supply is null for polygon edition in db"))?;
+
+                polygon
+                    .event()
+                    .retry_create_drop(event_key, proto::CreateEditionTransaction {
+                        edition_info: None,
+                        amount,
+                        fee_receiver: owner_address,
+                        fee_numerator: collection.seller_fee_basis_points.into(),
+                    })
+                    .await?;
+            },
+            BlockchainEnum::Ethereum => {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
-
-        let mut collection_am: collections::ActiveModel = collection.clone().try_into()?;
-        collection_am.address = Set(Some(collection_address.to_string()));
-        let collection = collection_am.update(db.get()).await?;
 
         submit_pending_deduction(credits, db, DeductionParams {
             balance,
@@ -246,17 +299,6 @@ impl Mutation {
             blockchain: collection.blockchain,
             action: Actions::RetryDrop,
         })
-        .await?;
-
-        emit_retry_drop_event(
-            producer,
-            input.drop,
-            user_id,
-            serialized_message,
-            signed_message_signatures,
-            drop.project_id,
-            collection.blockchain,
-        )
         .await?;
 
         Ok(CreateDropPayload {
@@ -278,10 +320,12 @@ impl Mutation {
             .filter(drops::Column::Id.eq(input.drop))
             .one(conn)
             .await?
-            .ok_or_else(|| Error::new("drop not found"))?;
+            .ok_or(Error::new("drop not found"))?;
 
-        let collection_model = collection
-            .ok_or_else(|| Error::new(format!("no collection found for drop {}", input.drop)))?;
+        let collection_model = collection.ok_or(Error::new(format!(
+            "no collection found for drop {}",
+            input.drop
+        )))?;
 
         let mut drops_active_model: drops::ActiveModel = drop.into();
 
@@ -308,10 +352,12 @@ impl Mutation {
             .filter(drops::Column::Id.eq(input.drop))
             .one(conn)
             .await?
-            .ok_or_else(|| Error::new("drop not found"))?;
+            .ok_or(Error::new("drop not found"))?;
 
-        let collection_model = collection
-            .ok_or_else(|| Error::new(format!("no collection found for drop {}", input.drop)))?;
+        let collection_model = collection.ok_or(Error::new(format!(
+            "no collection found for drop {}",
+            input.drop
+        )))?;
 
         let mut drops_active_model: drops::ActiveModel = drop.into();
 
@@ -343,10 +389,12 @@ impl Mutation {
             .filter(drops::Column::Id.eq(input.drop))
             .one(conn)
             .await?
-            .ok_or_else(|| Error::new("drop not found"))?;
+            .ok_or(Error::new("drop not found"))?;
 
-        let collection_model = collection
-            .ok_or_else(|| Error::new(format!("no collection found for drop {}", input.drop)))?;
+        let collection_model = collection.ok_or(Error::new(format!(
+            "no collection found for drop {}",
+            input.drop
+        )))?;
 
         let mut drops_active_model: drops::ActiveModel = drop.into();
 
@@ -379,13 +427,11 @@ impl Mutation {
 
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let conn = db.get();
-        let producer = ctx.data::<Producer<NftEvents>>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
         let solana = ctx.data::<Solana>()?;
+        let polygon = ctx.data::<Polygon>()?;
 
-        let user_id = user_id
-            .0
-            .ok_or_else(|| Error::new("X-USER-ID header not found"))?;
+        let user_id = user_id.0.ok_or(Error::new("X-USER-ID header not found"))?;
 
         let (drop_model, collection_model) = Drops::find()
             .join(JoinType::InnerJoin, drops::Relation::Collections.def())
@@ -393,16 +439,23 @@ impl Mutation {
             .filter(drops::Column::Id.eq(id))
             .one(conn)
             .await?
-            .ok_or_else(|| Error::new("drop not found"))?;
+            .ok_or(Error::new("drop not found"))?;
 
-        let collection = collection_model.ok_or_else(|| Error::new("collection not found"))?;
+        let collection = collection_model.ok_or(Error::new("collection not found"))?;
+
+        let owner_address = fetch_owner(conn, drop_model.project_id, collection.blockchain).await?;
 
         validate_end_time(&input.end_time.clone())?;
+
         if let Some(creators) = &creators {
             validate_creators(collection.blockchain, creators)?;
+
+            if collection.blockchain == BlockchainEnum::Solana {
+                validate_solana_creator_verification(&owner_address, creators)?;
+            }
         }
         if let Some(metadata_json) = &metadata_json {
-            validate_json(metadata_json)?;
+            validate_json(collection.blockchain, metadata_json)?;
         }
 
         let mut collection_am: collections::ActiveModel = collection.into();
@@ -434,10 +487,9 @@ impl Mutation {
             })
             .transpose()?);
 
-        if creators.clone().is_some() {
+        if let Some(creators) = creators.clone() {
             let creators = creators
                 .clone()
-                .unwrap_or_default()
                 .into_iter()
                 .map(|creator| {
                     Ok(collection_creators::ActiveModel {
@@ -447,7 +499,7 @@ impl Mutation {
                         share: Set(creator.share.try_into()?),
                     })
                 })
-                .collect::<anyhow::Result<Vec<collection_creators::ActiveModel>>>()?;
+                .collect::<Result<Vec<_>>>()?;
 
             conn.transaction::<_, (), DbErr>(|txn| {
                 Box::pin(async move {
@@ -466,24 +518,13 @@ impl Mutation {
             .await?;
         }
 
-        drop_am.update(conn).await?;
-
-        let owner_address = project_wallets::Entity::find()
-            .filter(
-                project_wallets::Column::ProjectId
-                    .eq(drop_model.project_id)
-                    .and(project_wallets::Column::Blockchain.eq(BlockchainEnum::Solana)),
-            )
-            .one(conn)
-            .await?
-            .ok_or_else(|| Error::new("no project wallet found"))?
-            .wallet_address;
+        let drop_model = drop_am.update(conn).await?;
 
         let metadata_json_model = metadata_jsons::Entity::find()
             .filter(metadata_jsons::Column::Id.eq(collection.id))
             .one(conn)
             .await?
-            .ok_or_else(|| Error::new("metadata json not found"))?;
+            .ok_or(Error::new("metadata json not found"))?;
 
         let metadata_json_model = if let Some(metadata_json) = metadata_json {
             metadata_json_model.clone().delete(conn).await?;
@@ -497,167 +538,71 @@ impl Mutation {
             metadata_json_model
         };
 
-        let (
-            _,
-            TransactionResponse {
-                serialized_message,
-                signed_message_signatures,
-            },
-        ) = match collection.blockchain {
+        let event_key = NftEventKey {
+            id: collection.id.to_string(),
+            user_id: user_id.to_string(),
+            project_id: drop_model.project_id.to_string(),
+        };
+
+        match collection.blockchain {
             BlockchainEnum::Solana => {
-                let creators = if creators.clone().is_some() {
+                let creators = if let Some(creators) = creators.clone() {
                     creators
-                        .unwrap_or_default()
                         .into_iter()
-                        .map(TryInto::try_into)
-                        .collect::<Result<Vec<Creator>, _>>()?
+                        .map(TryFrom::try_from)
+                        .collect::<Result<_>>()?
                 } else {
-                    current_creators
-                        .into_iter()
-                        .map(TryInto::try_into)
-                        .collect::<Result<Vec<Creator>, _>>()?
+                    current_creators.into_iter().map(Into::into).collect()
                 };
 
                 solana
-                    .edition()
-                    .update(UpdateEditionRequest {
-                        collection: collection.id,
-                        owner_address,
-                        seller_fee_basis_points,
-                        name: metadata_json_model.name,
-                        symbol: metadata_json_model.symbol,
-                        uri: metadata_json_model.uri,
-                        creators,
+                    .event()
+                    .update_drop(event_key, proto::MetaplexMasterEditionTransaction {
+                        master_edition: Some(proto::MasterEdition {
+                            owner_address,
+                            supply: collection.supply.map(TryInto::try_into).transpose()?,
+                            name: metadata_json_model.name,
+                            symbol: metadata_json_model.symbol,
+                            metadata_uri: metadata_json_model.uri,
+                            seller_fee_basis_points: collection.seller_fee_basis_points.into(),
+                            creators,
+                        }),
                     })
-                    .await?
+                    .await?;
             },
-            _ => {
+            BlockchainEnum::Polygon => {
+                let creator = if let Some(creators) = creators {
+                    creators[0].address.clone()
+                } else {
+                    current_creators
+                        .get(0)
+                        .ok_or(Error::new("No current creator found in db"))?
+                        .address
+                        .clone()
+                };
+
+                polygon
+                    .event()
+                    .update_drop(event_key, proto::UpdateEdtionTransaction {
+                        edition_info: Some(EditionInfo {
+                            description: metadata_json_model.description,
+                            image_uri: metadata_json_model.image,
+                            collection: metadata_json_model.name,
+                            uri: metadata_json_model.uri,
+                            creator,
+                        }),
+                    })
+                    .await?;
+            },
+            BlockchainEnum::Ethereum => {
                 return Err(Error::new("blockchain not supported yet"));
             },
         };
-
-        emit_update_metadata_transaction_event(
-            producer,
-            collection.id,
-            user_id,
-            serialized_message,
-            signed_message_signatures,
-            drop_model.id,
-            drop_model.project_id,
-            collection.blockchain,
-        )
-        .await?;
 
         Ok(PatchDropPayload {
             drop: Drop::new(drop_model, collection),
         })
     }
-}
-
-/// This functions emits the retry drop transaction event
-/// # Errors
-/// This function fails if producer is unable to send the event
-async fn emit_retry_drop_event(
-    producer: &Producer<NftEvents>,
-    id: Uuid,
-    user_id: Uuid,
-    serialized_message: Vec<u8>,
-    signatures: Vec<String>,
-    project_id: Uuid,
-    blockchain: BlockchainEnum,
-) -> Result<()> {
-    let proto_blockchain_enum: proto::Blockchain = blockchain.into();
-
-    let event = NftEvents {
-        event: Some(nft_events::Event::RetryDrop(proto::DropTransaction {
-            transaction: Some(proto::Transaction {
-                serialized_message,
-                signed_message_signatures: signatures,
-                blockchain: proto_blockchain_enum as i32,
-            }),
-
-            project_id: project_id.to_string(),
-        })),
-    };
-    let key = NftEventKey {
-        id: id.to_string(),
-        user_id: user_id.to_string(),
-    };
-
-    producer.send(Some(&event), Some(&key)).await?;
-
-    Ok(())
-}
-
-/// This functions emits the drop transaction event
-/// # Errors
-/// This function fails if producer is unable to sent the event
-async fn emit_drop_transaction_event(
-    producer: &Producer<NftEvents>,
-    id: Uuid,
-    user_id: Uuid,
-    serialized_message: Vec<u8>,
-    signatures: Vec<String>,
-    project_id: Uuid,
-    blockchain: BlockchainEnum,
-) -> Result<()> {
-    let proto_blockchain_enum: proto::Blockchain = blockchain.into();
-
-    let event = NftEvents {
-        event: Some(nft_events::Event::CreateDrop(proto::DropTransaction {
-            transaction: Some(proto::Transaction {
-                serialized_message,
-                signed_message_signatures: signatures,
-                blockchain: proto_blockchain_enum as i32,
-            }),
-
-            project_id: project_id.to_string(),
-        })),
-    };
-    let key = NftEventKey {
-        id: id.to_string(),
-        user_id: user_id.to_string(),
-    };
-
-    producer.send(Some(&event), Some(&key)).await?;
-
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn emit_update_metadata_transaction_event(
-    producer: &Producer<NftEvents>,
-    id: Uuid,
-    user_id: Uuid,
-    serialized_message: Vec<u8>,
-    signatures: Vec<String>,
-    project_id: Uuid,
-    drop_id: Uuid,
-    blockchain: BlockchainEnum,
-) -> Result<()> {
-    let proto_blockchain_enum: proto::Blockchain = blockchain.into();
-
-    let event = NftEvents {
-        event: Some(nft_events::Event::UpdateMetadata(
-            proto::UpdateMetadataTransaction {
-                transaction: Some(proto::Transaction {
-                    serialized_message,
-                    signed_message_signatures: signatures,
-                    blockchain: proto_blockchain_enum as i32,
-                }),
-                drop_id: drop_id.to_string(),
-                project_id: project_id.to_string(),
-            },
-        )),
-    };
-    let key = NftEventKey {
-        id: id.to_string(),
-        user_id: user_id.to_string(),
-    };
-
-    producer.send(Some(&event), Some(&key)).await?;
-
-    Ok(())
 }
 
 struct DeductionParams {
@@ -686,36 +631,52 @@ async fn submit_pending_deduction(
     let drop_model = drops::Entity::find_by_id(drop)
         .one(db.get())
         .await?
-        .ok_or_else(|| Error::new("drop not found"))?;
+        .ok_or(Error::new("drop not found"))?;
 
     if drop_model.credits_deduction_id.is_some() {
         return Ok(());
     }
 
     let id = match blockchain {
-        BlockchainEnum::Solana => {
+        BlockchainEnum::Solana | BlockchainEnum::Polygon => {
             credits
-                .submit_pending_deduction(
-                    org_id,
-                    user_id,
-                    action,
-                    hub_core::credits::Blockchain::Solana,
-                    balance,
-                )
+                .submit_pending_deduction(org_id, user_id, action, blockchain.into(), balance)
                 .await?
         },
-        _ => {
+        BlockchainEnum::Ethereum => {
             return Err(Error::new("blockchain not supported yet"));
         },
     };
 
-    let deduction_id = id.ok_or_else(|| Error::new("failed to generate credits deduction id"))?;
+    let deduction_id = id.ok_or(Error::new("Organization does not have enough credits"))?;
 
     let mut drop: drops::ActiveModel = drop_model.into();
     drop.credits_deduction_id = Set(Some(deduction_id.0));
     drop.update(db.get()).await?;
 
     Ok(())
+}
+
+async fn fetch_owner(
+    conn: &DatabaseConnection,
+    project: Uuid,
+    blockchain: BlockchainEnum,
+) -> Result<String> {
+    let wallet = project_wallets::Entity::find()
+        .filter(
+            project_wallets::Column::ProjectId
+                .eq(project)
+                .and(project_wallets::Column::Blockchain.eq(blockchain)),
+        )
+        .one(conn)
+        .await?;
+
+    let owner = wallet
+        .ok_or(Error::new(format!(
+            "no project wallet found for {blockchain} blockchain"
+        )))?
+        .wallet_address;
+    Ok(owner)
 }
 
 #[derive(Debug, Clone, SimpleObject)]
@@ -755,7 +716,7 @@ impl CreateDropInput {
 
         validate_end_time(&self.end_time)?;
         validate_creators(self.blockchain, &self.creators)?;
-        validate_json(&self.metadata_json)?;
+        validate_json(self.blockchain, &self.metadata_json)?;
 
         Ok(())
     }
@@ -778,6 +739,23 @@ fn validate_end_time(end_time: &Option<DateTimeWithTimeZone>) -> Result<()> {
     Ok(())
 }
 
+fn validate_solana_creator_verification(
+    project_treasury_wallet_address: &str,
+    creators: &Vec<CollectionCreator>,
+) -> Result<()> {
+    for creator in creators {
+        if creator.verified.unwrap_or_default()
+            && creator.address != project_treasury_wallet_address
+        {
+            return Err(Error::new(format!(
+                "Only the project treasury wallet of {project_treasury_wallet_address} can be verified in the mutation. Other creators must be verified independently. See the Metaplex documentation for more details."
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 /// Validates the addresses of the creators for a given blockchain.
 /// # Returns
 /// - Ok(()) if all creator addresses are valid blockchain addresses.
@@ -786,8 +764,22 @@ fn validate_end_time(end_time: &Option<DateTimeWithTimeZone>) -> Result<()> {
 /// - Err with an appropriate error message if any creator address is not a valid address.
 /// - Err if the blockchain is not supported.
 fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreator>) -> Result<()> {
+    let royalty_share = creators.iter().map(|c| c.share).sum::<u8>();
+
+    if royalty_share != 100 {
+        return Err(Error::new(
+            "The sum of all creator shares must be equal to 100",
+        ));
+    }
+
     match blockchain {
         BlockchainEnum::Solana => {
+            if creators.len() > 5 {
+                return Err(Error::new(
+                    "Maximum number of creators is 5 for Solana Blockchain",
+                ));
+            }
+
             for creator in creators {
                 if Pubkey::from_str(&creator.address).is_err() {
                     return Err(Error::new(format!(
@@ -797,10 +789,39 @@ fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreato
                 }
             }
         },
-        _ => return Err(Error::new("Blockchain not supported yet")),
+        BlockchainEnum::Polygon => {
+            if creators.len() != 1 {
+                return Err(Error::new(
+                    "Only one creator is allowed for Polygon Blockchain",
+                ));
+            }
+
+            let address = &creators[0].clone().address;
+            if !is_valid_evm_address(address) {
+                return Err(Error::new(format!(
+                    "{address} is not a valid Polygon address",
+                )));
+            }
+        },
+        BlockchainEnum::Ethereum => return Err(Error::new("Blockchain not supported yet")),
     }
 
     Ok(())
+}
+
+fn is_valid_evm_address(address: &str) -> bool {
+    // Ethereum address must start with '0x'
+    if !address.starts_with("0x") {
+        return false;
+    }
+
+    // Ethereum address must be exactly 40 characters long after removing '0x'
+    if address.len() != 42 {
+        return false;
+    }
+
+    // Check that the address contains only hexadecimal characters
+    address[2..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Validates the JSON metadata input for the NFT drop.
@@ -809,16 +830,32 @@ fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreato
 ///
 /// # Errors
 /// - Err with an appropriate error message if any JSON field is invalid.
-fn validate_json(json: &MetadataJsonInput) -> Result<()> {
-    if let Some(animation_url) = json.animation_url.as_ref() {
-        Url::from_str(animation_url).map_err(|_| Error::new("Invalid animation url"))?;
-    }
+fn validate_json(blockchain: BlockchainEnum, json: &MetadataJsonInput) -> Result<()> {
+    json.animation_url
+        .as_ref()
+        .map(|animation_url| Url::from_str(animation_url))
+        .transpose()
+        .map_err(|_| Error::new("Invalid animation url"))?;
 
-    if let Some(external_url) = json.external_url.as_ref() {
-        Url::from_str(external_url).map_err(|_| Error::new("Invalid external url"))?;
-    }
+    json.external_url
+        .as_ref()
+        .map(|external_url| Url::from_str(external_url))
+        .transpose()
+        .map_err(|_| Error::new("Invalid external url"))?;
 
     Url::from_str(&json.image).map_err(|_| Error::new("Invalid image url"))?;
+
+    if blockchain != BlockchainEnum::Solana {
+        return Ok(());
+    }
+
+    if json.name.chars().count() > 32 {
+        return Err(Error::new("Name must be less than 32 characters"));
+    }
+
+    if json.symbol.chars().count() > 10 {
+        return Err(Error::new("Symbol must be less than 10 characters"));
+    }
 
     Ok(())
 }
@@ -831,24 +868,6 @@ pub struct RetryDropInput {
 #[derive(Debug, Clone, SimpleObject)]
 pub struct RetryDropPayload {
     drop: Drop,
-}
-
-impl TryFrom<CollectionCreator> for Creator {
-    type Error = Error;
-
-    fn try_from(
-        CollectionCreator {
-            address,
-            verified,
-            share,
-        }: CollectionCreator,
-    ) -> Result<Self> {
-        Ok(Self {
-            address: address.parse()?,
-            verified: verified.unwrap_or_default(),
-            share,
-        })
-    }
 }
 
 /// Input object for patching a drop and associated collection by ID

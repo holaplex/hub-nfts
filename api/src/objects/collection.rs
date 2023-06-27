@@ -24,6 +24,8 @@ pub struct Collection {
     /// The creation status of the collection. When the collection is in a `CREATED` status you can mint NFTs from the collection.
     pub creation_status: CreationStatus,
     /// The blockchain address of the collection used to view it in blockchain explorers.
+    /// On Solana this is the mint address.
+    /// On EVM chains it is the concatenation of the contract address and the token id `{contractAddress}:{tokenId}`.
     pub address: Option<String>,
     /// The current number of NFTs minted from the collection.
     pub total_mints: i64,
@@ -55,6 +57,8 @@ impl Collection {
     }
 
     /// The blockchain address of the collection used to view it in blockchain explorers.
+    /// On Solana this is the mint address.
+    /// On EVM chains it is the concatenation of the contract address and the token id `{contractAddress}:{tokenId}`.
     async fn address(&self) -> Option<String> {
         self.address.clone()
     }
@@ -133,10 +137,10 @@ impl From<Model> for Collection {
             blockchain,
             supply,
             creation_status,
-            address,
             total_mints,
             signature,
             seller_fee_basis_points,
+            address,
         }: Model,
     ) -> Self {
         Self {

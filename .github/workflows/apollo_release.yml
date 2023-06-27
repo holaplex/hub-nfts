@@ -15,6 +15,7 @@ jobs:
     runs-on: amd64
 
     steps:
+      - uses: actions/checkout@v3
       - name: Install dependencies
         run: |
           sudo apt-get update -y && \
@@ -24,10 +25,11 @@ jobs:
             libsasl2-dev \
             libssl-dev \
             libudev-dev \
-            pkg-config \
-            protobuf-compiler
+            pkg-config
 
-      - uses: actions/checkout@v3
+      - name: Get protoc from github releases
+        run: |
+          sudo ./ci/get-protoc.sh
 
       - uses: isbang/compose-action@v1.4.1
         name: Start docker-compose
@@ -55,12 +57,6 @@ jobs:
 
       - name: Cargo Build
         run: cargo build --bin holaplex-${{ github.event.repository.name }}
-
-      - name: Setup Solana tools
-        run: |
-          sh -c "$(curl -sSfL https://release.solana.com/v1.15.2/install)"
-          export PATH="/home/runner/.local/share/solana/install/active_release/bin:$PATH"
-          solana-keygen new --silent --outfile keypair.json --no-bip39-passphrase
 
       - name: Cargo run
         env:

@@ -6,5 +6,5 @@ pub use super::{
     metadata_json_attributes::Entity as MetadataJsonAttributes,
     metadata_json_files::Entity as MetadataJsonFiles, metadata_jsons::Entity as MetadataJsons,
     nft_transfers::Entity as NftTransfers, project_wallets::Entity as ProjectWallets,
-    purchases::Entity as Purchases, solana_collections::Entity as SolanaCollections,
+    purchases::Entity as Purchases,
 };

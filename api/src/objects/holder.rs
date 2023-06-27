@@ -19,7 +19,7 @@ pub struct Holder {
 #[ComplexObject]
 impl Holder {
     /// The specific mints from the collection that the holder owns.
-    async fn mints(&self, ctx: &Context<'_>) -> Result<Vec<String>> {
+    async fn mints(&self, ctx: &Context<'_>) -> Result<Vec<Uuid>> {
         let AppContext {
             collection_mints_loader,
             ..
@@ -32,7 +32,7 @@ impl Holder {
 
         Ok(mints.into_iter().fold(Vec::new(), |mut acc, mint| {
             if mint.owner == self.address {
-                acc.push(mint.address);
+                acc.push(mint.id);
             }
 
             acc

@@ -1,10 +1,8 @@
 //!
 
-use std::{fs::File, sync::Arc};
-
 use async_graphql::futures_util::StreamExt;
 use holaplex_hub_nfts::{
-    blockchains::solana::Solana,
+    blockchains::{polygon::Polygon, solana::Solana},
     build_schema,
     db::Connection,
     events,
@@ -18,7 +16,6 @@ use hub_core::{
     tracing::{info, warn},
 };
 use poem::{get, listener::TcpListener, middleware::AddData, post, EndpointExt, Route, Server};
-use solana_client::rpc_client::RpcClient;
 
 pub fn main() {
     let opts = hub_core::StartConfig {
@@ -28,7 +25,6 @@ pub fn main() {
     hub_core::run(opts, |common, args| {
         let Args {
             port,
-            solana,
             db,
             nft_storage,
         } = args;
@@ -40,22 +36,26 @@ pub fn main() {
 
             let schema = build_schema();
 
-            let producer = common.producer_cfg.build::<proto::NftEvents>().await?;
+            let producer = common
+                .producer_cfg
+                .clone()
+                .build::<proto::NftEvents>()
+                .await?;
             let credits = common.credits_cfg.build::<Actions>().await?;
             let nft_storage = NftStorageClient::new(nft_storage)?;
+            let event_processor =
+                events::Processor::new(connection.clone(), credits.clone(), producer.clone());
 
-            let solana_rpc = Arc::new(RpcClient::new(solana.solana_endpoint));
-            let f = File::open(solana.solana_keypair_path).expect("unable to locate keypair file");
-            let solana_keypair: Vec<u8> =
-                serde_json::from_reader(f).expect("unable to read keypair bytes from the file");
-            let solana_blockchain = Solana::new(solana_rpc, connection.clone(), solana_keypair);
+            let solana = Solana::new(producer.clone());
+            let polygon = Polygon::new(producer.clone());
 
             let state = AppState::new(
                 schema,
                 connection.clone(),
                 producer.clone(),
                 credits.clone(),
-                solana_blockchain,
+                solana,
+                polygon,
                 nft_storage,
                 common.asset_proxy,
             );
@@ -66,16 +66,13 @@ pub fn main() {
                 {
                     let mut stream = cons.stream();
                     loop {
-                        let connection = connection.clone();
-                        let credits = credits.clone();
+                        let event_processor = event_processor.clone();
 
                         match stream.next().await {
                             Some(Ok(msg)) => {
                                 info!(?msg, "message received");
 
-                                tokio::spawn(async move {
-                                    events::process(msg, connection.clone(), credits.clone()).await
-                                });
+                                tokio::spawn(async move { event_processor.process(msg).await });
                                 task::yield_now().await;
                             },
                             None => (),
