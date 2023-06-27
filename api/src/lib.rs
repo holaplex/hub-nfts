@@ -56,14 +56,6 @@ impl hub_core::producer::Message for proto::NftEvents {
     type Key = proto::NftEventKey;
 }
 
-impl hub_core::producer::Message for proto::SolanaEvents {
-    type Key = proto::NftEventKey;
-}
-
-impl hub_core::producer::Message for proto::PolygonEvents {
-    type Key = proto::NftEventKey;
-}
-
 #[derive(Debug)]
 pub enum Services {
     Treasury(proto::TreasuryEventKey, proto::TreasuryEvents),

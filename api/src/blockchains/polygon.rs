@@ -2,21 +2,22 @@ use hub_core::{anyhow::Result, producer::Producer};
 
 use super::Event;
 use crate::proto::{
-    polygon_events::Event::{
-        CreateDrop, MintDrop, RetryDrop, RetryMintDrop, TransferAsset, UpdateDrop,
+    nft_events::Event::{
+        PolygonCreateDrop, PolygonMintDrop, PolygonRetryDrop, PolygonRetryMintDrop,
+        PolygonTransferAsset, PolygonUpdateDrop,
     },
-    CreateEditionTransaction, MintEditionTransaction, NftEventKey, PolygonEvents,
-    TransferPolygonAsset, UpdateEdtionTransaction,
+    CreateEditionTransaction, MintEditionTransaction, NftEventKey, NftEvents, TransferPolygonAsset,
+    UpdateEdtionTransaction,
 };
 
 #[derive(Clone)]
 pub struct Polygon {
-    producer: Producer<PolygonEvents>,
+    producer: Producer<NftEvents>,
 }
 
 impl Polygon {
     #[must_use]
-    pub fn new(producer: Producer<PolygonEvents>) -> Self {
+    pub fn new(producer: Producer<NftEvents>) -> Self {
         Self { producer }
     }
 
@@ -43,8 +44,8 @@ impl
     > for Polygon
 {
     async fn create_drop(&self, key: NftEventKey, payload: CreateEditionTransaction) -> Result<()> {
-        let event = PolygonEvents {
-            event: Some(CreateDrop(payload)),
+        let event = NftEvents {
+            event: Some(PolygonCreateDrop(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
@@ -57,8 +58,8 @@ impl
         key: NftEventKey,
         payload: CreateEditionTransaction,
     ) -> Result<()> {
-        let event = PolygonEvents {
-            event: Some(RetryDrop(payload)),
+        let event = NftEvents {
+            event: Some(PolygonRetryDrop(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
@@ -67,8 +68,8 @@ impl
     }
 
     async fn update_drop(&self, key: NftEventKey, payload: UpdateEdtionTransaction) -> Result<()> {
-        let event = PolygonEvents {
-            event: Some(UpdateDrop(payload)),
+        let event = NftEvents {
+            event: Some(PolygonUpdateDrop(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
@@ -77,8 +78,8 @@ impl
     }
 
     async fn mint_drop(&self, key: NftEventKey, payload: MintEditionTransaction) -> Result<()> {
-        let event = PolygonEvents {
-            event: Some(MintDrop(payload)),
+        let event = NftEvents {
+            event: Some(PolygonMintDrop(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
@@ -91,8 +92,8 @@ impl
         key: NftEventKey,
         payload: MintEditionTransaction,
     ) -> Result<()> {
-        let event = PolygonEvents {
-            event: Some(RetryMintDrop(payload)),
+        let event = NftEvents {
+            event: Some(PolygonRetryMintDrop(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
@@ -101,8 +102,8 @@ impl
     }
 
     async fn transfer_asset(&self, key: NftEventKey, payload: TransferPolygonAsset) -> Result<()> {
-        let event = PolygonEvents {
-            event: Some(TransferAsset(payload)),
+        let event = NftEvents {
+            event: Some(PolygonTransferAsset(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
