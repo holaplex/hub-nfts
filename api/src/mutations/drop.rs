@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer, tracing::debug};
+use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
 use reqwest::Url;
 use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,7 @@ use crate::{
     objects::{CollectionCreator, Drop, MetadataJsonInput},
     proto::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, EditionInfo,
-        NftEventKey, NftEvents, PolygonEventKey, SolanaEventKey,
+        NftEventKey, NftEvents,
     },
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
@@ -112,47 +112,51 @@ impl Mutation {
 
         match input.blockchain {
             BlockchainEnum::Solana => {
-                debug!("creating drop on solana");
-
                 solana
                     .event()
-                    .create_drop(event_key.into(), proto::MetaplexMasterEditionTransaction {
-                        master_edition: Some(proto::MasterEdition {
-                            owner_address,
-                            supply: input.supply.map(TryInto::try_into).transpose()?,
-                            name: metadata_json.name,
-                            symbol: metadata_json.symbol,
-                            metadata_uri: metadata_json.uri,
-                            seller_fee_basis_points: seller_fee_basis_points.into(),
-                            creators: input
-                                .creators
-                                .into_iter()
-                                .map(TryFrom::try_from)
-                                .collect::<Result<_>>()?,
-                        }),
-                    })
+                    .create_drop(
+                        event_key,
+                        proto::MetaplexMasterEditionTransaction {
+                            master_edition: Some(proto::MasterEdition {
+                                owner_address,
+                                supply: input.supply.map(TryInto::try_into).transpose()?,
+                                name: metadata_json.name,
+                                symbol: metadata_json.symbol,
+                                metadata_uri: metadata_json.uri,
+                                seller_fee_basis_points: seller_fee_basis_points.into(),
+                                creators: input
+                                    .creators
+                                    .into_iter()
+                                    .map(TryFrom::try_from)
+                                    .collect::<Result<_>>()?,
+                            }),
+                        },
+                    )
                     .await?;
             },
             BlockchainEnum::Polygon => {
                 let amount = input.supply.ok_or(Error::new("supply is required"))?;
                 polygon
-                    .create_drop(event_key.into(), proto::CreateEditionTransaction {
-                        amount: amount.try_into()?,
-                        edition_info: Some(proto::EditionInfo {
-                            creator: input
-                                .creators
-                                .get(0)
-                                .ok_or(Error::new("creator is required"))?
-                                .clone()
-                                .address,
-                            collection: metadata_json.name,
-                            uri: metadata_json.uri,
-                            description: metadata_json.description,
-                            image_uri: metadata_json.image,
-                        }),
-                        fee_receiver: owner_address.clone(),
-                        fee_numerator: seller_fee_basis_points.into(),
-                    })
+                    .create_drop(
+                        event_key,
+                        proto::CreateEditionTransaction {
+                            amount: amount.try_into()?,
+                            edition_info: Some(proto::EditionInfo {
+                                creator: input
+                                    .creators
+                                    .get(0)
+                                    .ok_or(Error::new("creator is required"))?
+                                    .clone()
+                                    .address,
+                                collection: metadata_json.name,
+                                uri: metadata_json.uri,
+                                description: metadata_json.description,
+                                image_uri: metadata_json.image,
+                            }),
+                            fee_receiver: owner_address.clone(),
+                            fee_numerator: seller_fee_basis_points.into(),
+                        },
+                    )
                     .await?;
             },
             BlockchainEnum::Ethereum => {
@@ -160,14 +164,18 @@ impl Mutation {
             },
         };
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            user_id,
-            org_id,
-            balance,
-            drop: drop_model.id,
-            blockchain: input.blockchain,
-            action: Actions::CreateDrop,
-        })
+        submit_pending_deduction(
+            credits,
+            db,
+            DeductionParams {
+                user_id,
+                org_id,
+                balance,
+                drop: drop_model.id,
+                blockchain: input.blockchain,
+                action: Actions::CreateDrop,
+            },
+        )
         .await?;
 
         nfts_producer
@@ -253,24 +261,27 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .retry_create_drop(event_key.into(), proto::MetaplexMasterEditionTransaction {
-                        master_edition: Some(proto::MasterEdition {
-                            owner_address,
-                            supply: collection.supply.map(TryInto::try_into).transpose()?,
-                            name: metadata_json.name,
-                            symbol: metadata_json.symbol,
-                            metadata_uri: metadata_json.uri,
-                            seller_fee_basis_points: collection.seller_fee_basis_points.into(),
-                            creators: creators
-                                .into_iter()
-                                .map(|c| proto::Creator {
-                                    address: c.address,
-                                    verified: c.verified,
-                                    share: c.share,
-                                })
-                                .collect(),
-                        }),
-                    })
+                    .retry_create_drop(
+                        event_key,
+                        proto::MetaplexMasterEditionTransaction {
+                            master_edition: Some(proto::MasterEdition {
+                                owner_address,
+                                supply: collection.supply.map(TryInto::try_into).transpose()?,
+                                name: metadata_json.name,
+                                symbol: metadata_json.symbol,
+                                metadata_uri: metadata_json.uri,
+                                seller_fee_basis_points: collection.seller_fee_basis_points.into(),
+                                creators: creators
+                                    .into_iter()
+                                    .map(|c| proto::Creator {
+                                        address: c.address,
+                                        verified: c.verified,
+                                        share: c.share,
+                                    })
+                                    .collect(),
+                            }),
+                        },
+                    )
                     .await?;
             },
             BlockchainEnum::Polygon => {
@@ -280,12 +291,15 @@ impl Mutation {
 
                 polygon
                     .event()
-                    .retry_create_drop(event_key.into(), proto::CreateEditionTransaction {
-                        edition_info: None,
-                        amount,
-                        fee_receiver: owner_address,
-                        fee_numerator: collection.seller_fee_basis_points.into(),
-                    })
+                    .retry_create_drop(
+                        event_key,
+                        proto::CreateEditionTransaction {
+                            edition_info: None,
+                            amount,
+                            fee_receiver: owner_address,
+                            fee_numerator: collection.seller_fee_basis_points.into(),
+                        },
+                    )
                     .await?;
             },
             BlockchainEnum::Ethereum => {
@@ -293,14 +307,18 @@ impl Mutation {
             },
         };
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            balance,
-            user_id,
-            org_id,
-            drop: drop.id,
-            blockchain: collection.blockchain,
-            action: Actions::RetryDrop,
-        })
+        submit_pending_deduction(
+            credits,
+            db,
+            DeductionParams {
+                balance,
+                user_id,
+                org_id,
+                drop: drop.id,
+                blockchain: collection.blockchain,
+                action: Actions::RetryDrop,
+            },
+        )
         .await?;
 
         Ok(CreateDropPayload {
@@ -559,17 +577,20 @@ impl Mutation {
 
                 solana
                     .event()
-                    .update_drop(event_key.into(), proto::MetaplexMasterEditionTransaction {
-                        master_edition: Some(proto::MasterEdition {
-                            owner_address,
-                            supply: collection.supply.map(TryInto::try_into).transpose()?,
-                            name: metadata_json_model.name,
-                            symbol: metadata_json_model.symbol,
-                            metadata_uri: metadata_json_model.uri,
-                            seller_fee_basis_points: collection.seller_fee_basis_points.into(),
-                            creators,
-                        }),
-                    })
+                    .update_drop(
+                        event_key,
+                        proto::MetaplexMasterEditionTransaction {
+                            master_edition: Some(proto::MasterEdition {
+                                owner_address,
+                                supply: collection.supply.map(TryInto::try_into).transpose()?,
+                                name: metadata_json_model.name,
+                                symbol: metadata_json_model.symbol,
+                                metadata_uri: metadata_json_model.uri,
+                                seller_fee_basis_points: collection.seller_fee_basis_points.into(),
+                                creators,
+                            }),
+                        },
+                    )
                     .await?;
             },
             BlockchainEnum::Polygon => {
@@ -585,15 +606,18 @@ impl Mutation {
 
                 polygon
                     .event()
-                    .update_drop(event_key.into(), proto::UpdateEdtionTransaction {
-                        edition_info: Some(EditionInfo {
-                            description: metadata_json_model.description,
-                            image_uri: metadata_json_model.image,
-                            collection: metadata_json_model.name,
-                            uri: metadata_json_model.uri,
-                            creator,
-                        }),
-                    })
+                    .update_drop(
+                        event_key,
+                        proto::UpdateEdtionTransaction {
+                            edition_info: Some(EditionInfo {
+                                description: metadata_json_model.description,
+                                image_uri: metadata_json_model.image,
+                                collection: metadata_json_model.name,
+                                uri: metadata_json_model.uri,
+                                creator,
+                            }),
+                        },
+                    )
                     .await?;
             },
             BlockchainEnum::Ethereum => {
@@ -940,38 +964,6 @@ impl From<BlockchainEnum> for proto::Blockchain {
             BlockchainEnum::Ethereum => Self::Ethereum,
             BlockchainEnum::Polygon => Self::Polygon,
             BlockchainEnum::Solana => Self::Solana,
-        }
-    }
-}
-
-impl From<NftEventKey> for SolanaEventKey {
-    fn from(key: NftEventKey) -> Self {
-        let NftEventKey {
-            user_id,
-            project_id,
-            id,
-        } = key;
-
-        Self {
-            id,
-            user_id,
-            project_id,
-        }
-    }
-}
-
-impl From<NftEventKey> for PolygonEventKey {
-    fn from(key: NftEventKey) -> Self {
-        let NftEventKey {
-            user_id,
-            project_id,
-            id,
-        } = key;
-
-        Self {
-            id,
-            user_id,
-            project_id,
         }
     }
 }

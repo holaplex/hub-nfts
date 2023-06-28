@@ -196,7 +196,7 @@ impl Processor {
         let active_model = customer_wallets::ActiveModel {
             id: Set(id.parse()?),
             customer_id: Set(payload.customer_id.parse()?),
-            address: Set(payload.address),
+            address: Set(payload.wallet_address),
             blockchain: Set(blockchain.try_into()?),
         };
 
