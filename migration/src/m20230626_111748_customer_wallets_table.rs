@@ -17,7 +17,8 @@ impl MigrationTrait for Migration {
                         ColumnDef::new(CustomerWallets::Id)
                             .uuid()
                             .not_null()
-                            .primary_key(),
+                            .primary_key()
+                            .extra("default gen_random_uuid()".to_string()),
                     )
                     .col(
                         ColumnDef::new(CustomerWallets::CustomerId)

@@ -120,28 +120,22 @@ impl Mutation {
 
                 solana
                     .event()
-                    .mint_drop(
-                        event_key,
-                        proto::MintMetaplexEditionTransaction {
-                            recipient_address: input.recipient.to_string(),
-                            owner_address: owner_address.to_string(),
-                            edition,
-                            collection_id: collection.id.to_string(),
-                        },
-                    )
+                    .mint_drop(event_key, proto::MintMetaplexEditionTransaction {
+                        recipient_address: input.recipient.to_string(),
+                        owner_address: owner_address.to_string(),
+                        edition,
+                        collection_id: collection.id.to_string(),
+                    })
                     .await?;
             },
             BlockchainEnum::Polygon => {
                 polygon
                     .event()
-                    .mint_drop(
-                        event_key,
-                        proto::MintEditionTransaction {
-                            receiver: input.recipient.to_string(),
-                            amount: 1,
-                            collection_id: collection.id.to_string(),
-                        },
-                    )
+                    .mint_drop(event_key, proto::MintEditionTransaction {
+                        receiver: input.recipient.to_string(),
+                        amount: 1,
+                        collection_id: collection.id.to_string(),
+                    })
                     .await?;
             },
             BlockchainEnum::Ethereum => {
@@ -167,18 +161,14 @@ impl Mutation {
 
         purchase_am.insert(conn).await?;
 
-        submit_pending_deduction(
-            credits,
-            db,
-            DeductionParams {
-                balance,
-                user_id,
-                org_id,
-                mint: collection_mint_model.id,
-                blockchain: collection.blockchain,
-                action: Actions::MintEdition,
-            },
-        )
+        submit_pending_deduction(credits, db, DeductionParams {
+            balance,
+            user_id,
+            org_id,
+            mint: collection_mint_model.id,
+            blockchain: collection.blockchain,
+            action: Actions::MintEdition,
+        })
         .await?;
 
         nfts_producer
@@ -286,28 +276,22 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .retry_mint_drop(
-                        event_key,
-                        proto::MintMetaplexEditionTransaction {
-                            recipient_address: recipient.to_string(),
-                            owner_address: owner_address.to_string(),
-                            edition,
-                            collection_id: collection.id.to_string(),
-                        },
-                    )
+                    .retry_mint_drop(event_key, proto::MintMetaplexEditionTransaction {
+                        recipient_address: recipient.to_string(),
+                        owner_address: owner_address.to_string(),
+                        edition,
+                        collection_id: collection.id.to_string(),
+                    })
                     .await?;
             },
             BlockchainEnum::Polygon => {
                 polygon
                     .event()
-                    .retry_mint_drop(
-                        event_key,
-                        proto::MintEditionTransaction {
-                            receiver: recipient.to_string(),
-                            amount: 1,
-                            collection_id: collection.id.to_string(),
-                        },
-                    )
+                    .retry_mint_drop(event_key, proto::MintEditionTransaction {
+                        receiver: recipient.to_string(),
+                        amount: 1,
+                        collection_id: collection.id.to_string(),
+                    })
                     .await?;
             },
             BlockchainEnum::Ethereum => {
@@ -315,18 +299,14 @@ impl Mutation {
             },
         };
 
-        submit_pending_deduction(
-            credits,
-            db,
-            DeductionParams {
-                balance,
-                user_id,
-                org_id,
-                mint: collection_mint_model.id,
-                blockchain: collection.blockchain,
-                action: Actions::RetryMint,
-            },
-        )
+        submit_pending_deduction(credits, db, DeductionParams {
+            balance,
+            user_id,
+            org_id,
+            mint: collection_mint_model.id,
+            blockchain: collection.blockchain,
+            action: Actions::RetryMint,
+        })
         .await?;
 
         Ok(RetryMintPayload {

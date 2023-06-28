@@ -78,7 +78,7 @@ impl Processor {
                     self.project_wallet_created(payload).await
                 },
                 Some(TreasuryEvent::CustomerWalletCreated(payload)) => {
-                    self.customer_wallet_created(id, payload).await
+                    self.customer_wallet_created(payload).await
                 },
                 Some(
                     TreasuryEvent::PolygonCreateDropTxnSubmitted(payload)
@@ -187,17 +187,17 @@ impl Processor {
         Ok(())
     }
 
-    async fn customer_wallet_created(&self, id: String, payload: CustomerWallet) -> Result<()> {
+    async fn customer_wallet_created(&self, payload: CustomerWallet) -> Result<()> {
         let conn = self.db.get();
 
         let blockchain = ProtoBlockchainEnum::from_i32(payload.blockchain)
             .context("failed to get blockchain enum variant")?;
 
         let active_model = customer_wallets::ActiveModel {
-            id: Set(id.parse()?),
             customer_id: Set(payload.customer_id.parse()?),
             address: Set(payload.wallet_address),
             blockchain: Set(blockchain.try_into()?),
+            ..Default::default()
         };
 
         active_model
