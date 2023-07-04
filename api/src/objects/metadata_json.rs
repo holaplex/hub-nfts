@@ -95,10 +95,14 @@ pub struct MetadataJsonInput {
     pub symbol: String,
     pub description: String,
     pub image: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub animation_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub collection: Option<Collection>,
     pub attributes: Vec<Attribute>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub external_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub properties: Option<Property>,
 }
 
