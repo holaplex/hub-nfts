@@ -3,6 +3,7 @@ use hub_core::credits::CreditsClient;
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 use serde::{Deserialize, Serialize};
 
+use super::drop::{validate_evm_address, validate_solana_address};
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, Event},
     db::Connection,
@@ -10,7 +11,7 @@ use crate::{
         collection_mints::{self, CollectionMint},
         collections, customer_wallets, drops, nft_transfers,
         prelude::{Collections, CustomerWallets, Drops},
-        sea_orm_active_enums::Blockchain,
+        sea_orm_active_enums::{Blockchain, CreationStatus},
     },
     proto::{self, NftEventKey, TransferPolygonAsset},
     Actions, AppContext, OrganizationId, UserID,
@@ -64,7 +65,7 @@ impl Mutation {
         let conn = db.get();
         let credits = ctx.data::<CreditsClient<Actions>>()?;
 
-        let TransferAssetInput { id, recipient } = input;
+        let TransferAssetInput { id, recipient } = input.clone();
 
         let (collection_mint_model, collection) = collection_mints::Entity::find_by_id(id)
             .find_also_related(Collections)
@@ -72,7 +73,12 @@ impl Mutation {
             .await?
             .ok_or(Error::new("mint not found"))?;
 
+        if collection_mint_model.creation_status != CreationStatus::Created {
+            return Err(Error::new("NFT is not minted"));
+        }
+
         let collection = collection.ok_or(Error::new("collection not found"))?;
+        input.validate_recipient_address(collection.blockchain)?;
 
         let drop = Drops::find()
             .join(JoinType::InnerJoin, drops::Relation::Collections.def())
@@ -198,6 +204,16 @@ async fn submit_pending_deduction(
 pub struct TransferAssetInput {
     pub id: Uuid,
     pub recipient: String,
+}
+
+impl TransferAssetInput {
+    fn validate_recipient_address(&self, blockchain: Blockchain) -> Result<()> {
+        match blockchain {
+            Blockchain::Ethereum => Err(Error::new("Blockchain not supported yet")),
+            Blockchain::Polygon => validate_evm_address(&self.recipient),
+            Blockchain::Solana => validate_solana_address(&self.recipient),
+        }
+    }
 }
 
 #[derive(Debug, Clone, SimpleObject)]

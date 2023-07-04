@@ -781,12 +781,7 @@ fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreato
             }
 
             for creator in creators {
-                if Pubkey::from_str(&creator.address).is_err() {
-                    return Err(Error::new(format!(
-                        "{:?} is not a valid Solana address",
-                        &creator.address
-                    )));
-                }
+                validate_solana_address(&creator.address)?;
             }
         },
         BlockchainEnum::Polygon => {
@@ -797,11 +792,7 @@ fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreato
             }
 
             let address = &creators[0].clone().address;
-            if !is_valid_evm_address(address) {
-                return Err(Error::new(format!(
-                    "{address} is not a valid Polygon address",
-                )));
-            }
+            validate_evm_address(address)?;
         },
         BlockchainEnum::Ethereum => return Err(Error::new("Blockchain not supported yet")),
     }
@@ -809,19 +800,35 @@ fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreato
     Ok(())
 }
 
-fn is_valid_evm_address(address: &str) -> bool {
+pub fn validate_solana_address(address: &str) -> Result<()> {
+    if Pubkey::from_str(address).is_err() {
+        return Err(Error::new(format!(
+            "{address} is not a valid Solana address"
+        )));
+    }
+
+    Ok(())
+}
+
+pub fn validate_evm_address(address: &str) -> Result<()> {
+    let err = Err(Error::new(format!("{address} is not a valid EVM address")));
+
     // Ethereum address must start with '0x'
     if !address.starts_with("0x") {
-        return false;
+        return err;
     }
 
     // Ethereum address must be exactly 40 characters long after removing '0x'
     if address.len() != 42 {
-        return false;
+        return err;
     }
 
     // Check that the address contains only hexadecimal characters
-    address[2..].chars().all(|c| c.is_ascii_hexdigit())
+    if !address[2..].chars().all(|c| c.is_ascii_hexdigit()) {
+        return err;
+    }
+
+    Ok(())
 }
 
 /// Validates the JSON metadata input for the NFT drop.
