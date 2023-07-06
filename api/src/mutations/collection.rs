@@ -18,27 +18,28 @@ use crate::{
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
-    objects::{CollectionCreator, Drop, MetadataJsonInput},
+    objects::{Collection as CollectionObject, CollectionCreator, MetadataJsonInput},
     proto::{
-        self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, EditionInfo,
-        NftEventKey, NftEvents,
+        nft_events::Event as NftEvent, CreateEditionTransaction,
+        CreationStatus as NftCreationStatus, Creator as ProtoCreator, DropCreation, EditionInfo,
+        MasterEdition, MetaplexMasterEditionTransaction, NftEventKey, NftEvents,
     },
-    Actions, AppContext, NftStorageClient, OrganizationId, UserID,
+    Actions, AppContext, NftStorageClient, OrganizationId, UpdateEdtionTransaction, UserID,
 };
 
 #[derive(Default)]
 pub struct Mutation;
 
-#[Object(name = "DropMutation")]
+#[Object(name = "CollectionMutation")]
 impl Mutation {
     /// This mutation creates a new NFT drop and its associated collection. The drop returns immediately with a creation status of CREATING. You can [set up a webhook](https://docs.holaplex.dev/hub/For%20Developers/webhooks-overview) to receive a notification when the drop is ready to be minted.
     /// Error
     /// If the drop cannot be saved to the database or fails to be emitted for submission to the desired blockchain, the mutation will result in an error.
-    pub async fn create_drop(
+    pub async fn create_collection(
         &self,
         ctx: &Context<'_>,
-        input: CreateDropInput,
-    ) -> Result<CreateDropPayload> {
+        input: CreateCollectionInput,
+    ) -> Result<CreateCollectionPayload> {
         let AppContext {
             db,
             user_id,
@@ -91,19 +92,6 @@ impl Mutation {
             .save(collection.id, db)
             .await?;
 
-        let drop = drops::ActiveModel {
-            project_id: Set(input.project),
-            collection_id: Set(collection.id),
-            creation_status: Set(CreationStatus::Pending),
-            start_time: Set(input.start_time),
-            end_time: Set(input.end_time),
-            price: Set(input.price.unwrap_or_default().try_into()?),
-            created_by: Set(user_id),
-            created_at: Set(Utc::now().into()),
-            ..Default::default()
-        };
-
-        let drop_model = drop.insert(conn).await?;
         let event_key = NftEventKey {
             id: collection.id.to_string(),
             user_id: user_id.to_string(),
@@ -116,8 +104,8 @@ impl Mutation {
                     .event()
                     .create_drop(
                         event_key,
-                        proto::MetaplexMasterEditionTransaction {
-                            master_edition: Some(proto::MasterEdition {
+                        MetaplexMasterEditionTransaction {
+                            master_edition: Some(MasterEdition {
                                 owner_address,
                                 supply: input.supply.map(TryInto::try_into).transpose()?,
                                 name: metadata_json.name,
@@ -139,9 +127,9 @@ impl Mutation {
                 polygon
                     .create_drop(
                         event_key,
-                        proto::CreateEditionTransaction {
+                        CreateEditionTransaction {
                             amount: amount.try_into()?,
-                            edition_info: Some(proto::EditionInfo {
+                            edition_info: Some(EditionInfo {
                                 creator: input
                                     .creators
                                     .get(0)
@@ -171,7 +159,7 @@ impl Mutation {
                 user_id,
                 org_id,
                 balance,
-                drop: drop_model.id,
+                collection: collection.id,
                 blockchain: input.blockchain,
                 action: Actions::CreateDrop,
             },
@@ -181,20 +169,20 @@ impl Mutation {
         nfts_producer
             .send(
                 Some(&NftEvents {
-                    event: Some(NftEvent::DropCreated(proto::DropCreation {
+                    event: Some(NftEvent::DropCreated(DropCreation {
                         status: NftCreationStatus::InProgress as i32,
                     })),
                 }),
                 Some(&NftEventKey {
-                    id: drop_model.id.to_string(),
+                    id: collection.id.to_string(),
                     project_id: input.project.to_string(),
                     user_id: user_id.to_string(),
                 }),
             )
             .await?;
 
-        Ok(CreateDropPayload {
-            drop: Drop::new(drop_model, collection),
+        Ok(CreateCollectionPayload {
+            collection: collection.into(),
         })
     }
 
@@ -205,11 +193,11 @@ impl Mutation {
     /// The mutation will fail if the drop and its related collection cannot be located,
     /// if the transaction response cannot be built,
     /// or if the transaction event cannot be emitted.
-    pub async fn retry_drop(
+    pub async fn retry_collection(
         &self,
         ctx: &Context<'_>,
-        input: RetryDropInput,
-    ) -> Result<CreateDropPayload> {
+        input: RetryCollectionInput,
+    ) -> Result<CreateCollectionPayload> {
         let AppContext {
             db,
             user_id,
@@ -228,16 +216,14 @@ impl Mutation {
         let balance = balance
             .0
             .ok_or(Error::new("X-ORGANIZATION-BALANCE header not found"))?;
-        let (drop, collection) = Drops::find_by_id(input.drop)
-            .find_also_related(Collections)
+        let collection = Collections::find()
+            .filter(collections::Column::Id.eq(input.id))
             .one(db.get())
             .await?
-            .ok_or(Error::new("drop not found"))?;
+            .ok_or(Error::new("collection not found"))?;
 
-        let collection = collection.ok_or(Error::new("collection not found"))?;
-
-        if drop.creation_status == CreationStatus::Created {
-            return Err(Error::new("drop already created"));
+        if collection.creation_status == CreationStatus::Created {
+            return Err(Error::new("collection already created"));
         }
 
         let metadata_json = MetadataJsons::find_by_id(collection.id)
@@ -249,12 +235,12 @@ impl Mutation {
             .all(conn)
             .await?;
 
-        let owner_address = fetch_owner(conn, drop.project_id, collection.blockchain).await?;
+        let owner_address = fetch_owner(conn, collection.project_id, collection.blockchain).await?;
 
         let event_key = NftEventKey {
             id: collection.id.to_string(),
             user_id: user_id.to_string(),
-            project_id: drop.project_id.to_string(),
+            project_id: collection.project_id.to_string(),
         };
 
         match collection.blockchain {
@@ -263,8 +249,8 @@ impl Mutation {
                     .event()
                     .retry_create_drop(
                         event_key,
-                        proto::MetaplexMasterEditionTransaction {
-                            master_edition: Some(proto::MasterEdition {
+                        MetaplexMasterEditionTransaction {
+                            master_edition: Some(MasterEdition {
                                 owner_address,
                                 supply: collection.supply.map(TryInto::try_into).transpose()?,
                                 name: metadata_json.name,
@@ -273,7 +259,7 @@ impl Mutation {
                                 seller_fee_basis_points: collection.seller_fee_basis_points.into(),
                                 creators: creators
                                     .into_iter()
-                                    .map(|c| proto::Creator {
+                                    .map(|c| ProtoCreator {
                                         address: c.address,
                                         verified: c.verified,
                                         share: c.share,
@@ -293,7 +279,7 @@ impl Mutation {
                     .event()
                     .retry_create_drop(
                         event_key,
-                        proto::CreateEditionTransaction {
+                        CreateEditionTransaction {
                             edition_info: None,
                             amount,
                             fee_receiver: owner_address,
@@ -314,132 +300,28 @@ impl Mutation {
                 balance,
                 user_id,
                 org_id,
-                drop: drop.id,
+                collection: collection.id,
                 blockchain: collection.blockchain,
                 action: Actions::RetryDrop,
             },
         )
         .await?;
 
-        Ok(CreateDropPayload {
-            drop: Drop::new(drop, collection),
-        })
-    }
-    /// This mutation allows for the temporary blocking of the minting of editions and can be resumed by calling the resumeDrop mutation.
-    pub async fn pause_drop(
-        &self,
-        ctx: &Context<'_>,
-        input: PauseDropInput,
-    ) -> Result<PauseDropPayload> {
-        let AppContext { db, .. } = ctx.data::<AppContext>()?;
-        let conn = db.get();
-
-        let (drop, collection) = Drops::find()
-            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-            .select_also(Collections)
-            .filter(drops::Column::Id.eq(input.drop))
-            .one(conn)
-            .await?
-            .ok_or(Error::new("drop not found"))?;
-
-        let collection_model = collection.ok_or(Error::new(format!(
-            "no collection found for drop {}",
-            input.drop
-        )))?;
-
-        let mut drops_active_model: drops::ActiveModel = drop.into();
-
-        drops_active_model.paused_at = Set(Some(Utc::now().into()));
-        let drop_model = drops_active_model.update(db.get()).await?;
-
-        Ok(PauseDropPayload {
-            drop: Drop::new(drop_model, collection_model),
-        })
-    }
-
-    /// This mutation resumes a paused drop, allowing minting of editions to be restored
-    pub async fn resume_drop(
-        &self,
-        ctx: &Context<'_>,
-        input: ResumeDropInput,
-    ) -> Result<ResumeDropPayload> {
-        let AppContext { db, .. } = ctx.data::<AppContext>()?;
-        let conn = db.get();
-
-        let (drop, collection) = Drops::find()
-            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-            .select_also(Collections)
-            .filter(drops::Column::Id.eq(input.drop))
-            .one(conn)
-            .await?
-            .ok_or(Error::new("drop not found"))?;
-
-        let collection_model = collection.ok_or(Error::new(format!(
-            "no collection found for drop {}",
-            input.drop
-        )))?;
-
-        let mut drops_active_model: drops::ActiveModel = drop.into();
-
-        drops_active_model.paused_at = Set(None);
-
-        let drop_model = drops_active_model.update(db.get()).await?;
-
-        Ok(ResumeDropPayload {
-            drop: Drop::new(drop_model, collection_model),
-        })
-    }
-
-    /// Shuts down a drop by writing the current UTC timestamp to the shutdown_at field of drop record.
-    /// Returns the `Drop` object on success.
-    ///
-    /// # Errors
-    /// Fails if the drop or collection is not found, or if updating the drop record fails.
-    pub async fn shutdown_drop(
-        &self,
-        ctx: &Context<'_>,
-        input: ShutdownDropInput,
-    ) -> Result<ShutdownDropPayload> {
-        let AppContext { db, .. } = ctx.data::<AppContext>()?;
-        let conn = db.get();
-
-        let (drop, collection) = Drops::find()
-            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-            .select_also(Collections)
-            .filter(drops::Column::Id.eq(input.drop))
-            .one(conn)
-            .await?
-            .ok_or(Error::new("drop not found"))?;
-
-        let collection_model = collection.ok_or(Error::new(format!(
-            "no collection found for drop {}",
-            input.drop
-        )))?;
-
-        let mut drops_active_model: drops::ActiveModel = drop.into();
-
-        drops_active_model.shutdown_at = Set(Some(Utc::now().into()));
-
-        let drop_model = drops_active_model.update(db.get()).await?;
-
-        Ok(ShutdownDropPayload {
-            drop: Drop::new(drop_model, collection_model),
+        Ok(CreateCollectionPayload {
+            collection: collection.into(),
         })
     }
 
     /// This mutation allows updating a drop and it's associated collection by ID.
     /// It returns an error if it fails to reach the database, emit update events or assemble the on-chain transaction.
     /// Returns the `PatchDropPayload` object on success.
-    pub async fn patch_drop(
+    pub async fn patch_collection(
         &self,
         ctx: &Context<'_>,
-        input: PatchDropInput,
-    ) -> Result<PatchDropPayload> {
-        let PatchDropInput {
+        input: PatchCollectionInput,
+    ) -> Result<PatchCollectionPayload> {
+        let PatchCollectionInput {
             id,
-            price,
-            start_time,
-            end_time,
             seller_fee_basis_points,
             metadata_json,
             creators,
@@ -453,19 +335,13 @@ impl Mutation {
 
         let user_id = user_id.0.ok_or(Error::new("X-USER-ID header not found"))?;
 
-        let (drop_model, collection_model) = Drops::find()
-            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-            .select_also(Collections)
-            .filter(drops::Column::Id.eq(id))
-            .one(conn)
+        let collection = Collections::find()
+            .filter(collections::Column::Id.eq(input.id))
+            .one(db.get())
             .await?
-            .ok_or(Error::new("drop not found"))?;
+            .ok_or(Error::new("collection not found"))?;
 
-        let collection = collection_model.ok_or(Error::new("collection not found"))?;
-
-        let owner_address = fetch_owner(conn, drop_model.project_id, collection.blockchain).await?;
-
-        validate_end_time(&input.end_time.clone())?;
+        let owner_address = fetch_owner(conn, collection.project_id, collection.blockchain).await?;
 
         if let Some(creators) = &creators {
             validate_creators(collection.blockchain, creators)?;
@@ -489,23 +365,6 @@ impl Mutation {
             .filter(collection_creators::Column::CollectionId.eq(collection.id))
             .all(conn)
             .await?;
-
-        let mut drop_am = drops::ActiveModel::from(drop_model.clone());
-
-        if let Some(price) = price {
-            drop_am.price = Set(price.try_into()?);
-        }
-
-        drop_am.start_time = Set(Some(start_time.map_or(Utc::now().into(), |t| t)));
-        drop_am.end_time = Set(end_time
-            .map(|t| {
-                if t > Utc::now() {
-                    Ok(t)
-                } else {
-                    Err(Error::new("end time must be in the future"))
-                }
-            })
-            .transpose()?);
 
         if let Some(creators) = creators.clone() {
             let creators = creators
@@ -538,8 +397,6 @@ impl Mutation {
             .await?;
         }
 
-        let drop_model = drop_am.update(conn).await?;
-
         let metadata_json_model = metadata_jsons::Entity::find()
             .filter(metadata_jsons::Column::Id.eq(collection.id))
             .one(conn)
@@ -561,7 +418,7 @@ impl Mutation {
         let event_key = NftEventKey {
             id: collection.id.to_string(),
             user_id: user_id.to_string(),
-            project_id: drop_model.project_id.to_string(),
+            project_id: collection.project_id.to_string(),
         };
 
         match collection.blockchain {
@@ -579,8 +436,8 @@ impl Mutation {
                     .event()
                     .update_drop(
                         event_key,
-                        proto::MetaplexMasterEditionTransaction {
-                            master_edition: Some(proto::MasterEdition {
+                        MetaplexMasterEditionTransaction {
+                            master_edition: Some(MasterEdition {
                                 owner_address,
                                 supply: collection.supply.map(TryInto::try_into).transpose()?,
                                 name: metadata_json_model.name,
@@ -608,7 +465,7 @@ impl Mutation {
                     .event()
                     .update_drop(
                         event_key,
-                        proto::UpdateEdtionTransaction {
+                        UpdateEdtionTransaction {
                             edition_info: Some(EditionInfo {
                                 description: metadata_json_model.description,
                                 image_uri: metadata_json_model.image,
@@ -625,8 +482,8 @@ impl Mutation {
             },
         };
 
-        Ok(PatchDropPayload {
-            drop: Drop::new(drop_model, collection),
+        Ok(PatchCollectionPayload {
+            collection: collection.into(),
         })
     }
 }
@@ -635,7 +492,7 @@ struct DeductionParams {
     balance: u64,
     user_id: Uuid,
     org_id: Uuid,
-    drop: Uuid,
+    collection: Uuid,
     blockchain: BlockchainEnum,
     action: Actions,
 }
@@ -649,17 +506,18 @@ async fn submit_pending_deduction(
         balance,
         user_id,
         org_id,
-        drop,
+        collection,
         blockchain,
         action,
     } = params;
 
-    let drop_model = drops::Entity::find_by_id(drop)
+    let collection_model = Collections::find()
+        .filter(collections::Column::Id.eq(collection))
         .one(db.get())
         .await?
         .ok_or(Error::new("drop not found"))?;
 
-    if drop_model.credits_deduction_id.is_some() {
+    if collection_model.credits_deduction_id.is_some() {
         return Ok(());
     }
 
@@ -676,9 +534,9 @@ async fn submit_pending_deduction(
 
     let deduction_id = id.ok_or(Error::new("Organization does not have enough credits"))?;
 
-    let mut drop: drops::ActiveModel = drop_model.into();
-    drop.credits_deduction_id = Set(Some(deduction_id.0));
-    drop.update(db.get()).await?;
+    let mut collection_am: collections::ActiveModel = collection_model.into();
+    collection_am.credits_deduction_id = Set(Some(deduction_id.0));
+    collection_am.update(db.get()).await?;
 
     Ok(())
 }
@@ -706,24 +564,21 @@ async fn fetch_owner(
 }
 
 #[derive(Debug, Clone, SimpleObject)]
-pub struct CreateDropPayload {
-    drop: Drop,
+pub struct CreateCollectionPayload {
+    collection: CollectionObject,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
-pub struct CreateDropInput {
+pub struct CreateCollectionInput {
     pub project: Uuid,
-    pub price: Option<u64>,
     pub seller_fee_basis_points: Option<u16>,
     pub supply: Option<u64>,
-    pub start_time: Option<DateTimeWithTimeZone>,
-    pub end_time: Option<DateTimeWithTimeZone>,
     pub blockchain: BlockchainEnum,
     pub creators: Vec<CollectionCreator>,
     pub metadata_json: MetadataJsonInput,
 }
 
-impl CreateDropInput {
+impl CreateCollectionInput {
     /// This function is used to validate the data of a new NFT drop before it is saved or submitted to the blockchain.
     /// Validation Steps:
     ///  Validate the addresses of the creators. Each creator's address should be a valid address.
@@ -740,29 +595,11 @@ impl CreateDropInput {
             return Err(Error::new("Supply must be greater than 0 or undefined"));
         };
 
-        validate_end_time(&self.end_time)?;
         validate_creators(self.blockchain, &self.creators)?;
         validate_json(self.blockchain, &self.metadata_json)?;
 
         Ok(())
     }
-}
-
-/// Validates the end time of the NFT drop.
-/// # Returns
-/// - Ok(()) if the end time is in the future or if it's not provided.
-/// # Errors
-/// - Err with an appropriate error message if the end time is in the past.
-fn validate_end_time(end_time: &Option<DateTimeWithTimeZone>) -> Result<()> {
-    end_time.map_or(Ok(()), |end_time| {
-        if end_time > Utc::now() {
-            Ok(())
-        } else {
-            Err(Error::new("End time must be in the future"))
-        }
-    })?;
-
-    Ok(())
 }
 
 fn validate_solana_creator_verification(
@@ -894,26 +731,20 @@ fn validate_json(blockchain: BlockchainEnum, json: &MetadataJsonInput) -> Result
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
-pub struct RetryDropInput {
-    pub drop: Uuid,
+pub struct RetryCollectionInput {
+    pub collection: Uuid,
 }
 
 #[derive(Debug, Clone, SimpleObject)]
-pub struct RetryDropPayload {
-    drop: Drop,
+pub struct RetryCollectionPayload {
+    collection: CollectionObject,
 }
 
 /// Input object for patching a drop and associated collection by ID
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
-pub struct PatchDropInput {
+pub struct PatchCollectionInput {
     /// The unique identifier of the drop
     pub id: Uuid,
-    /// The new price for the drop in the native token of the blockchain
-    pub price: Option<u64>,
-    /// The new start time for the drop in UTC
-    pub start_time: Option<DateTimeWithTimeZone>,
-    /// The new end time for the drop in UTC
-    pub end_time: Option<DateTimeWithTimeZone>,
     /// The new seller fee basis points for the drop
     pub seller_fee_basis_points: Option<u16>,
     /// The new metadata JSON for the drop
@@ -924,43 +755,17 @@ pub struct PatchDropInput {
 
 /// Represents the result of a successful patch drop mutation.
 #[derive(Debug, Clone, SimpleObject)]
-pub struct PatchDropPayload {
+pub struct PatchCollectionPayload {
     /// The drop that has been patched.
-    drop: Drop,
+    collection: CollectionObject,
 }
 
-/// Represents input fields for pausing a drop.
-#[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
-pub struct PauseDropInput {
-    pub drop: Uuid,
-}
-/// Represents the result of a successful pause drop mutation.
-#[derive(Debug, Clone, SimpleObject)]
-pub struct PauseDropPayload {
-    /// The drop that has been paused.
-    drop: Drop,
-}
-/// Represents input fields for resuming a paused drop.
-#[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
-pub struct ResumeDropInput {
-    pub drop: Uuid,
-}
-/// Represents the result of a successful resume drop mutation.
-#[derive(Debug, Clone, SimpleObject)]
-pub struct ResumeDropPayload {
-    /// The drop that has been resumed.
-    drop: Drop,
-}
-
-/// Represents the input fields for shutting down a drop
-#[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
-pub struct ShutdownDropInput {
-    pub drop: Uuid,
-}
-
-/// Represents the result of a successful shutdown drop mutation
-#[derive(Debug, Clone, SimpleObject)]
-pub struct ShutdownDropPayload {
-    /// Drop that has been shutdown
-    drop: Drop,
+impl From<BlockchainEnum> for Blockchain {
+    fn from(v: BlockchainEnum) -> Self {
+        match v {
+            BlockchainEnum::Ethereum => Self::Ethereum,
+            BlockchainEnum::Polygon => Self::Polygon,
+            BlockchainEnum::Solana => Self::Solana,
+        }
+    }
 }
