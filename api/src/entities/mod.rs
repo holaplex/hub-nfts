@@ -15,3 +15,4 @@ pub mod nft_transfers;
 pub mod project_wallets;
 pub mod purchases;
 pub mod sea_orm_active_enums;
+pub mod transfer_charges;
