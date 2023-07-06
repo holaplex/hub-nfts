@@ -35,6 +35,7 @@ impl DataLoader<Uuid> for ProjectLoader {
 
         Ok(collections
             .into_iter()
+            .map(|collection| (collection.project_id, collection.into()))
             .fold(HashMap::new(), |mut acc, (project, collection)| {
                 acc.entry(project).or_insert_with(Vec::new);
 
