@@ -9,6 +9,7 @@ use super::sea_orm_active_enums::{Blockchain, CreationStatus};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
+    pub project_id: Uuid,
     pub blockchain: Blockchain,
     pub supply: Option<i64>,
     pub creation_status: CreationStatus,
