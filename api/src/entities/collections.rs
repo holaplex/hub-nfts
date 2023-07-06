@@ -11,6 +11,9 @@ pub struct Model {
     pub id: Uuid,
     pub blockchain: Blockchain,
     pub supply: Option<i64>,
+    pub project_id: Uuid,
+    #[sea_orm(nullable)]
+    pub credits_deduction_id: Option<Uuid>,
     pub creation_status: CreationStatus,
     pub total_mints: i64,
     #[sea_orm(column_type = "Text", nullable)]

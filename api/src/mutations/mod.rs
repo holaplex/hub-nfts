@@ -1,10 +1,11 @@
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::unused_async)]
-pub mod drop;
+pub mod collection;
 pub mod mint;
 pub mod transfer;
+pub mod collection;
 
 // // Add your other ones here to create a unified Mutation object
 // // e.x. Mutation(OrganizationMutation, OtherMutation, OtherOtherMutation)
 #[derive(async_graphql::MergedObject, Default)]
-pub struct Mutation(drop::Mutation, mint::Mutation, transfer::Mutation);
+pub struct Mutation(collection::Mutation, mint::Mutation, transfer::Mutation);
