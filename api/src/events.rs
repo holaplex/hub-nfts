@@ -1,5 +1,5 @@
 use hub_core::{
-    chrono::Utc,
+    chrono::{DateTime, NaiveDateTime, Utc},
     credits::{CreditsClient, TransactionId},
     prelude::*,
     producer::Producer,
@@ -7,27 +7,29 @@ use hub_core::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait,
-    Set,
+    Set, TransactionTrait,
 };
 
 use crate::{
     db::Connection,
     entities::{
-        collection_mints, collections, drops, nft_transfers,
+        collection_mints, collections, customer_wallets, drops, nft_transfers,
         prelude::{CollectionMints, Purchases},
         project_wallets, purchases,
         sea_orm_active_enums::{Blockchain, CreationStatus},
+        transfer_charges,
     },
     proto::{
         nft_events::Event as NftEvent,
+        polygon_nft_events::Event as PolygonNftEvents,
         solana_nft_events::Event as SolanaNftsEvent,
         treasury_events::{
-            Blockchain as ProtoBlockchainEnum, Event as TreasuryEvent, PolygonTransactionResult,
-            ProjectWallet, TransactionStatus,
+            Blockchain as ProtoBlockchainEnum, CustomerWallet, Event as TreasuryEvent,
+            PolygonTransactionResult, ProjectWallet, TransactionStatus,
         },
         CreationStatus as NftCreationStatus, DropCreation, MintCreation, MintOwnershipUpdate,
-        NftEventKey, NftEvents, SolanaCompletedMintTransaction, SolanaCompletedTransferTransaction,
-        SolanaNftEventKey, TreasuryEventKey,
+        MintedTokensOwnershipUpdate, NftEventKey, NftEvents, SolanaCompletedMintTransaction,
+        SolanaCompletedTransferTransaction, SolanaNftEventKey, TreasuryEventKey,
     },
     Actions, Services,
 };
@@ -76,6 +78,9 @@ impl Processor {
             Services::Treasury(TreasuryEventKey { id, .. }, e) => match e.event {
                 Some(TreasuryEvent::ProjectWalletCreated(payload)) => {
                     self.project_wallet_created(payload).await
+                },
+                Some(TreasuryEvent::CustomerWalletCreated(payload)) => {
+                    self.customer_wallet_created(payload).await
                 },
                 Some(
                     TreasuryEvent::PolygonCreateDropTxnSubmitted(payload)
@@ -129,6 +134,12 @@ impl Processor {
                 Some(SolanaNftsEvent::UpdateMintOwner(e)) => self.update_mint_owner(id, e).await,
                 None | Some(_) => Ok(()),
             },
+            Services::Polygon(_, e) => match e.event {
+                Some(PolygonNftEvents::UpdateMintsOwner(p)) => {
+                    self.update_polygon_mints_owner(p).await
+                },
+                None | Some(_) => Ok(()),
+            },
         }
     }
 
@@ -153,11 +164,59 @@ impl Processor {
             sender: Set(payload.sender),
             recipient: Set(payload.recipient),
             created_at: Set(Utc::now().into()),
-            credits_deduction_id: Set(None),
             ..Default::default()
         };
 
         nft_transfer.insert(db).await?;
+        Ok(())
+    }
+    async fn update_polygon_mints_owner(&self, payload: MintedTokensOwnershipUpdate) -> Result<()> {
+        let MintedTokensOwnershipUpdate {
+            mint_ids,
+            new_owner,
+            timestamp,
+            transaction_hash,
+        } = payload;
+
+        let ts = timestamp.context("No timestamp found")?;
+        let created_at = DateTime::<Utc>::from_utc(
+            NaiveDateTime::from_timestamp_opt(ts.seconds, ts.nanos.try_into()?)
+                .context("failed to parse to NaiveDateTime")?,
+            Utc,
+        )
+        .into();
+
+        let db = self.db.get();
+        let txn = db.begin().await?;
+
+        let mint_ids = mint_ids
+            .into_iter()
+            .map(|s| Uuid::from_str(&s))
+            .collect::<Result<Vec<Uuid>, _>>()?;
+
+        let mints = CollectionMints::find()
+            .filter(collection_mints::Column::Id.is_in(mint_ids))
+            .all(db)
+            .await?;
+
+        for mint in mints {
+            let mut mint_am: collection_mints::ActiveModel = mint.clone().into();
+            mint_am.owner = Set(new_owner.clone());
+            mint_am.update(&txn).await?;
+
+            let nft_transfers = nft_transfers::ActiveModel {
+                tx_signature: Set(Some(transaction_hash.clone())),
+                collection_mint_id: Set(mint.id),
+                sender: Set(mint.owner),
+                recipient: Set(new_owner.clone()),
+                created_at: Set(created_at),
+                ..Default::default()
+            };
+
+            nft_transfers.insert(&txn).await?;
+        }
+
+        txn.commit().await?;
 
         Ok(())
     }
@@ -180,6 +239,27 @@ impl Processor {
             .insert(conn)
             .await
             .context("failed to insert project wallet")?;
+
+        Ok(())
+    }
+
+    async fn customer_wallet_created(&self, payload: CustomerWallet) -> Result<()> {
+        let conn = self.db.get();
+
+        let blockchain = ProtoBlockchainEnum::from_i32(payload.blockchain)
+            .context("failed to get blockchain enum variant")?;
+
+        let active_model = customer_wallets::ActiveModel {
+            customer_id: Set(payload.customer_id.parse()?),
+            address: Set(payload.wallet_address),
+            blockchain: Set(blockchain.try_into()?),
+            ..Default::default()
+        };
+
+        active_model
+            .insert(conn)
+            .await
+            .context("failed to insert customer wallet")?;
 
         Ok(())
     }
@@ -311,22 +391,14 @@ impl Processor {
         let conn = self.db.get();
         let transfer_id = Uuid::from_str(&id)?;
 
-        let (nft_transfer, collection_mint) = nft_transfers::Entity::find_by_id(transfer_id)
-            .find_also_related(collection_mints::Entity)
+        let transfer_charge = transfer_charges::Entity::find()
+            .filter(transfer_charges::Column::CreditsDeductionId.eq(transfer_id))
             .one(conn)
             .await?
-            .context("failed to load nft transfer from db")?;
+            .context("failed to load transfer charge from db")?;
 
-        let collection_mint = collection_mint.context("collection mint not found")?;
-
-        let mut collection_mint_am: collection_mints::ActiveModel = collection_mint.into();
-        let mut nft_transfer_am: nft_transfers::ActiveModel = nft_transfer.clone().into();
-
-        if let TransferResult::Success(signature) = payload {
-            collection_mint_am.owner = Set(nft_transfer.recipient.clone());
-            nft_transfer_am.tx_signature = Set(Some(signature));
-
-            let deduction_id = nft_transfer
+        if let TransferResult::Success(_) = payload {
+            let deduction_id = transfer_charge
                 .credits_deduction_id
                 .context("deduction id not found")?;
 
@@ -334,9 +406,6 @@ impl Processor {
                 .confirm_deduction(TransactionId(deduction_id))
                 .await?;
         }
-
-        collection_mint_am.update(conn).await?;
-        nft_transfer_am.insert(conn).await?;
 
         Ok(())
     }

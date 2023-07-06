@@ -3,14 +3,16 @@ use hub_core::credits::CreditsClient;
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 use serde::{Deserialize, Serialize};
 
+use super::drop::{validate_evm_address, validate_solana_address};
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, Event},
     db::Connection,
     entities::{
         collection_mints::{self, CollectionMint},
-        collections, drops, nft_transfers,
-        prelude::{Collections, Drops},
-        sea_orm_active_enums::Blockchain,
+        collections, customer_wallets, drops,
+        prelude::{Collections, CustomerWallets, Drops},
+        sea_orm_active_enums::{Blockchain, CreationStatus},
+        transfer_charges,
     },
     proto::{self, NftEventKey, TransferPolygonAsset},
     Actions, AppContext, OrganizationId, UserID,
@@ -64,7 +66,7 @@ impl Mutation {
         let conn = db.get();
         let credits = ctx.data::<CreditsClient<Actions>>()?;
 
-        let TransferAssetInput { id, recipient } = input;
+        let TransferAssetInput { id, recipient } = input.clone();
 
         let (collection_mint_model, collection) = collection_mints::Entity::find_by_id(id)
             .find_also_related(Collections)
@@ -72,7 +74,12 @@ impl Mutation {
             .await?
             .ok_or(Error::new("mint not found"))?;
 
+        if collection_mint_model.creation_status != CreationStatus::Created {
+            return Err(Error::new("NFT is not minted"));
+        }
+
         let collection = collection.ok_or(Error::new("collection not found"))?;
+        input.validate_recipient_address(collection.blockchain)?;
 
         let drop = Drops::find()
             .join(JoinType::InnerJoin, drops::Relation::Collections.def())
@@ -81,24 +88,27 @@ impl Mutation {
             .await?
             .ok_or(Error::new("drop not found"))?;
 
-        let nft_transfer_am = nft_transfers::ActiveModel {
-            tx_signature: Set(None),
-            collection_mint_id: Set(collection_mint_model.id),
-            sender: Set(collection_mint_model.owner.to_string()),
-            recipient: Set(recipient.clone()),
+        let owner_address = collection_mint_model.owner.clone();
+
+        CustomerWallets::find()
+            .filter(customer_wallets::Column::Address.eq(owner_address.clone()))
+            .one(conn)
+            .await?
+            .ok_or(Error::new("Sender wallet is not managed by Hub"))?;
+
+        let transfer_charges_am = transfer_charges::ActiveModel {
             ..Default::default()
         };
 
-        let nft_transfer_model = nft_transfer_am.insert(conn).await?;
+        let transfer_charge_model = transfer_charges_am.insert(conn).await?;
         let event_key = NftEventKey {
-            id: nft_transfer_model.id.to_string(),
+            id: transfer_charge_model.id.to_string(),
             user_id: user_id.to_string(),
             project_id: drop.project_id.to_string(),
         };
 
         let collection_mint_id = collection_mint_model.id.to_string();
         let recipient_address = recipient.to_string();
-        let owner_address = collection_mint_model.owner.to_string();
 
         match collection.blockchain {
             Blockchain::Solana => {
@@ -136,7 +146,7 @@ impl Mutation {
             balance,
             org_id,
             user_id,
-            nft_transfer_model.id,
+            transfer_charge_model.id,
             collection.blockchain,
         )
         .await?;
@@ -175,14 +185,15 @@ async fn submit_pending_deduction(
 
     let deduction_id = id.ok_or(Error::new("Organization does not have enough credits"))?;
 
-    let nft_transfer_model = nft_transfers::Entity::find_by_id(transfer_id)
+    let transfer_charge_model = transfer_charges::Entity::find()
+        .filter(transfer_charges::Column::Id.eq(transfer_id))
         .one(db.get())
         .await?
-        .ok_or(Error::new("drop not found"))?;
+        .ok_or(Error::new("transfer charge not found"))?;
 
-    let mut nft_transfer: nft_transfers::ActiveModel = nft_transfer_model.into();
-    nft_transfer.credits_deduction_id = Set(Some(deduction_id.0));
-    nft_transfer.update(db.get()).await?;
+    let mut transfer_charge: transfer_charges::ActiveModel = transfer_charge_model.into();
+    transfer_charge.credits_deduction_id = Set(Some(deduction_id.0));
+    transfer_charge.update(db.get()).await?;
 
     Ok(())
 }
@@ -191,6 +202,16 @@ async fn submit_pending_deduction(
 pub struct TransferAssetInput {
     pub id: Uuid,
     pub recipient: String,
+}
+
+impl TransferAssetInput {
+    fn validate_recipient_address(&self, blockchain: Blockchain) -> Result<()> {
+        match blockchain {
+            Blockchain::Ethereum => Err(Error::new("Blockchain not supported yet")),
+            Blockchain::Polygon => validate_evm_address(&self.recipient),
+            Blockchain::Solana => validate_solana_address(&self.recipient),
+        }
+    }
 }
 
 #[derive(Debug, Clone, SimpleObject)]
