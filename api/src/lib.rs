@@ -24,7 +24,7 @@ use blockchains::{polygon::Polygon, solana::Solana};
 use dataloaders::{
     CollectionLoader, CollectionMintsLoader, CollectionMintsOwnerLoader, CollectionPurchasesLoader,
     CreatorsLoader, DropLoader, DropPurchasesLoader, HoldersLoader, MetadataJsonAttributesLoader,
-    MetadataJsonLoader, ProjectDropsLoader,
+    MetadataJsonLoader, ProjectDropsLoader, ProjectCollectionsLoader
 };
 use db::Connection;
 use hub_core::{
@@ -255,6 +255,7 @@ pub struct AppContext {
     organization_id: OrganizationId,
     balance: Balance,
     project_drops_loader: DataLoader<ProjectDropsLoader>,
+    project_collections_loader:  DataLoader<ProjectCollectionsLoader>,
     collection_loader: DataLoader<CollectionLoader>,
     metadata_json_loader: DataLoader<MetadataJsonLoader>,
     metadata_json_attributes_loader: DataLoader<MetadataJsonAttributesLoader>,
@@ -277,6 +278,8 @@ impl AppContext {
     ) -> Self {
         let project_drops_loader =
             DataLoader::new(ProjectDropsLoader::new(db.clone()), tokio::spawn);
+        let project_collections_loader =
+            DataLoader::new(ProjectCollectionsLoader::new(db.clone()), tokio::spawn);
         let collection_loader = DataLoader::new(CollectionLoader::new(db.clone()), tokio::spawn);
         let metadata_json_loader =
             DataLoader::new(MetadataJsonLoader::new(db.clone()), tokio::spawn);
@@ -300,6 +303,7 @@ impl AppContext {
             organization_id,
             balance,
             project_drops_loader,
+            project_collections_loader,
             collection_loader,
             metadata_json_loader,
             metadata_json_attributes_loader,

@@ -17,6 +17,8 @@ use crate::{
 pub struct Collection {
     /// The unique identifier for the collection.
     pub id: Uuid,
+    /// The identifier for the project.
+    pub project_id: Uuid,
     /// The blockchain of the collection.
     pub blockchain: Blockchain,
     /// The total supply of the collection. Setting to `null` implies unlimited minting.
@@ -41,6 +43,12 @@ impl Collection {
     async fn id(&self) -> Uuid {
         self.id
     }
+
+     /// The identifier for the project which contains the collection.
+     async fn project_id(&self) -> Uuid {
+        self.project_id
+    }
+
 
     /// The blockchain of the collection.
     async fn blockchain(&self) -> Blockchain {
@@ -134,6 +142,7 @@ impl From<Model> for Collection {
     fn from(
         Model {
             id,
+            project_id,
             blockchain,
             supply,
             creation_status,
@@ -145,6 +154,7 @@ impl From<Model> for Collection {
     ) -> Self {
         Self {
             id,
+            project_id,
             blockchain,
             supply,
             creation_status,
