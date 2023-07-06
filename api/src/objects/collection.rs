@@ -44,11 +44,10 @@ impl Collection {
         self.id
     }
 
-     /// The identifier for the project which contains the collection.
-     async fn project_id(&self) -> Uuid {
+    /// The identifier for the project which contains the collection.
+    async fn project_id(&self) -> Uuid {
         self.project_id
     }
-
 
     /// The blockchain of the collection.
     async fn blockchain(&self) -> Blockchain {

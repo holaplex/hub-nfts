@@ -1,7 +1,7 @@
 use async_graphql::{ComplexObject, Context, Result, SimpleObject};
 use hub_core::uuid::Uuid;
 
-use crate::{objects::Drop, objects::Collection, AppContext};
+use crate::{objects::Collection, objects::Drop, AppContext};
 
 #[derive(SimpleObject, Debug, Clone)]
 #[graphql(complex)]
@@ -28,8 +28,8 @@ impl Project {
         drop_loader.load_one(id).await
     }
 
-      /// The collections associated with the project.
-      async fn collections(&self, ctx: &Context<'_>) -> Result<Option<Vec<Collection>>> {
+    /// The collections associated with the project.
+    async fn collections(&self, ctx: &Context<'_>) -> Result<Option<Vec<Collection>>> {
         let AppContext {
             project_collections_loader,
             ..
