@@ -17,6 +17,7 @@ use crate::{
         prelude::{CollectionMints, Purchases},
         project_wallets, purchases,
         sea_orm_active_enums::{Blockchain, CreationStatus},
+        transfer_charges,
     },
     proto::{
         nft_events::Event as NftEvent,
@@ -163,7 +164,6 @@ impl Processor {
             sender: Set(payload.sender),
             recipient: Set(payload.recipient),
             created_at: Set(Utc::now().into()),
-            credits_deduction_id: Set(None),
             ..Default::default()
         };
 
@@ -210,7 +210,6 @@ impl Processor {
                 sender: Set(mint.owner),
                 recipient: Set(new_owner.clone()),
                 created_at: Set(created_at),
-                credits_deduction_id: Set(None),
                 ..Default::default()
             };
 
@@ -392,22 +391,14 @@ impl Processor {
         let conn = self.db.get();
         let transfer_id = Uuid::from_str(&id)?;
 
-        let (nft_transfer, collection_mint) = nft_transfers::Entity::find_by_id(transfer_id)
-            .find_also_related(collection_mints::Entity)
+        let transfer_charge = transfer_charges::Entity::find()
+            .filter(transfer_charges::Column::CreditsDeductionId.eq(transfer_id))
             .one(conn)
             .await?
-            .context("failed to load nft transfer from db")?;
+            .context("failed to load transfer charge from db")?;
 
-        let collection_mint = collection_mint.context("collection mint not found")?;
-
-        let mut collection_mint_am: collection_mints::ActiveModel = collection_mint.into();
-        let mut nft_transfer_am: nft_transfers::ActiveModel = nft_transfer.clone().into();
-
-        if let TransferResult::Success(signature) = payload {
-            collection_mint_am.owner = Set(nft_transfer.recipient.clone());
-            nft_transfer_am.tx_signature = Set(Some(signature));
-
-            let deduction_id = nft_transfer
+        if let TransferResult::Success(_) = payload {
+            let deduction_id = transfer_charge
                 .credits_deduction_id
                 .context("deduction id not found")?;
 
@@ -415,9 +406,6 @@ impl Processor {
                 .confirm_deduction(TransactionId(deduction_id))
                 .await?;
         }
-
-        collection_mint_am.update(conn).await?;
-        nft_transfer_am.insert(conn).await?;
 
         Ok(())
     }
