@@ -4,7 +4,11 @@ use async_graphql::{dataloader::Loader as DataLoader, FieldError, Result};
 use poem::async_trait;
 use sea_orm::prelude::*;
 
-use crate::{db::Connection, entities::collections, objects::Collection};
+use crate::{
+    db::Connection,
+    entities::collections,
+    objects::Collection,
+};
 
 #[derive(Debug, Clone)]
 pub struct ProjectLoader {
@@ -31,12 +35,10 @@ impl DataLoader<Uuid> for ProjectLoader {
 
         Ok(collections
             .into_iter()
-            .map(|collection| (collection.project_id, collection.into()))
             .fold(HashMap::new(), |mut acc, (project, collection)| {
                 acc.entry(project).or_insert_with(Vec::new);
 
-                acc.entry(project)
-                    .and_modify(|collections| collections.push(collection));
+                acc.entry(project).and_modify(|collections| collections.push(collection));
 
                 acc
             }))
