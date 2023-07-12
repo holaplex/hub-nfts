@@ -1,31 +1,30 @@
 use std::str::FromStr;
 
-use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
-use reqwest::Url;
-use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
-use serde::{Deserialize, Serialize};
-use solana_program::pubkey::Pubkey;
-
 use crate::{
-    blockchains::{polygon::Polygon, solana::Solana, Event},
+    blockchains::{polygon::Polygon, solana::Solana, CollectionEvent},
     collection::Collection,
     db::Connection,
     entities::{
-        collection_creators, collections, drops, metadata_jsons,
-        prelude::{CollectionCreators, Collections, Drops, MetadataJsons},
+        collection_creators, collections, metadata_jsons,
+        prelude::{CollectionCreators, Collections, MetadataJsons},
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
     objects::{Collection as CollectionObject, CollectionCreator, MetadataJsonInput},
     proto::{
-        nft_events::Event as NftEvent, CreateEditionTransaction,
-        CreationStatus as NftCreationStatus, Creator as ProtoCreator, DropCreation, EditionInfo,
-        MasterEdition, MetaplexMasterEditionTransaction, NftEventKey, NftEvents,
+        nft_events::Event as NftEvent, CreationStatus as NftCreationStatus,
+        Creator as ProtoCreator, DropCreation, MetaplexCertifiedCollectionTransaction,
+        MetaplexMetadata, NftEventKey, NftEvents,
     },
-    Actions, AppContext, NftStorageClient, OrganizationId, UpdateEdtionTransaction, UserID,
+    Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
+use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
+use hub_core::{credits::CreditsClient, producer::Producer};
+use reqwest::Url;
+use sea_orm::{prelude::*, ModelTrait, Set, TransactionTrait};
+use serde::{Deserialize, Serialize};
+use solana_program::pubkey::Pubkey;
 
 #[derive(Default)]
 pub struct Mutation;
@@ -71,13 +70,11 @@ impl Mutation {
             validate_solana_creator_verification(&owner_address, &input.creators)?;
         }
 
-        let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
-
         let collection_am = collections::ActiveModel {
             blockchain: Set(input.blockchain),
-            supply: Set(input.supply.map(TryFrom::try_from).transpose()?),
+            supply: Set(Some(0)),
             creation_status: Set(CreationStatus::Pending),
-            seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
+            project_id: Set(input.project),
             ..Default::default()
         };
 
@@ -102,16 +99,15 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .create_drop(
+                    .create_collection(
                         event_key,
-                        MetaplexMasterEditionTransaction {
-                            master_edition: Some(MasterEdition {
+                        MetaplexCertifiedCollectionTransaction {
+                            metadata: Some(MetaplexMetadata {
                                 owner_address,
-                                supply: input.supply.map(TryInto::try_into).transpose()?,
                                 name: metadata_json.name,
                                 symbol: metadata_json.symbol,
                                 metadata_uri: metadata_json.uri,
-                                seller_fee_basis_points: seller_fee_basis_points.into(),
+                                seller_fee_basis_points: 0,
                                 creators: input
                                     .creators
                                     .into_iter()
@@ -122,32 +118,7 @@ impl Mutation {
                     )
                     .await?;
             },
-            BlockchainEnum::Polygon => {
-                let amount = input.supply.ok_or(Error::new("supply is required"))?;
-                polygon
-                    .create_drop(
-                        event_key,
-                        CreateEditionTransaction {
-                            amount: amount.try_into()?,
-                            edition_info: Some(EditionInfo {
-                                creator: input
-                                    .creators
-                                    .get(0)
-                                    .ok_or(Error::new("creator is required"))?
-                                    .clone()
-                                    .address,
-                                collection: metadata_json.name,
-                                uri: metadata_json.uri,
-                                description: metadata_json.description,
-                                image_uri: metadata_json.image,
-                            }),
-                            fee_receiver: owner_address.clone(),
-                            fee_numerator: seller_fee_basis_points.into(),
-                        },
-                    )
-                    .await?;
-            },
-            BlockchainEnum::Ethereum => {
+            BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
@@ -166,6 +137,7 @@ impl Mutation {
         )
         .await?;
 
+        // TODO: separate event for collection creation
         nfts_producer
             .send(
                 Some(&NftEvents {
@@ -247,16 +219,15 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .retry_create_drop(
+                    .retry_create_collection(
                         event_key,
-                        MetaplexMasterEditionTransaction {
-                            master_edition: Some(MasterEdition {
+                        MetaplexCertifiedCollectionTransaction {
+                            metadata: Some(MetaplexMetadata {
                                 owner_address,
-                                supply: collection.supply.map(TryInto::try_into).transpose()?,
                                 name: metadata_json.name,
                                 symbol: metadata_json.symbol,
                                 metadata_uri: metadata_json.uri,
-                                seller_fee_basis_points: collection.seller_fee_basis_points.into(),
+                                seller_fee_basis_points: 0,
                                 creators: creators
                                     .into_iter()
                                     .map(|c| ProtoCreator {
@@ -270,25 +241,7 @@ impl Mutation {
                     )
                     .await?;
             },
-            BlockchainEnum::Polygon => {
-                let amount = collection
-                    .supply
-                    .ok_or(Error::new("Supply is null for polygon edition in db"))?;
-
-                polygon
-                    .event()
-                    .retry_create_drop(
-                        event_key,
-                        CreateEditionTransaction {
-                            edition_info: None,
-                            amount,
-                            fee_receiver: owner_address,
-                            fee_numerator: collection.seller_fee_basis_points.into(),
-                        },
-                    )
-                    .await?;
-            },
-            BlockchainEnum::Ethereum => {
+            BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
@@ -322,7 +275,6 @@ impl Mutation {
     ) -> Result<PatchCollectionPayload> {
         let PatchCollectionInput {
             id,
-            seller_fee_basis_points,
             metadata_json,
             creators,
         } = input;
@@ -355,9 +307,6 @@ impl Mutation {
         }
 
         let mut collection_am: collections::ActiveModel = collection.into();
-        if let Some(seller_fee_basis_points) = seller_fee_basis_points {
-            collection_am.seller_fee_basis_points = Set(seller_fee_basis_points.try_into()?);
-        }
 
         let collection = collection_am.update(conn).await?;
 
@@ -434,50 +383,22 @@ impl Mutation {
 
                 solana
                     .event()
-                    .update_drop(
+                    .update_collection(
                         event_key,
-                        MetaplexMasterEditionTransaction {
-                            master_edition: Some(MasterEdition {
+                        MetaplexCertifiedCollectionTransaction {
+                            metadata: Some(MetaplexMetadata {
                                 owner_address,
-                                supply: collection.supply.map(TryInto::try_into).transpose()?,
                                 name: metadata_json_model.name,
                                 symbol: metadata_json_model.symbol,
                                 metadata_uri: metadata_json_model.uri,
-                                seller_fee_basis_points: collection.seller_fee_basis_points.into(),
+                                seller_fee_basis_points: 0,
                                 creators,
                             }),
                         },
                     )
                     .await?;
             },
-            BlockchainEnum::Polygon => {
-                let creator = if let Some(creators) = creators {
-                    creators[0].address.clone()
-                } else {
-                    current_creators
-                        .get(0)
-                        .ok_or(Error::new("No current creator found in db"))?
-                        .address
-                        .clone()
-                };
-
-                polygon
-                    .event()
-                    .update_drop(
-                        event_key,
-                        UpdateEdtionTransaction {
-                            edition_info: Some(EditionInfo {
-                                description: metadata_json_model.description,
-                                image_uri: metadata_json_model.image,
-                                collection: metadata_json_model.name,
-                                uri: metadata_json_model.uri,
-                                creator,
-                            }),
-                        },
-                    )
-                    .await?;
-            },
-            BlockchainEnum::Ethereum => {
+            BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
                 return Err(Error::new("blockchain not supported yet"));
             },
         };
@@ -522,12 +443,12 @@ async fn submit_pending_deduction(
     }
 
     let id = match blockchain {
-        BlockchainEnum::Solana | BlockchainEnum::Polygon => {
+        BlockchainEnum::Solana => {
             credits
                 .submit_pending_deduction(org_id, user_id, action, blockchain.into(), balance)
                 .await?
         },
-        BlockchainEnum::Ethereum => {
+        BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
             return Err(Error::new("blockchain not supported yet"));
         },
     };
@@ -571,8 +492,6 @@ pub struct CreateCollectionPayload {
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct CreateCollectionInput {
     pub project: Uuid,
-    pub seller_fee_basis_points: Option<u16>,
-    pub supply: Option<u64>,
     pub blockchain: BlockchainEnum,
     pub creators: Vec<CollectionCreator>,
     pub metadata_json: MetadataJsonInput,
@@ -591,10 +510,6 @@ impl CreateCollectionInput {
     /// # Errors
     /// - Err with an appropriate error message if any validation fails.
     pub fn validate(&self) -> Result<()> {
-        if self.supply == Some(0) {
-            return Err(Error::new("Supply must be greater than 0 or undefined"));
-        };
-
         validate_creators(self.blockchain, &self.creators)?;
         validate_json(self.blockchain, &self.metadata_json)?;
 
@@ -732,7 +647,7 @@ fn validate_json(blockchain: BlockchainEnum, json: &MetadataJsonInput) -> Result
 
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct RetryCollectionInput {
-    pub collection: Uuid,
+    pub id: Uuid,
 }
 
 #[derive(Debug, Clone, SimpleObject)]
@@ -745,8 +660,6 @@ pub struct RetryCollectionPayload {
 pub struct PatchCollectionInput {
     /// The unique identifier of the drop
     pub id: Uuid,
-    /// The new seller fee basis points for the drop
-    pub seller_fee_basis_points: Option<u16>,
     /// The new metadata JSON for the drop
     pub metadata_json: Option<MetadataJsonInput>,
     /// The creators of the drop
@@ -758,14 +671,4 @@ pub struct PatchCollectionInput {
 pub struct PatchCollectionPayload {
     /// The drop that has been patched.
     collection: CollectionObject,
-}
-
-impl From<BlockchainEnum> for Blockchain {
-    fn from(v: BlockchainEnum) -> Self {
-        match v {
-            BlockchainEnum::Ethereum => Self::Ethereum,
-            BlockchainEnum::Polygon => Self::Polygon,
-            BlockchainEnum::Solana => Self::Solana,
-        }
-    }
 }
