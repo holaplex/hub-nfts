@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use solana_program::pubkey::Pubkey;
 
 use crate::{
-    blockchains::{polygon::Polygon, solana::Solana, Event},
+    blockchains::{polygon::Polygon, solana::Solana, DropEvent},
     collection::Collection,
     db::Connection,
     entities::{
@@ -963,4 +963,14 @@ pub struct ShutdownDropInput {
 pub struct ShutdownDropPayload {
     /// Drop that has been shutdown
     drop: Drop,
+}
+
+impl From<BlockchainEnum> for proto::Blockchain {
+    fn from(v: BlockchainEnum) -> Self {
+        match v {
+            BlockchainEnum::Ethereum => Self::Ethereum,
+            BlockchainEnum::Polygon => Self::Polygon,
+            BlockchainEnum::Solana => Self::Solana,
+        }
+    }
 }

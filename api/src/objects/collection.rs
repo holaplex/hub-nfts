@@ -35,6 +35,8 @@ pub struct Collection {
     pub signature: Option<String>,
     /// The royalties assigned to mints belonging to the collection expressed in basis points.
     pub seller_fee_basis_points: i16,
+    pub project_id: Uuid,
+    pub credits_deduction_id: Option<Uuid>,
 }
 
 #[Object]
@@ -61,6 +63,14 @@ impl Collection {
     /// The creation status of the collection. When the collection is in a `CREATED` status you can mint NFTs from the collection.
     async fn creation_status(&self) -> CreationStatus {
         self.creation_status
+    }
+
+    async fn project_id(&self) -> Uuid {
+        self.project_id
+    }
+
+    async fn credits_deduction_id(&self) -> Option<Uuid> {
+        self.credits_deduction_id.clone()
     }
 
     /// The blockchain address of the collection used to view it in blockchain explorers.
@@ -149,6 +159,8 @@ impl From<Model> for Collection {
             signature,
             seller_fee_basis_points,
             address,
+            project_id,
+            credits_deduction_id,
         }: Model,
     ) -> Self {
         Self {
@@ -161,6 +173,8 @@ impl From<Model> for Collection {
             total_mints,
             signature,
             seller_fee_basis_points,
+            project_id,
+            credits_deduction_id,
         }
     }
 }

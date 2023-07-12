@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::drop::{validate_evm_address, validate_solana_address};
 use crate::{
-    blockchains::{polygon::Polygon, solana::Solana, Event},
+    blockchains::{polygon::Polygon, solana::Solana, TransferEvent},
     db::Connection,
     entities::{
         collection_mints::{self, CollectionMint},
