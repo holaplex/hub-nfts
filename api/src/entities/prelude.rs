@@ -5,6 +5,7 @@ pub use super::{
     collections::Entity as Collections, customer_wallets::Entity as CustomerWallets,
     drops::Entity as Drops, metadata_json_attributes::Entity as MetadataJsonAttributes,
     metadata_json_files::Entity as MetadataJsonFiles, metadata_jsons::Entity as MetadataJsons,
-    nft_transfers::Entity as NftTransfers, project_wallets::Entity as ProjectWallets,
-    purchases::Entity as Purchases, transfer_charges::Entity as TransferCharges,
+    mint_creators::Entity as MintCreators, nft_transfers::Entity as NftTransfers,
+    project_wallets::Entity as ProjectWallets, purchases::Entity as Purchases,
+    transfer_charges::Entity as TransferCharges,
 };

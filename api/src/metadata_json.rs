@@ -13,9 +13,9 @@ use crate::{
 };
 #[derive(Clone, Debug)]
 pub struct MetadataJson {
-    metadata_json: MetadataJsonInput,
-    uri: Option<String>,
-    identifier: Option<String>,
+    pub metadata_json: MetadataJsonInput,
+    pub uri: Option<String>,
+    pub identifier: Option<String>,
 }
 
 impl MetadataJson {
@@ -46,7 +46,7 @@ impl MetadataJson {
             .await?
             .first()
             .map(ToOwned::to_owned)
-            .ok_or_else(|| anyhow!("no metadata_json entry found in db"))?;
+            .ok_or(anyhow!("no metadata_json entry found in db"))?;
 
         let files = metadata_json_files::Entity::find()
             .filter(metadata_json_files::Column::MetadataJsonId.eq(id))

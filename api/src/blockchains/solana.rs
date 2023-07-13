@@ -31,7 +31,7 @@ impl Solana {
         MintMetaplexEditionTransaction,
         MetaplexMasterEditionTransaction,
     > + TransferEvent<TransferMetaplexAssetTransaction>
-           + CollectionEvent<
+    + CollectionEvent<
         MetaplexCertifiedCollectionTransaction,
         MetaplexCertifiedCollectionTransaction,
         MintMetaplexMetadataTransaction,

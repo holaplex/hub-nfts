@@ -1,5 +1,12 @@
 use std::str::FromStr;
 
+use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
+use hub_core::{credits::CreditsClient, producer::Producer};
+use reqwest::Url;
+use sea_orm::{prelude::*, ModelTrait, Set, TransactionTrait};
+use serde::{Deserialize, Serialize};
+use solana_program::pubkey::Pubkey;
+
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, CollectionEvent},
     collection::Collection,
@@ -11,7 +18,7 @@ use crate::{
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
-    objects::{Collection as CollectionObject, CollectionCreator, MetadataJsonInput},
+    objects::{Collection as CollectionObject, Creator, MetadataJsonInput},
     proto::{
         nft_events::Event as NftEvent, CreationStatus as NftCreationStatus,
         Creator as ProtoCreator, DropCreation, MetaplexCertifiedCollectionTransaction,
@@ -19,12 +26,6 @@ use crate::{
     },
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
-use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{credits::CreditsClient, producer::Producer};
-use reqwest::Url;
-use sea_orm::{prelude::*, ModelTrait, Set, TransactionTrait};
-use serde::{Deserialize, Serialize};
-use solana_program::pubkey::Pubkey;
 
 #[derive(Default)]
 pub struct Mutation;
@@ -58,7 +59,7 @@ impl Mutation {
         let conn = db.get();
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let solana = ctx.data::<Solana>()?;
-        let polygon = ctx.data::<Polygon>()?;
+        let _polygon = ctx.data::<Polygon>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
@@ -99,23 +100,20 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .create_collection(
-                        event_key,
-                        MetaplexCertifiedCollectionTransaction {
-                            metadata: Some(MetaplexMetadata {
-                                owner_address,
-                                name: metadata_json.name,
-                                symbol: metadata_json.symbol,
-                                metadata_uri: metadata_json.uri,
-                                seller_fee_basis_points: 0,
-                                creators: input
-                                    .creators
-                                    .into_iter()
-                                    .map(TryFrom::try_from)
-                                    .collect::<Result<_>>()?,
-                            }),
-                        },
-                    )
+                    .create_collection(event_key, MetaplexCertifiedCollectionTransaction {
+                        metadata: Some(MetaplexMetadata {
+                            owner_address,
+                            name: metadata_json.name,
+                            symbol: metadata_json.symbol,
+                            metadata_uri: metadata_json.uri,
+                            seller_fee_basis_points: 0,
+                            creators: input
+                                .creators
+                                .into_iter()
+                                .map(TryFrom::try_from)
+                                .collect::<Result<_>>()?,
+                        }),
+                    })
                     .await?;
             },
             BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
@@ -123,18 +121,14 @@ impl Mutation {
             },
         };
 
-        submit_pending_deduction(
-            credits,
-            db,
-            DeductionParams {
-                user_id,
-                org_id,
-                balance,
-                collection: collection.id,
-                blockchain: input.blockchain,
-                action: Actions::CreateDrop,
-            },
-        )
+        submit_pending_deduction(credits, db, DeductionParams {
+            user_id,
+            org_id,
+            balance,
+            collection: collection.id,
+            blockchain: input.blockchain,
+            action: Actions::CreateDrop,
+        })
         .await?;
 
         // TODO: separate event for collection creation
@@ -181,7 +175,7 @@ impl Mutation {
         let OrganizationId(org) = organization_id;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
-        let polygon = ctx.data::<Polygon>()?;
+        let _polygon = ctx.data::<Polygon>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
         let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
@@ -219,26 +213,23 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .retry_create_collection(
-                        event_key,
-                        MetaplexCertifiedCollectionTransaction {
-                            metadata: Some(MetaplexMetadata {
-                                owner_address,
-                                name: metadata_json.name,
-                                symbol: metadata_json.symbol,
-                                metadata_uri: metadata_json.uri,
-                                seller_fee_basis_points: 0,
-                                creators: creators
-                                    .into_iter()
-                                    .map(|c| ProtoCreator {
-                                        address: c.address,
-                                        verified: c.verified,
-                                        share: c.share,
-                                    })
-                                    .collect(),
-                            }),
-                        },
-                    )
+                    .retry_create_collection(event_key, MetaplexCertifiedCollectionTransaction {
+                        metadata: Some(MetaplexMetadata {
+                            owner_address,
+                            name: metadata_json.name,
+                            symbol: metadata_json.symbol,
+                            metadata_uri: metadata_json.uri,
+                            seller_fee_basis_points: 0,
+                            creators: creators
+                                .into_iter()
+                                .map(|c| ProtoCreator {
+                                    address: c.address,
+                                    verified: c.verified,
+                                    share: c.share,
+                                })
+                                .collect(),
+                        }),
+                    })
                     .await?;
             },
             BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
@@ -246,18 +237,14 @@ impl Mutation {
             },
         };
 
-        submit_pending_deduction(
-            credits,
-            db,
-            DeductionParams {
-                balance,
-                user_id,
-                org_id,
-                collection: collection.id,
-                blockchain: collection.blockchain,
-                action: Actions::RetryDrop,
-            },
-        )
+        submit_pending_deduction(credits, db, DeductionParams {
+            balance,
+            user_id,
+            org_id,
+            collection: collection.id,
+            blockchain: collection.blockchain,
+            action: Actions::RetryDrop,
+        })
         .await?;
 
         Ok(CreateCollectionPayload {
@@ -274,7 +261,7 @@ impl Mutation {
         input: PatchCollectionInput,
     ) -> Result<PatchCollectionPayload> {
         let PatchCollectionInput {
-            id,
+            id: _,
             metadata_json,
             creators,
         } = input;
@@ -283,7 +270,7 @@ impl Mutation {
         let conn = db.get();
         let nft_storage = ctx.data::<NftStorageClient>()?;
         let solana = ctx.data::<Solana>()?;
-        let polygon = ctx.data::<Polygon>()?;
+        let _polygon = ctx.data::<Polygon>()?;
 
         let user_id = user_id.0.ok_or(Error::new("X-USER-ID header not found"))?;
 
@@ -305,10 +292,6 @@ impl Mutation {
         if let Some(metadata_json) = &metadata_json {
             validate_json(collection.blockchain, metadata_json)?;
         }
-
-        let mut collection_am: collections::ActiveModel = collection.into();
-
-        let collection = collection_am.update(conn).await?;
 
         let current_creators = collection_creators::Entity::find()
             .filter(collection_creators::Column::CollectionId.eq(collection.id))
@@ -383,19 +366,16 @@ impl Mutation {
 
                 solana
                     .event()
-                    .update_collection(
-                        event_key,
-                        MetaplexCertifiedCollectionTransaction {
-                            metadata: Some(MetaplexMetadata {
-                                owner_address,
-                                name: metadata_json_model.name,
-                                symbol: metadata_json_model.symbol,
-                                metadata_uri: metadata_json_model.uri,
-                                seller_fee_basis_points: 0,
-                                creators,
-                            }),
-                        },
-                    )
+                    .update_collection(event_key, MetaplexCertifiedCollectionTransaction {
+                        metadata: Some(MetaplexMetadata {
+                            owner_address,
+                            name: metadata_json_model.name,
+                            symbol: metadata_json_model.symbol,
+                            metadata_uri: metadata_json_model.uri,
+                            seller_fee_basis_points: 0,
+                            creators,
+                        }),
+                    })
                     .await?;
             },
             BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
@@ -462,7 +442,7 @@ async fn submit_pending_deduction(
     Ok(())
 }
 
-async fn fetch_owner(
+pub async fn fetch_owner(
     conn: &DatabaseConnection,
     project: Uuid,
     blockchain: BlockchainEnum,
@@ -493,7 +473,7 @@ pub struct CreateCollectionPayload {
 pub struct CreateCollectionInput {
     pub project: Uuid,
     pub blockchain: BlockchainEnum,
-    pub creators: Vec<CollectionCreator>,
+    pub creators: Vec<Creator>,
     pub metadata_json: MetadataJsonInput,
 }
 
@@ -517,9 +497,9 @@ impl CreateCollectionInput {
     }
 }
 
-fn validate_solana_creator_verification(
+pub fn validate_solana_creator_verification(
     project_treasury_wallet_address: &str,
-    creators: &Vec<CollectionCreator>,
+    creators: &Vec<Creator>,
 ) -> Result<()> {
     for creator in creators {
         if creator.verified.unwrap_or_default()
@@ -541,7 +521,7 @@ fn validate_solana_creator_verification(
 /// # Errors
 /// - Err with an appropriate error message if any creator address is not a valid address.
 /// - Err if the blockchain is not supported.
-fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreator>) -> Result<()> {
+pub fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<Creator>) -> Result<()> {
     let royalty_share = creators.iter().map(|c| c.share).sum::<u8>();
 
     if royalty_share != 100 {
@@ -615,7 +595,7 @@ pub fn validate_evm_address(address: &str) -> Result<()> {
 ///
 /// # Errors
 /// - Err with an appropriate error message if any JSON field is invalid.
-fn validate_json(blockchain: BlockchainEnum, json: &MetadataJsonInput) -> Result<()> {
+pub fn validate_json(blockchain: BlockchainEnum, json: &MetadataJsonInput) -> Result<()> {
     json.animation_url
         .as_ref()
         .map(|animation_url| Url::from_str(animation_url))
@@ -663,7 +643,7 @@ pub struct PatchCollectionInput {
     /// The new metadata JSON for the drop
     pub metadata_json: Option<MetadataJsonInput>,
     /// The creators of the drop
-    pub creators: Option<Vec<CollectionCreator>>,
+    pub creators: Option<Vec<Creator>>,
 }
 
 /// Represents the result of a successful patch drop mutation.

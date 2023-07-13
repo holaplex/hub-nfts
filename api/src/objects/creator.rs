@@ -3,13 +3,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::proto;
 
-/// An attributed creator for a colleciton.
+/// An attributed creator for a collection or mint.
 #[derive(Clone, Debug, Serialize, Deserialize, InputObject)]
-#[graphql(name = "CollectionCreatorInput")]
-pub struct CollectionCreator {
+#[graphql(name = "CreatorInput")]
+pub struct Creator {
     /// The wallet address of the creator.
     pub address: String,
-    /// This field indicates whether the collection's creator has been verified. This feature is only supported on the Solana blockchain.
+    /// This field indicates whether the creator has been verified. This feature is only supported on the Solana blockchain.
     /// ## References
     /// [Metaplex Token Metadata - Verify creator instruction](https://docs.metaplex.com/programs/token-metadata/instructions#verify-a-creator)
     pub verified: Option<bool>,
@@ -17,15 +17,15 @@ pub struct CollectionCreator {
     pub share: u8,
 }
 
-impl TryFrom<CollectionCreator> for proto::Creator {
+impl TryFrom<Creator> for proto::Creator {
     type Error = Error;
 
     fn try_from(
-        CollectionCreator {
+        Creator {
             address,
             verified,
             share,
-        }: CollectionCreator,
+        }: Creator,
     ) -> Result<Self> {
         Ok(Self {
             address: address.parse()?,

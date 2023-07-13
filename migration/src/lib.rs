@@ -45,7 +45,8 @@ mod m20230706_130934_create_transfer_charges_table;
 mod m20230706_133356_backfill_transfer_charges;
 mod m20230706_134402_drop_column_credits_deduction_id_from_nft_transfers;
 mod m20230706_142939_add_columns_project_id_and_credits_deduction_id_to_collections;
-mod m20230711_150256_rename_collection_creators_to_creators;
+mod m20230713_151414_create_mint_creators_table;
+mod m20230713_163043_add_column_compressed_to_collection_mints;
 
 pub struct Migrator;
 
@@ -98,7 +99,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20230706_133356_backfill_transfer_charges::Migration),
             Box::new(m20230706_134402_drop_column_credits_deduction_id_from_nft_transfers::Migration),
             Box::new(m20230706_142939_add_columns_project_id_and_credits_deduction_id_to_collections::Migration),
-            Box::new(m20230711_150256_rename_collection_creators_to_creators::Migration),
+            Box::new(m20230713_151414_create_mint_creators_table::Migration),
+            Box::new(m20230713_163043_add_column_compressed_to_collection_mints::Migration),
         ]
     }
 }

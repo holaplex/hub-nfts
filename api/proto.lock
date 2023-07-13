@@ -1,26 +1,26 @@
 [[schemas]]
 subject = "customer"
-version = 1
+version = 2
 sha512 = "d75800df0d4744c6b0f4d9a9952d3bfd0bb6b24a8babd19104cc11b54a525f85551b3c7375d69aeabbcf629cd826aa0bc6b0c0467add20716c504f5e856ce1c5"
 
 [[schemas]]
 subject = "nfts"
-version = 1
+version = 20
 sha512 = "e1e47f595a3709db361e38d5995116a6fc03960a7e5f3c64e293454b062e72a95aa279d36161e7579209710d3f2e382efa559f8f380cc5a173ddc1b6ac44c259"
 
 [[schemas]]
 subject = "organization"
-version = 1
+version = 5
 sha512 = "9fb28ac73d9712292297394a5fa53a7dae9deba6847353582987ba749859301c23c05fd49d2ce84a1640f8864c5c04d59fa38907700b280000e5c4afc96654bf"
 
 [[schemas]]
 subject = "polygon_nfts"
-version = 1
+version = 6
 sha512 = "c5ddf43d2958ec690ee2261d0ff9808b67ce810d2fc4b6077f96f561929a920f03509fc8bd7adbda219250eb019f5f7be8a3f51c554f665ea1881f7a973ef2a6"
 
 [[schemas]]
 subject = "solana_nfts"
-version = 1
+version = 4
 sha512 = "272f1aed7d792a5fe5750cdca659091ca1a4a8dd4f36b35f5066ea6bb09cf4f1e905e7e5817dfa6c68d7ea3a8644192b4ff82e7ffcd85b2d9a58e48112a4a8bc"
 
 [[schemas]]
@@ -30,5 +30,5 @@ sha512 = "d167e0a143c813073eef8597f0b237e5a8eaf32abbf709724e8071b2dd73ce0438b82f
 
 [[schemas]]
 subject = "treasury"
-version = 1
+version = 17
 sha512 = "c4caa4f7d032686dff56840909254f5bbb21c12b5e01cf890443dbe4d9806be637e5bbd09a66176152ecd42687fd7bc7008b50f00aec46ff941f4eb04bee25f2"

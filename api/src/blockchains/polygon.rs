@@ -24,22 +24,15 @@ impl Polygon {
     #[must_use]
     pub fn event(
         &self,
-    ) -> impl DropEvent<
-        CreateEditionTransaction,
-        MintEditionTransaction,
-        UpdateEdtionTransaction,
-    > + TransferEvent<TransferPolygonAsset> {
+    ) -> impl DropEvent<CreateEditionTransaction, MintEditionTransaction, UpdateEdtionTransaction>
+    + TransferEvent<TransferPolygonAsset> {
         self.clone()
     }
 }
 
 #[async_trait::async_trait]
-impl
-    DropEvent<
-        CreateEditionTransaction,
-        MintEditionTransaction,
-        UpdateEdtionTransaction,
-    > for Polygon
+impl DropEvent<CreateEditionTransaction, MintEditionTransaction, UpdateEdtionTransaction>
+    for Polygon
 {
     async fn create_drop(&self, key: NftEventKey, payload: CreateEditionTransaction) -> Result<()> {
         let event = NftEvents {

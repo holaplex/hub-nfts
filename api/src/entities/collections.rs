@@ -21,6 +21,7 @@ pub struct Model {
     #[sea_orm(nullable)]
     pub signature: Option<String>,
     pub seller_fee_basis_points: i16,
+    // TODO: add to collections and backfill from the drops
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

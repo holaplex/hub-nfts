@@ -63,7 +63,7 @@ impl Collection {
     }
 
     async fn credits_deduction_id(&self) -> Option<Uuid> {
-        self.credits_deduction_id.clone()
+        self.credits_deduction_id
     }
 
     /// The blockchain address of the collection used to view it in blockchain explorers.
