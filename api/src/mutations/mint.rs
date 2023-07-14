@@ -5,7 +5,7 @@ use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 
 use crate::{
-    blockchains::{polygon::Polygon, solana::Solana, DropEvent, CollectionEvent},
+    blockchains::{polygon::Polygon, solana::Solana, CollectionEvent, DropEvent},
     db::Connection,
     entities::{
         collection_mints, collections, drops,
@@ -16,8 +16,8 @@ use crate::{
     metadata_json::MetadataJson,
     objects::{CollectionCreator, MetadataJsonInput},
     proto::{
-        self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, MintCreation,
-        NftEventKey, NftEvents, MetaplexMetadata,
+        self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, MetaplexMetadata,
+        MintCreation, NftEventKey, NftEvents,
     },
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };

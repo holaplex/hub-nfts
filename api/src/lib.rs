@@ -22,9 +22,10 @@ use async_graphql::{
 };
 use blockchains::{polygon::Polygon, solana::Solana};
 use dataloaders::{
-    CollectionLoader, CollectionMintsLoader, CollectionMintsOwnerLoader, CollectionPurchasesLoader,
-    CreatorsLoader, DropLoader, DropPurchasesLoader, HoldersLoader, MetadataJsonAttributesLoader,
-    MetadataJsonLoader, ProjectCollectionsLoader, ProjectDropsLoader,
+    CollectionDropLoader, CollectionLoader, CollectionMintsLoader, CollectionMintsOwnerLoader,
+    CollectionPurchasesLoader, CreatorsLoader, DropLoader, DropPurchasesLoader, HoldersLoader,
+    MetadataJsonAttributesLoader, MetadataJsonLoader, ProjectCollectionsLoader,
+    ProjectCollectionsLoader, ProjectDropsLoader,
 };
 use db::Connection;
 use hub_core::{
@@ -257,11 +258,13 @@ pub struct AppContext {
     project_drops_loader: DataLoader<ProjectDropsLoader>,
     project_collections_loader: DataLoader<ProjectCollectionsLoader>,
     collection_loader: DataLoader<CollectionLoader>,
+    project_collection_loader: DataLoader<ProjectCollectionsLoader>,
     metadata_json_loader: DataLoader<MetadataJsonLoader>,
     metadata_json_attributes_loader: DataLoader<MetadataJsonAttributesLoader>,
     collection_mints_loader: DataLoader<CollectionMintsLoader>,
     collection_mints_owner_loader: DataLoader<CollectionMintsOwnerLoader>,
     drop_loader: DataLoader<DropLoader>,
+    collection_drop_loader: DataLoader<CollectionDropLoader>,
     creators_loader: DataLoader<CreatorsLoader>,
     holders_loader: DataLoader<HoldersLoader>,
     collection_purchases_loader: DataLoader<CollectionPurchasesLoader>,
@@ -281,6 +284,8 @@ impl AppContext {
         let project_collections_loader =
             DataLoader::new(ProjectCollectionsLoader::new(db.clone()), tokio::spawn);
         let collection_loader = DataLoader::new(CollectionLoader::new(db.clone()), tokio::spawn);
+        let project_collection_loader =
+            DataLoader::new(ProjectCollectionsLoader::new(db.clone()), tokio::spawn);
         let metadata_json_loader =
             DataLoader::new(MetadataJsonLoader::new(db.clone()), tokio::spawn);
         let metadata_json_attributes_loader =
@@ -290,6 +295,8 @@ impl AppContext {
         let collection_mints_owner_loader =
             DataLoader::new(CollectionMintsOwnerLoader::new(db.clone()), tokio::spawn);
         let drop_loader = DataLoader::new(DropLoader::new(db.clone()), tokio::spawn);
+        let collection_drop_loader =
+            DataLoader::new(CollectionDropLoader::new(db.clone()), tokio::spawn);
         let creators_loader = DataLoader::new(CreatorsLoader::new(db.clone()), tokio::spawn);
         let holders_loader = DataLoader::new(HoldersLoader::new(db.clone()), tokio::spawn);
         let collection_purchases_loader =
@@ -305,11 +312,13 @@ impl AppContext {
             project_drops_loader,
             project_collections_loader,
             collection_loader,
+            project_collection_loader,
             metadata_json_loader,
             metadata_json_attributes_loader,
             collection_mints_loader,
             collection_mints_owner_loader,
             drop_loader,
+            collection_drop_loader,
             creators_loader,
             holders_loader,
             collection_purchases_loader,

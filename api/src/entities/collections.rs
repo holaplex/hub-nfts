@@ -12,7 +12,6 @@ pub struct Model {
     pub project_id: Uuid,
     pub blockchain: Blockchain,
     pub supply: Option<i64>,
-    pub project_id: Uuid,
     #[sea_orm(nullable)]
     pub credits_deduction_id: Option<Uuid>,
     pub creation_status: CreationStatus,
