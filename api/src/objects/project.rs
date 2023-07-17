@@ -38,7 +38,7 @@ impl Project {
         project_collections_loader.load_one(self.id).await
     }
 
-    async fn collection(&self, id: Uuid, ctx: &Context<'_>) -> Result<Option<Collection>> {
+    async fn collection(&self, ctx: &Context<'_>, id: Uuid) -> Result<Option<Collection>> {
         let AppContext {
             project_collection_loader,
             ..

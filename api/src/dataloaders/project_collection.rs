@@ -29,9 +29,9 @@ impl DataLoader<Uuid> for ProjectCollectionLoader {
             .all(self.db.get())
             .await?;
 
-        collections
+        Ok(collections
             .into_iter()
-            .map(|collection| Ok((collection.id, collection.into())))
-            .collect()
+            .map(|collection| (collection.id, collection.into()))
+            .collect())
     }
 }
