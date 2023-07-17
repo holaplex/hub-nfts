@@ -6,6 +6,8 @@ mod drops;
 mod holders;
 mod metadata_json;
 mod purchases;
+mod project_collections;
+mod collection_drop;
 
 pub use collection::Loader as CollectionLoader;
 pub use collection_mints::{
