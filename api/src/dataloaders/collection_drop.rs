@@ -39,7 +39,13 @@ impl DataLoader<Uuid> for Loader {
             .into_iter()
             .map(|(drop, collection)| {
                 Ok((
-                    drop.id,
+                    drop.collection_id,
+                    Drop::new(
+                        drop.clone(),
+                        collection.ok_or_else(|| {
+                            FieldError::new(format!("no collection for the drop {}", drop.id))
+                        })?,
+                    ),
                 ))
             })
             .collect::<Result<HashMap<Uuid, Self::Value>>>()

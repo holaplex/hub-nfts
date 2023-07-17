@@ -7,11 +7,11 @@ use sea_orm::prelude::*;
 use crate::{db::Connection, entities::collections, objects::Collection};
 
 #[derive(Debug, Clone)]
-pub struct ProjectCollectionsLoader {
+pub struct ProjectCollectionLoader {
     pub db: Connection,
 }
 
-impl ProjectCollectionsLoader {
+impl ProjectCollectionLoader {
     #[must_use]
     pub fn new(db: Connection) -> Self {
         Self { db }
@@ -19,9 +19,9 @@ impl ProjectCollectionsLoader {
 }
 
 #[async_trait]
-impl DataLoader<Uuid> for ProjectCollectionsLoader {
+impl DataLoader<Uuid> for ProjectCollectionLoader {
     type Error = FieldError;
-    type Value = Vec<Collection>;
+    type Value = Collection;
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let collections = collections::Entity::find()
@@ -29,15 +29,9 @@ impl DataLoader<Uuid> for ProjectCollectionsLoader {
             .all(self.db.get())
             .await?;
 
-        Ok(collections
+        collections
             .into_iter()
-            .fold(HashMap::new(), |mut acc, collection| {
-                acc.entry(collection.project_id).or_insert_with(Vec::new);
-
-                acc.entry(collection.project_id)
-                    .and_modify(|collections| collections.push(collection.into()));
-
-                acc
-            }))
+            .map(|collection| Ok((collection.id, collection.into())))
+            .collect()
     }
 }
