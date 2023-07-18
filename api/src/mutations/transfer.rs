@@ -116,29 +116,23 @@ impl Mutation {
 
                 solana
                     .event()
-                    .transfer_asset(
-                        event_key,
-                        proto::TransferMetaplexAssetTransaction {
-                            recipient_address,
-                            owner_address,
-                            collection_mint_id,
-                        },
-                    )
+                    .transfer_asset(event_key, proto::TransferMetaplexAssetTransaction {
+                        recipient_address,
+                        owner_address,
+                        collection_mint_id,
+                    })
                     .await?;
             },
             Blockchain::Polygon => {
                 let polygon = ctx.data::<Polygon>()?;
                 polygon
                     .event()
-                    .transfer_asset(
-                        event_key,
-                        TransferPolygonAsset {
-                            collection_mint_id,
-                            owner_address,
-                            recipient_address,
-                            amount: 1,
-                        },
-                    )
+                    .transfer_asset(event_key, TransferPolygonAsset {
+                        collection_mint_id,
+                        owner_address,
+                        recipient_address,
+                        amount: 1,
+                    })
                     .await?;
             },
             Blockchain::Ethereum => {

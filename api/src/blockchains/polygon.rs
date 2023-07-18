@@ -25,7 +25,7 @@ impl Polygon {
     pub fn event(
         &self,
     ) -> impl DropEvent<CreateEditionTransaction, MintEditionTransaction, UpdateEdtionTransaction>
-           + TransferEvent<TransferPolygonAsset> {
+    + TransferEvent<TransferPolygonAsset> {
         self.clone()
     }
 }

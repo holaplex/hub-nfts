@@ -1,7 +1,10 @@
 use async_graphql::{ComplexObject, Context, Result, SimpleObject};
 use hub_core::uuid::Uuid;
 
-use crate::{objects::Collection, objects::Drop, AppContext};
+use crate::{
+    objects::{Collection, Drop},
+    AppContext,
+};
 
 #[derive(SimpleObject, Debug, Clone)]
 #[graphql(complex)]
