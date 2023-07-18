@@ -517,7 +517,6 @@ impl Mutation {
         let collection = collection.ok_or(Error::new("collection  not found"))?;
 
         let recipient = collection_mint_model.owner.clone();
-        let _edition = collection_mint_model.edition;
         let project_id = collection.project_id;
         let blockchain = collection.blockchain;
 

@@ -35,6 +35,8 @@ pub struct Collection {
     pub seller_fee_basis_points: i16,
     pub project_id: Uuid,
     pub credits_deduction_id: Option<Uuid>,
+    pub created_at: DateTimeWithTimeZone,
+    pub created_by: Uuid,
 }
 
 #[Object]
@@ -60,6 +62,16 @@ impl Collection {
 
     async fn project_id(&self) -> Uuid {
         self.project_id
+    }
+
+    /// The date and time in UTC when the collection was created.
+    async fn created_at(&self) -> DateTimeWithTimeZone {
+        self.created_at
+    }
+
+    /// The user id of the person who created the collection.
+    async fn created_by_id(&self) -> Uuid {
+        self.created_by
     }
 
     async fn credits_deduction_id(&self) -> Option<Uuid> {
@@ -162,6 +174,8 @@ impl From<Model> for Collection {
             address,
             project_id,
             credits_deduction_id,
+            created_at,
+            created_by,
         }: Model,
     ) -> Self {
         Self {
@@ -175,6 +189,8 @@ impl From<Model> for Collection {
             seller_fee_basis_points,
             project_id,
             credits_deduction_id,
+            created_at,
+            created_by,
         }
     }
 }

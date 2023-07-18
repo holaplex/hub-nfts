@@ -76,6 +76,7 @@ impl Mutation {
             supply: Set(Some(0)),
             creation_status: Set(CreationStatus::Pending),
             project_id: Set(input.project),
+            created_by: Set(user_id),
             ..Default::default()
         };
 

@@ -3,7 +3,7 @@ use hub_core::credits::CreditsClient;
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 use serde::{Deserialize, Serialize};
 
-use super::drop::{validate_evm_address, validate_solana_address};
+use super::collection::{validate_evm_address, validate_solana_address};
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, TransferEvent},
     db::Connection,

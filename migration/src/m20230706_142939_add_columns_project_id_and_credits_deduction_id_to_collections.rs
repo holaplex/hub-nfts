@@ -45,7 +45,7 @@ impl MigrationTrait for Migration {
 
         let stmt = Statement::from_string(
                 manager.get_database_backend(),
-                r#"UPDATE collections SET credits_deduction_id = drops.credits_deduction_id, project_id = drops.project_id FROM collections c INNER JOIN drops ON c.id = drops.collection_id;"#.to_string(),
+                r#"UPDATE collections SET credits_deduction_id = drops.credits_deduction_id, project_id = drops.project_id FROM drops WHERE drops.collection_id = collections.id;"#.to_string(),
             );
 
         db.execute(stmt).await?;
