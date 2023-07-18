@@ -1,7 +1,7 @@
 use async_graphql::{Context, Object, Result};
 use sea_orm::entity::prelude::*;
 
-use super::{metadata_json::MetadataJson, Holder};
+use super::{metadata_json::MetadataJson, Drop, Holder};
 use crate::{
     entities::{
         collection_creators, collection_mints,
@@ -137,6 +137,15 @@ impl Collection {
         } = ctx.data::<AppContext>()?;
 
         collection_purchases_loader.load_one(self.id).await
+    }
+
+    async fn drop(&self, ctx: &Context<'_>) -> Result<Option<Drop>> {
+        let AppContext {
+            collection_drop_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        collection_drop_loader.load_one(self.id).await
     }
 }
 
