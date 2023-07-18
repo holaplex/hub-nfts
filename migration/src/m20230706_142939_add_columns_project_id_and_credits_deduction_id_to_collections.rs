@@ -22,6 +22,7 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 IndexCreateStatement::new()
+                    .if_not_exists()
                     .name("collections-project_id_index")
                     .table(Collections::Table)
                     .col(Collections::ProjectId)
@@ -33,6 +34,7 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 IndexCreateStatement::new()
+                    .if_not_exists()
                     .name("collections-credits_deduction_id_index")
                     .table(Collections::Table)
                     .col(Collections::CreditsDeductionId)
