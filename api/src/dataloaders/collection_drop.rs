@@ -42,9 +42,10 @@ impl DataLoader<Uuid> for Loader {
                     drop.collection_id,
                     Drop::new(
                         drop.clone(),
-                        collection.ok_or_else(|| {
-                            FieldError::new(format!("no collection for the drop {}", drop.id))
-                        })?,
+                        collection.ok_or(FieldError::new(format!(
+                            "no collection for the drop {}",
+                            drop.id
+                        )))?,
                     ),
                 ))
             })
