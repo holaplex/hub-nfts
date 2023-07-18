@@ -1,6 +1,6 @@
 use hub_core::{anyhow::Result, producer::Producer};
 
-use super::Event;
+use super::{DropEvent, TransferEvent};
 use crate::proto::{
     nft_events::Event::{
         PolygonCreateDrop, PolygonMintDrop, PolygonRetryDrop, PolygonRetryMintDrop,
@@ -24,24 +24,15 @@ impl Polygon {
     #[must_use]
     pub fn event(
         &self,
-    ) -> impl Event<
-        CreateEditionTransaction,
-        MintEditionTransaction,
-        TransferPolygonAsset,
-        UpdateEdtionTransaction,
-    > {
+    ) -> impl DropEvent<CreateEditionTransaction, MintEditionTransaction, UpdateEdtionTransaction>
+    + TransferEvent<TransferPolygonAsset> {
         self.clone()
     }
 }
 
 #[async_trait::async_trait]
-impl
-    Event<
-        CreateEditionTransaction,
-        MintEditionTransaction,
-        TransferPolygonAsset,
-        UpdateEdtionTransaction,
-    > for Polygon
+impl DropEvent<CreateEditionTransaction, MintEditionTransaction, UpdateEdtionTransaction>
+    for Polygon
 {
     async fn create_drop(&self, key: NftEventKey, payload: CreateEditionTransaction) -> Result<()> {
         let event = NftEvents {
@@ -100,13 +91,17 @@ impl
 
         Ok(())
     }
+}
 
+#[async_trait::async_trait]
+impl TransferEvent<TransferPolygonAsset> for Polygon {
     async fn transfer_asset(&self, key: NftEventKey, payload: TransferPolygonAsset) -> Result<()> {
         let event = NftEvents {
             event: Some(PolygonTransferAsset(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
+
         Ok(())
     }
 }

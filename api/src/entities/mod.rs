@@ -11,6 +11,7 @@ pub mod drops;
 pub mod metadata_json_attributes;
 pub mod metadata_json_files;
 pub mod metadata_jsons;
+pub mod mint_creators;
 pub mod nft_transfers;
 pub mod project_wallets;
 pub mod purchases;
