@@ -25,7 +25,7 @@ impl DataLoader<Uuid> for ProjectCollectionLoader {
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let collections = collections::Entity::find()
-            .filter(collections::Column::ProjectId.is_in(keys.iter().map(ToOwned::to_owned)))
+            .filter(collections::Column::Id.is_in(keys.iter().map(ToOwned::to_owned)))
             .all(self.db.get())
             .await?;
 

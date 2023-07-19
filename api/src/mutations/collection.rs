@@ -101,24 +101,21 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .create_collection(
-                        event_key,
-                        MetaplexMasterEditionTransaction {
-                            master_edition: Some(MasterEdition {
-                                owner_address,
-                                supply: Some(0),
-                                name: metadata_json.name,
-                                symbol: metadata_json.symbol,
-                                metadata_uri: metadata_json.uri,
-                                seller_fee_basis_points: 0,
-                                creators: input
-                                    .creators
-                                    .into_iter()
-                                    .map(TryFrom::try_from)
-                                    .collect::<Result<_>>()?,
-                            }),
-                        },
-                    )
+                    .create_collection(event_key, MetaplexMasterEditionTransaction {
+                        master_edition: Some(MasterEdition {
+                            owner_address,
+                            supply: Some(0),
+                            name: metadata_json.name,
+                            symbol: metadata_json.symbol,
+                            metadata_uri: metadata_json.uri,
+                            seller_fee_basis_points: 0,
+                            creators: input
+                                .creators
+                                .into_iter()
+                                .map(TryFrom::try_from)
+                                .collect::<Result<_>>()?,
+                        }),
+                    })
                     .await?;
             },
             BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
@@ -126,18 +123,14 @@ impl Mutation {
             },
         };
 
-        submit_pending_deduction(
-            credits,
-            db,
-            DeductionParams {
-                user_id,
-                org_id,
-                balance,
-                collection: collection.id,
-                blockchain: input.blockchain,
-                action: Actions::CreateDrop,
-            },
-        )
+        submit_pending_deduction(credits, db, DeductionParams {
+            user_id,
+            org_id,
+            balance,
+            collection: collection.id,
+            blockchain: input.blockchain,
+            action: Actions::CreateDrop,
+        })
         .await?;
 
         // TODO: separate event for collection creation
@@ -222,27 +215,24 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .retry_create_collection(
-                        event_key,
-                        MetaplexMasterEditionTransaction {
-                            master_edition: Some(MasterEdition {
-                                owner_address,
-                                name: metadata_json.name,
-                                symbol: metadata_json.symbol,
-                                metadata_uri: metadata_json.uri,
-                                seller_fee_basis_points: 0,
-                                supply: Some(0),
-                                creators: creators
-                                    .into_iter()
-                                    .map(|c| ProtoCreator {
-                                        address: c.address,
-                                        verified: c.verified,
-                                        share: c.share,
-                                    })
-                                    .collect(),
-                            }),
-                        },
-                    )
+                    .retry_create_collection(event_key, MetaplexMasterEditionTransaction {
+                        master_edition: Some(MasterEdition {
+                            owner_address,
+                            name: metadata_json.name,
+                            symbol: metadata_json.symbol,
+                            metadata_uri: metadata_json.uri,
+                            seller_fee_basis_points: 0,
+                            supply: Some(0),
+                            creators: creators
+                                .into_iter()
+                                .map(|c| ProtoCreator {
+                                    address: c.address,
+                                    verified: c.verified,
+                                    share: c.share,
+                                })
+                                .collect(),
+                        }),
+                    })
                     .await?;
             },
             BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
@@ -250,18 +240,14 @@ impl Mutation {
             },
         };
 
-        submit_pending_deduction(
-            credits,
-            db,
-            DeductionParams {
-                balance,
-                user_id,
-                org_id,
-                collection: collection.id,
-                blockchain: collection.blockchain,
-                action: Actions::RetryDrop,
-            },
-        )
+        submit_pending_deduction(credits, db, DeductionParams {
+            balance,
+            user_id,
+            org_id,
+            collection: collection.id,
+            blockchain: collection.blockchain,
+            action: Actions::RetryDrop,
+        })
         .await?;
 
         Ok(CreateCollectionPayload {
@@ -383,20 +369,17 @@ impl Mutation {
 
                 solana
                     .event()
-                    .update_collection(
-                        event_key,
-                        MetaplexMasterEditionTransaction {
-                            master_edition: Some(MasterEdition {
-                                owner_address,
-                                supply: Some(0),
-                                name: metadata_json_model.name,
-                                symbol: metadata_json_model.symbol,
-                                metadata_uri: metadata_json_model.uri,
-                                seller_fee_basis_points: 0,
-                                creators,
-                            }),
-                        },
-                    )
+                    .update_collection(event_key, MetaplexMasterEditionTransaction {
+                        master_edition: Some(MasterEdition {
+                            owner_address,
+                            supply: Some(0),
+                            name: metadata_json_model.name,
+                            symbol: metadata_json_model.symbol,
+                            metadata_uri: metadata_json_model.uri,
+                            seller_fee_basis_points: 0,
+                            creators,
+                        }),
+                    })
                     .await?;
             },
             BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
