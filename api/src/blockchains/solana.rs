@@ -7,9 +7,8 @@ use crate::proto::{
         SolanaRetryCreateCollection, SolanaRetryDrop, SolanaRetryMintDrop,
         SolanaRetryMintToCollection, SolanaTransferAsset, SolanaUpdateCollection, SolanaUpdateDrop,
     },
-    MetaplexCertifiedCollectionTransaction, MetaplexMasterEditionTransaction,
-    MintMetaplexEditionTransaction, MintMetaplexMetadataTransaction, NftEventKey, NftEvents,
-    TransferMetaplexAssetTransaction,
+    MetaplexMasterEditionTransaction, MintMetaplexEditionTransaction,
+    MintMetaplexMetadataTransaction, NftEventKey, NftEvents, TransferMetaplexAssetTransaction,
 };
 
 #[derive(Clone)]
@@ -31,9 +30,9 @@ impl Solana {
         MintMetaplexEditionTransaction,
         MetaplexMasterEditionTransaction,
     > + TransferEvent<TransferMetaplexAssetTransaction>
-    + CollectionEvent<
-        MetaplexCertifiedCollectionTransaction,
-        MetaplexCertifiedCollectionTransaction,
+           + CollectionEvent<
+        MetaplexMasterEditionTransaction,
+        MetaplexMasterEditionTransaction,
         MintMetaplexMetadataTransaction,
     > {
         self.clone()
@@ -139,15 +138,15 @@ impl TransferEvent<TransferMetaplexAssetTransaction> for Solana {
 #[async_trait::async_trait]
 impl
     CollectionEvent<
-        MetaplexCertifiedCollectionTransaction,
-        MetaplexCertifiedCollectionTransaction,
+        MetaplexMasterEditionTransaction,
+        MetaplexMasterEditionTransaction,
         MintMetaplexMetadataTransaction,
     > for Solana
 {
     async fn create_collection(
         &self,
         key: NftEventKey,
-        payload: MetaplexCertifiedCollectionTransaction,
+        payload: MetaplexMasterEditionTransaction,
     ) -> Result<()> {
         let event = NftEvents {
             event: Some(SolanaCreateCollection(payload)),
@@ -161,7 +160,7 @@ impl
     async fn retry_create_collection(
         &self,
         key: NftEventKey,
-        payload: MetaplexCertifiedCollectionTransaction,
+        payload: MetaplexMasterEditionTransaction,
     ) -> Result<()> {
         let event = NftEvents {
             event: Some(SolanaRetryCreateCollection(payload)),
@@ -175,7 +174,7 @@ impl
     async fn update_collection(
         &self,
         key: NftEventKey,
-        payload: MetaplexCertifiedCollectionTransaction,
+        payload: MetaplexMasterEditionTransaction,
     ) -> Result<()> {
         let event = NftEvents {
             event: Some(SolanaUpdateCollection(payload)),
