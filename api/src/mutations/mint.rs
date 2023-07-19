@@ -303,6 +303,10 @@ impl Mutation {
             },
         };
 
+        let mut mint_am: collection_mints::ActiveModel = collection_mint_model.into();
+        mint_am.creation_status = Set(CreationStatus::Pending);
+        let collection_mint_model = mint_am.update(conn).await?;
+
         submit_pending_deduction(credits, db, DeductionParams {
             balance,
             user_id,
