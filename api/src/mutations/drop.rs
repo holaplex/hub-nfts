@@ -290,6 +290,10 @@ impl Mutation {
             },
         };
 
+        let mut drop_am: drops::ActiveModel = drop.into();
+        drop_am.creation_status = Set(CreationStatus::Pending);
+        let drop = drop_am.update(conn).await?;
+
         submit_pending_deduction(credits, db, DeductionParams {
             balance,
             user_id,
