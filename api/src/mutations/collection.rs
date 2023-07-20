@@ -20,9 +20,9 @@ use crate::{
     metadata_json::MetadataJson,
     objects::{Collection as CollectionObject, Creator, MetadataJsonInput},
     proto::{
-        nft_events::Event as NftEvent, CollectionCreation, CreationStatus as NftCreationStatus,
-        Creator as ProtoCreator, MasterEdition, MetaplexMasterEditionTransaction, NftEventKey,
-        NftEvents,
+        nft_events::Event as NftEvent, CollectionCreation, CollectionImport,
+        CreationStatus as NftCreationStatus, Creator as ProtoCreator, MasterEdition,
+        MetaplexMasterEditionTransaction, NftEventKey, NftEvents,
     },
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
@@ -252,6 +252,39 @@ impl Mutation {
 
         Ok(CreateCollectionPayload {
             collection: collection.into(),
+        })
+    }
+
+    pub async fn import_solana_collection(
+        &self,
+        ctx: &Context<'_>,
+        input: ImportCollectionInput,
+    ) -> Result<ImportCollectionPayload> {
+        let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
+        let AppContext { user_id, .. } = ctx.data::<AppContext>()?;
+        let user_id = user_id.0.ok_or(Error::new("X-USER-ID header not found"))?;
+
+        validate_solana_address(&input.mint)?;
+
+        nfts_producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::StartedImportingSolanaCollection(
+                        CollectionImport {
+                            mint_address: input.mint,
+                        },
+                    )),
+                }),
+                Some(&NftEventKey {
+                    id: String::new(),
+                    project_id: input.project_id.to_string(),
+                    user_id: user_id.to_string(),
+                }),
+            )
+            .await?;
+
+        Ok(ImportCollectionPayload {
+            status: CreationStatus::Pending,
         })
     }
 
@@ -655,4 +688,15 @@ pub struct PatchCollectionInput {
 pub struct PatchCollectionPayload {
     /// The drop that has been patched.
     collection: CollectionObject,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
+pub struct ImportCollectionInput {
+    project_id: Uuid,
+    mint: String,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct ImportCollectionPayload {
+    status: CreationStatus,
 }
