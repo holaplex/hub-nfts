@@ -104,6 +104,13 @@ impl Processor {
                         .await
                 },
                 Some(
+                    SolanaNftsEvent::CreateCollectionSubmitted(payload)
+                    | SolanaNftsEvent::RetryCreateCollectionSubmitted(payload),
+                ) => {
+                    self.collection_created(id, MintResult::Success(payload.into()))
+                        .await
+                },
+                Some(
                     SolanaNftsEvent::MintDropSubmitted(payload)
                     | SolanaNftsEvent::RetryMintDropSubmitted(payload),
                 ) => {
@@ -116,9 +123,14 @@ impl Processor {
                     self.mint_transferred(id, TransferResult::Success(signature))
                         .await
                 },
-                Some(SolanaNftsEvent::CreateDropFailed(_)) => {
-                    self.drop_created(id, MintResult::Failure).await
-                },
+                Some(
+                    SolanaNftsEvent::CreateDropFailed(_)
+                    | SolanaNftsEvent::RetryCreateDropFailed(_),
+                ) => self.drop_created(id, MintResult::Failure).await,
+                Some(
+                    SolanaNftsEvent::CreateCollectionFailed(_)
+                    | SolanaNftsEvent::RetryCreateCollectionFailed(_),
+                ) => self.collection_created(id, MintResult::Failure).await,
                 Some(SolanaNftsEvent::MintDropFailed(_)) => {
                     self.drop_minted(id, MintResult::Failure).await
                 },
@@ -127,9 +139,6 @@ impl Processor {
                 },
                 Some(SolanaNftsEvent::RetryMintDropFailed(_)) => {
                     self.drop_minted(id, MintResult::Failure).await
-                },
-                Some(SolanaNftsEvent::RetryCreateDropFailed(_)) => {
-                    self.drop_created(id, MintResult::Failure).await
                 },
                 Some(SolanaNftsEvent::UpdateMintOwner(e)) => self.update_mint_owner(id, e).await,
                 None | Some(_) => Ok(()),
@@ -316,6 +325,56 @@ impl Processor {
 
         collection_active_model.update(conn).await?;
         drops_active_model.update(conn).await?;
+
+        Ok(())
+    }
+
+    async fn collection_created(&self, id: String, payload: MintResult) -> Result<()> {
+        let conn = self.db.get();
+        let collection_id = Uuid::from_str(&id)?;
+
+        let collection_model = collections::Entity::find_by_id(collection_id)
+            .one(conn)
+            .await
+            .context("failed to load collection from db")?
+            .context("collection not found in db")?;
+
+        let mut collection_active_model: collections::ActiveModel = collection_model.clone().into();
+        let mut creation_status = NftCreationStatus::Completed;
+
+        if let MintResult::Success(MintTransaction { signature, address }) = payload {
+            collection_active_model.signature = Set(Some(signature));
+            collection_active_model.address = Set(Some(address));
+            collection_active_model.creation_status = Set(CreationStatus::Created);
+
+            let deduction_id = collection_model
+                .credits_deduction_id
+                .context("drop has no deduction id")?;
+            self.credits
+                .confirm_deduction(TransactionId(deduction_id))
+                .await?;
+        } else {
+            collection_active_model.creation_status = Set(CreationStatus::Failed);
+            creation_status = NftCreationStatus::Failed;
+        }
+
+        // TODO: add unique event for collection created
+        self.producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::DropCreated(DropCreation {
+                        status: creation_status as i32,
+                    })),
+                }),
+                Some(&NftEventKey {
+                    id: collection_model.id.to_string(),
+                    project_id: collection_model.project_id.to_string(),
+                    user_id: collection_model.created_by.to_string(),
+                }),
+            )
+            .await?;
+
+        collection_active_model.update(conn).await?;
 
         Ok(())
     }
