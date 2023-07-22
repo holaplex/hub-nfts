@@ -77,6 +77,7 @@ impl Mutation {
             creation_status: Set(CreationStatus::Pending),
             project_id: Set(input.project),
             created_by: Set(user_id),
+            seller_fee_basis_points: Set(0),
             ..Default::default()
         };
 
