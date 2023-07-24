@@ -117,6 +117,13 @@ impl Processor {
                     self.drop_minted(id, MintResult::Success(payload.into()))
                         .await
                 },
+                Some(
+                    SolanaNftsEvent::MintToCollectionSubmitted(payload)
+                    | SolanaNftsEvent::RetryMintToCollectionSubmitted(payload),
+                ) => {
+                    self.minted_to_collection(id, MintResult::Success(payload.into()))
+                        .await
+                },
                 Some(SolanaNftsEvent::TransferAssetSubmitted(
                     SolanaCompletedTransferTransaction { signature },
                 )) => {
@@ -134,6 +141,10 @@ impl Processor {
                 Some(SolanaNftsEvent::MintDropFailed(_)) => {
                     self.drop_minted(id, MintResult::Failure).await
                 },
+                Some(
+                    SolanaNftsEvent::MintToCollectionFailed(_)
+                    | SolanaNftsEvent::RetryMintToCollectionFailed(_),
+                ) => self.minted_to_collection(id, MintResult::Failure).await,
                 Some(SolanaNftsEvent::TransferAssetFailed(_)) => {
                     self.mint_transferred(id, TransferResult::Failure).await
                 },
@@ -442,6 +453,74 @@ impl Processor {
 
         collection_mint_active_model.update(conn).await?;
         purchase_am.update(conn).await?;
+
+        Ok(())
+    }
+
+    async fn minted_to_collection(&self, id: String, payload: MintResult) -> Result<()> {
+        let conn = self.db.get();
+        let collection_mint_id = Uuid::from_str(&id)?;
+
+        let (collection_mint, collection) =
+            collection_mints::Entity::find_by_id_with_collection(collection_mint_id)
+                .one(conn)
+                .await
+                .context("failed to load collection mint from db")?
+                .context("collection mint not found in db")?;
+
+        // let (purchase, drop) = Purchases::find()
+        //     .find_also_related(drops::Entity)
+        //     .filter(purchases::Column::MintId.eq(collection_mint_id))
+        //     .one(conn)
+        //     .await
+        //     .context("failed to load purchase from db")?
+        //     .context("purchase not found in db")?;
+
+        let collection = collection.context("collection not found")?;
+
+        let mut collection_mint_active_model: collection_mints::ActiveModel =
+            collection_mint.clone().into();
+        // let mut purchase_am: purchases::ActiveModel = purchase.into();
+        let mut creation_status = NftCreationStatus::Completed;
+
+        if let MintResult::Success(MintTransaction { signature, address }) = payload {
+            // purchase_am.status = Set(CreationStatus::Created);
+            // purchase_am.tx_signature = Set(Some(signature.clone()));
+            collection_mint_active_model.creation_status = Set(CreationStatus::Created);
+            collection_mint_active_model.signature = Set(Some(signature));
+            collection_mint_active_model.address = Set(Some(address));
+
+            let deduction_id = collection_mint
+                .credits_deduction_id
+                .context("deduction id not found")?;
+
+            self.credits
+                .confirm_deduction(TransactionId(deduction_id))
+                .await?;
+        } else {
+            // purchase_am.status = Set(CreationStatus::Failed);
+            collection_mint_active_model.creation_status = Set(CreationStatus::Failed);
+            creation_status = NftCreationStatus::Failed;
+        }
+
+        self.producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::DropMinted(MintCreation {
+                        drop_id: collection.id.to_string(),
+                        status: creation_status as i32,
+                    })),
+                }),
+                Some(&NftEventKey {
+                    id: collection_mint.id.to_string(),
+                    project_id: collection.project_id.to_string(),
+                    user_id: collection_mint.created_by.to_string(),
+                }),
+            )
+            .await?;
+
+        collection_mint_active_model.update(conn).await?;
+        // purchase_am.update(conn).await?;
 
         Ok(())
     }
