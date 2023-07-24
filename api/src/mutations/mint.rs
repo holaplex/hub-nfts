@@ -352,7 +352,7 @@ impl Mutation {
         let creators = input.creators;
 
         let collection = Collections::find()
-            .filter(drops::Column::Id.eq(input.collection))
+            .filter(collections::Column::Id.eq(input.collection))
             .one(conn)
             .await?;
 
@@ -362,6 +362,7 @@ impl Mutation {
         validate_creators(blockchain, &creators)?;
         validate_json(blockchain, &input.metadata_json)?;
         check_collection_status(&collection)?;
+        validate_compress(blockchain, input.compressed)?;
 
         let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
 
@@ -378,6 +379,7 @@ impl Mutation {
             creation_status: Set(CreationStatus::Pending),
             seller_fee_basis_points: Set(collection.seller_fee_basis_points),
             created_by: Set(user_id),
+            compressed: Set(input.compressed),
             ..Default::default()
         };
 
@@ -633,6 +635,13 @@ async fn submit_pending_deduction(
     Ok(())
 }
 
+fn validate_compress(blockchain: BlockchainEnum, compressed: bool) -> Result<(), Error> {
+    if blockchain != BlockchainEnum::Solana && compressed {
+        return Err(Error::new("compression is only supported on Solana"));
+    }
+
+    Ok(())
+}
 /// Checks the status of a drop by verifying if it is currently running based on its start time, end time, and pause/shutdown status.
 /// # Errors
 ///
