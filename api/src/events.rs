@@ -225,6 +225,7 @@ impl Processor {
         collection_am.insert(self.db.get()).await?;
 
         let metadata_json = metadata_jsons::ActiveModel {
+            id: Set(id.parse()?),
             name: Set(name),
             uri: Set(uri),
             symbol: Set(symbol),
@@ -298,6 +299,7 @@ impl Processor {
         let mint_model = mint_am.insert(self.db.get()).await?;
 
         let metadata_json = metadata_jsons::ActiveModel {
+            id: Set(id.parse()?),
             name: Set(name),
             uri: Set(uri),
             symbol: Set(symbol),

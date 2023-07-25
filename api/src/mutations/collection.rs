@@ -12,8 +12,8 @@ use crate::{
     collection::Collection,
     db::Connection,
     entities::{
-        collection_creators, collections, metadata_jsons,
-        prelude::{CollectionCreators, Collections, MetadataJsons},
+        collection_creators, collection_mints, collections, metadata_jsons,
+        prelude::{CollectionCreators, CollectionMints, Collections, MetadataJsons},
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
@@ -261,23 +261,58 @@ impl Mutation {
         input: ImportCollectionInput,
     ) -> Result<ImportCollectionPayload> {
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
-        let AppContext { user_id, .. } = ctx.data::<AppContext>()?;
+        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let user_id = user_id.0.ok_or(Error::new("X-USER-ID header not found"))?;
 
-        validate_solana_address(&input.mint)?;
+        let txn = db.get().begin().await?;
+
+        validate_solana_address(&input.collection)?;
+
+        let collection = Collections::find()
+            .filter(collections::Column::Address.eq(input.collection.clone()))
+            .one(db.get())
+            .await?;
+
+        if let Some(collection) = collection {
+            let mints = CollectionMints::find()
+                .filter(collection_mints::Column::CollectionId.eq(collection.id))
+                .all(&txn)
+                .await?;
+
+            if let Some(collection_json) =
+                MetadataJsons::find_by_id(collection.id).one(&txn).await?
+            {
+                collection_json.delete(&txn).await?;
+            }
+
+            let mint_ids = mints.iter().map(|m| m.id).collect::<Vec<_>>();
+
+            let mint_jsons = MetadataJsons::find()
+                .filter(metadata_jsons::Column::Id.is_in(mint_ids))
+                .all(&txn)
+                .await?;
+
+            for json in mint_jsons {
+                json.delete(&txn).await?;
+            }
+
+            collection.delete(&txn).await?;
+
+            txn.commit().await?;
+        }
 
         nfts_producer
             .send(
                 Some(&NftEvents {
                     event: Some(NftEvent::StartedImportingSolanaCollection(
                         CollectionImport {
-                            mint_address: input.mint,
+                            mint_address: input.collection,
                         },
                     )),
                 }),
                 Some(&NftEventKey {
                     id: String::new(),
-                    project_id: input.project_id.to_string(),
+                    project_id: input.project.to_string(),
                     user_id: user_id.to_string(),
                 }),
             )
@@ -692,8 +727,9 @@ pub struct PatchCollectionPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct ImportCollectionInput {
-    project_id: Uuid,
-    mint: String,
+    project: Uuid,
+    // Mint address of Metaplex Certified Collection NFT
+    collection: String,
 }
 
 #[derive(Debug, Clone, SimpleObject)]
