@@ -16,8 +16,6 @@ pub struct Model {
     /// The wallet address of the buyer.
     #[sea_orm(column_type = "Text")]
     pub wallet: String,
-    /// The amount spent on the purchase.
-    pub spent: i64,
     /// The signature of the transaction, if any.
     #[sea_orm(column_type = "Text", nullable)]
     pub tx_signature: Option<String>,

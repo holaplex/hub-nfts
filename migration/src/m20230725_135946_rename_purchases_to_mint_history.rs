@@ -48,6 +48,15 @@ impl MigrationTrait for Migration {
 
         db.execute(stmt).await?;
 
+        let stmt = Statement::from_string(
+            manager.get_database_backend(),
+            r#"ALTER TABLE mint_history
+            DROP COLUMN spent;"#
+                .to_string(),
+        );
+
+        db.execute(stmt).await?;
+
         Ok(())
     }
 
