@@ -24,6 +24,4 @@ pub use metadata_json::{
 };
 pub use project_collection::ProjectCollectionLoader;
 pub use project_collections::ProjectCollectionsLoader;
-pub use purchases::{
-    CollectionLoader as CollectionPurchasesLoader, DropLoader as DropPurchasesLoader,
-};
+pub use purchases::CollectionLoader as CollectionPurchasesLoader;

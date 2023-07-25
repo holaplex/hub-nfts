@@ -23,7 +23,7 @@ use async_graphql::{
 use blockchains::{polygon::Polygon, solana::Solana};
 use dataloaders::{
     CollectionDropLoader, CollectionLoader, CollectionMintsLoader, CollectionMintsOwnerLoader,
-    CollectionPurchasesLoader, CreatorsLoader, DropLoader, DropPurchasesLoader, HoldersLoader,
+    CollectionPurchasesLoader, CreatorsLoader, DropLoader, HoldersLoader,
     MetadataJsonAttributesLoader, MetadataJsonLoader, ProjectCollectionLoader,
     ProjectCollectionsLoader, ProjectDropsLoader,
 };
@@ -268,7 +268,6 @@ pub struct AppContext {
     creators_loader: DataLoader<CreatorsLoader>,
     holders_loader: DataLoader<HoldersLoader>,
     collection_purchases_loader: DataLoader<CollectionPurchasesLoader>,
-    drop_purchases_loader: DataLoader<DropPurchasesLoader>,
 }
 
 impl AppContext {
@@ -301,8 +300,6 @@ impl AppContext {
         let holders_loader = DataLoader::new(HoldersLoader::new(db.clone()), tokio::spawn);
         let collection_purchases_loader =
             DataLoader::new(CollectionPurchasesLoader::new(db.clone()), tokio::spawn);
-        let drop_purchases_loader =
-            DataLoader::new(DropPurchasesLoader::new(db.clone()), tokio::spawn);
 
         Self {
             db,
@@ -322,7 +319,6 @@ impl AppContext {
             creators_loader,
             holders_loader,
             collection_purchases_loader,
-            drop_purchases_loader,
         }
     }
 }

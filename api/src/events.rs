@@ -14,10 +14,10 @@ use crate::{
     db::Connection,
     entities::{
         collection_creators, collection_mints, collections, customer_wallets, drops,
-        metadata_json_attributes, metadata_json_files, metadata_jsons, mint_creators,
+        metadata_json_attributes, metadata_json_files, metadata_jsons, mint_creators, mint_history,
         nft_transfers,
-        prelude::{CollectionMints, Purchases},
-        project_wallets, purchases,
+        prelude::{CollectionMints, Collections, Drops, MintHistory},
+        project_wallets,
         sea_orm_active_enums::{Blockchain, CreationStatus},
         transfer_charges,
     },
@@ -452,7 +452,7 @@ impl Processor {
         let conn = self.db.get();
         let collection_id = Uuid::from_str(&id)?;
 
-        let (collection_model, drop) = collections::Entity::find_by_id(collection_id)
+        let (collection_model, drop) = Collections::find_by_id(collection_id)
             .join(JoinType::InnerJoin, collections::Relation::Drop.def())
             .select_also(drops::Entity)
             .one(conn)
@@ -557,30 +557,38 @@ impl Processor {
         let conn = self.db.get();
         let collection_mint_id = Uuid::from_str(&id)?;
 
-        let collection_mint = collection_mints::Entity::find_by_id(collection_mint_id)
+        let (collection_mint, collection) =
+            collection_mints::Entity::find_by_id(collection_mint_id)
+                .find_also_related(collections::Entity)
+                .one(conn)
+                .await
+                .context("failed to load collection mint from db")?
+                .context("collection mint not found in db")?;
+
+        let mint_history = MintHistory::find()
+            .filter(mint_history::Column::MintId.eq(collection_mint_id))
             .one(conn)
             .await
-            .context("failed to load collection mint from db")?
-            .context("collection mint not found in db")?;
+            .context("failed to load mint_history from db")?
+            .context("mint_history not found in db")?;
 
-        let (purchase, drop) = Purchases::find()
-            .find_also_related(drops::Entity)
-            .filter(purchases::Column::MintId.eq(collection_mint_id))
+        let collection = collection.context("collection not found")?;
+
+        let drop = Drops::find()
+            .filter(drops::Column::CollectionId.eq(collection.id))
             .one(conn)
             .await
-            .context("failed to load purchase from db")?
-            .context("purchase not found in db")?;
-
-        let drop = drop.context("drop not found")?;
+            .context("failed to load drop from db")?
+            .context("drop not found in db")?;
 
         let mut collection_mint_active_model: collection_mints::ActiveModel =
             collection_mint.clone().into();
-        let mut purchase_am: purchases::ActiveModel = purchase.into();
+        let mut mint_history_am: mint_history::ActiveModel = mint_history.into();
         let mut creation_status = NftCreationStatus::Completed;
 
         if let MintResult::Success(MintTransaction { signature, address }) = payload {
-            purchase_am.status = Set(CreationStatus::Created);
-            purchase_am.tx_signature = Set(Some(signature.clone()));
+            mint_history_am.status = Set(CreationStatus::Created);
+            mint_history_am.tx_signature = Set(Some(signature.clone()));
             collection_mint_active_model.creation_status = Set(CreationStatus::Created);
             collection_mint_active_model.signature = Set(Some(signature));
             collection_mint_active_model.address = Set(Some(address));
@@ -593,7 +601,7 @@ impl Processor {
                 .confirm_deduction(TransactionId(deduction_id))
                 .await?;
         } else {
-            purchase_am.status = Set(CreationStatus::Failed);
+            mint_history_am.status = Set(CreationStatus::Failed);
             collection_mint_active_model.creation_status = Set(CreationStatus::Failed);
             creation_status = NftCreationStatus::Failed;
         }
@@ -615,7 +623,7 @@ impl Processor {
             .await?;
 
         collection_mint_active_model.update(conn).await?;
-        purchase_am.update(conn).await?;
+        mint_history_am.update(conn).await?;
 
         Ok(())
     }
@@ -631,24 +639,23 @@ impl Processor {
                 .context("failed to load collection mint from db")?
                 .context("collection mint not found in db")?;
 
-        // let (purchase, drop) = Purchases::find()
-        //     .find_also_related(drops::Entity)
-        //     .filter(purchases::Column::MintId.eq(collection_mint_id))
-        //     .one(conn)
-        //     .await
-        //     .context("failed to load purchase from db")?
-        //     .context("purchase not found in db")?;
+        let mint_history = MintHistory::find()
+            .filter(mint_history::Column::MintId.eq(collection_mint_id))
+            .one(conn)
+            .await
+            .context("failed to load mint_history from db")?
+            .context("mint_history not found in db")?;
 
         let collection = collection.context("collection not found")?;
 
         let mut collection_mint_active_model: collection_mints::ActiveModel =
             collection_mint.clone().into();
-        // let mut purchase_am: purchases::ActiveModel = purchase.into();
+        let mut mint_history_am: mint_history::ActiveModel = mint_history.into();
         let mut creation_status = NftCreationStatus::Completed;
 
         if let MintResult::Success(MintTransaction { signature, address }) = payload {
-            // purchase_am.status = Set(CreationStatus::Created);
-            // purchase_am.tx_signature = Set(Some(signature.clone()));
+            mint_history_am.status = Set(CreationStatus::Created);
+            mint_history_am.tx_signature = Set(Some(signature.clone()));
             collection_mint_active_model.creation_status = Set(CreationStatus::Created);
             collection_mint_active_model.signature = Set(Some(signature));
             collection_mint_active_model.address = Set(Some(address));
@@ -661,7 +668,7 @@ impl Processor {
                 .confirm_deduction(TransactionId(deduction_id))
                 .await?;
         } else {
-            // purchase_am.status = Set(CreationStatus::Failed);
+            mint_history_am.status = Set(CreationStatus::Failed);
             collection_mint_active_model.creation_status = Set(CreationStatus::Failed);
             creation_status = NftCreationStatus::Failed;
         }
@@ -683,7 +690,7 @@ impl Processor {
             .await?;
 
         collection_mint_active_model.update(conn).await?;
-        // purchase_am.update(conn).await?;
+        mint_history_am.update(conn).await?;
 
         Ok(())
     }
