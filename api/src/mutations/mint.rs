@@ -20,7 +20,7 @@ use crate::{
     objects::{Creator, MetadataJsonInput},
     proto::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, MetaplexMetadata,
-        MintCreation, NftEventKey, NftEvents,
+        MintCollectionCreation, MintCreation, NftEventKey, NftEvents,
     },
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
@@ -337,7 +337,7 @@ impl Mutation {
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
-        let _nfts_producer = ctx.data::<Producer<NftEvents>>()?;
+        let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
 
         let UserID(id) = user_id;
@@ -464,21 +464,21 @@ impl Mutation {
         })
         .await?;
 
-        // nfts_producer
-        //     .send(
-        //         Some(&NftEvents {
-        //             event: Some(NftEvent::DropMinted(MintCreation {
-        //                 drop_id: drop_model.id.to_string(),
-        //                 status: NftCreationStatus::InProgress as i32,
-        //             })),
-        //         }),
-        //         Some(&NftEventKey {
-        //             id: collection_mint_model.id.to_string(),
-        //             project_id: collection.project_id.to_string(),
-        //             user_id: user_id.to_string(),
-        //         }),
-        //     )
-        //     .await?;
+        nfts_producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::MintedToCollection(MintCollectionCreation {
+                        collection_id: collection.id.to_string(),
+                        status: NftCreationStatus::InProgress as i32,
+                    })),
+                }),
+                Some(&NftEventKey {
+                    id: collection_mint_model.id.to_string(),
+                    project_id: collection.project_id.to_string(),
+                    user_id: user_id.to_string(),
+                }),
+            )
+            .await?;
 
         Ok(MintToCollectionPayload {
             collection_mint: collection_mint_model.into(),

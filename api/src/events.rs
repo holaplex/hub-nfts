@@ -27,9 +27,10 @@ use crate::{
             Blockchain as ProtoBlockchainEnum, CustomerWallet, Event as TreasuryEvent,
             PolygonTransactionResult, ProjectWallet, TransactionStatus,
         },
-        CreationStatus as NftCreationStatus, DropCreation, MintCreation, MintOwnershipUpdate,
-        MintedTokensOwnershipUpdate, NftEventKey, NftEvents, SolanaCompletedMintTransaction,
-        SolanaCompletedTransferTransaction, SolanaNftEventKey, TreasuryEventKey,
+        CreationStatus as NftCreationStatus, DropCreation, MintCollectionCreation, MintCreation,
+        MintOwnershipUpdate, MintedTokensOwnershipUpdate, NftEventKey, NftEvents,
+        SolanaCompletedMintTransaction, SolanaCompletedTransferTransaction, SolanaNftEventKey,
+        TreasuryEventKey,
     },
     Actions, Services,
 };
@@ -369,7 +370,6 @@ impl Processor {
             creation_status = NftCreationStatus::Failed;
         }
 
-        // TODO: add unique event for collection created
         self.producer
             .send(
                 Some(&NftEvents {
@@ -506,8 +506,8 @@ impl Processor {
         self.producer
             .send(
                 Some(&NftEvents {
-                    event: Some(NftEvent::DropMinted(MintCreation {
-                        drop_id: collection.id.to_string(),
+                    event: Some(NftEvent::MintedToCollection(MintCollectionCreation {
+                        collection_id: collection.id.to_string(),
                         status: creation_status as i32,
                     })),
                 }),

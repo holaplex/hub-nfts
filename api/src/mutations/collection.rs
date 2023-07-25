@@ -20,9 +20,9 @@ use crate::{
     metadata_json::MetadataJson,
     objects::{Collection as CollectionObject, Creator, MetadataJsonInput},
     proto::{
-        nft_events::Event as NftEvent, CreationStatus as NftCreationStatus,
-        Creator as ProtoCreator, DropCreation, MasterEdition, MetaplexMasterEditionTransaction,
-        NftEventKey, NftEvents,
+        nft_events::Event as NftEvent, CollectionCreation, CreationStatus as NftCreationStatus,
+        Creator as ProtoCreator, MasterEdition, MetaplexMasterEditionTransaction, NftEventKey,
+        NftEvents,
     },
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
@@ -134,17 +134,16 @@ impl Mutation {
         })
         .await?;
 
-        // TODO: separate event for collection creation
         nfts_producer
             .send(
                 Some(&NftEvents {
-                    event: Some(NftEvent::DropCreated(DropCreation {
+                    event: Some(NftEvent::CollectionCreated(CollectionCreation {
                         status: NftCreationStatus::InProgress as i32,
                     })),
                 }),
                 Some(&NftEventKey {
                     id: collection.id.to_string(),
-                    project_id: input.project.to_string(),
+                    project_id: collection.project_id.to_string(),
                     user_id: user_id.to_string(),
                 }),
             )
