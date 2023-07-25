@@ -3,7 +3,7 @@ endpoint = "https://schemas.holaplex.tools"
 
 [schemas]
 organization = 5
-nfts = 20
+nfts = 21
 customer = 2
 treasury = 17
 solana_nfts = 6
