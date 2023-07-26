@@ -11,7 +11,7 @@ use crate::{
     blockchains::{polygon::Polygon, solana::Solana, CollectionEvent, DropEvent},
     db::Connection,
     entities::{
-        collection_mints, collections, drops, mint_creators, mint_history,
+        collection_mints, collections, drops, mint_creators, mint_histories,
         prelude::{Collections, Drops},
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
@@ -152,7 +152,7 @@ impl Mutation {
         collection_am.update(conn).await?;
 
         // inserts a purchase record in the database
-        let purchase_am = mint_history::ActiveModel {
+        let purchase_am = mint_histories::ActiveModel {
             mint_id: Set(collection_mint_model.id),
             wallet: Set(input.recipient),
             collection: Set(Some(collection.id)),
@@ -438,7 +438,7 @@ impl Mutation {
         collection_am.total_mints = Set(collection.total_mints.add(1));
         collection_am.update(conn).await?;
 
-        let mint_history_am = mint_history::ActiveModel {
+        let mint_history_am = mint_histories::ActiveModel {
             mint_id: Set(collection_mint_model.id),
             wallet: Set(input.recipient),
             collection: Set(Some(collection.id)),

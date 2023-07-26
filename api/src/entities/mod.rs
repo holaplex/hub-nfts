@@ -12,7 +12,7 @@ pub mod metadata_json_attributes;
 pub mod metadata_json_files;
 pub mod metadata_jsons;
 pub mod mint_creators;
-pub mod mint_history;
+pub mod mint_histories;
 pub mod nft_transfers;
 pub mod project_wallets;
 pub mod sea_orm_active_enums;

@@ -1,10 +1,12 @@
-use async_graphql::{Enum, Object, Result};
+use async_graphql::{Context, Enum, Object, Result};
 use hub_core::chrono::Utc;
 use sea_orm::entity::prelude::*;
 
 use super::Collection;
-use crate::entities::{collections, drops, sea_orm_active_enums::CreationStatus};
-
+use crate::{
+    entities::{collections, drops, mint_histories, sea_orm_active_enums::CreationStatus},
+    AppContext,
+};
 /// An NFT campaign that controls the minting rules for a collection, such as its start date and end date.
 #[derive(Clone, Debug)]
 pub struct Drop {
@@ -120,6 +122,17 @@ impl Drop {
                 Ok(DropStatus::Minting)
             },
         }
+    }
+
+    #[graphql(deprecation = "Use `mint_histories` under `Collection` Object instead.")]
+    /// A list of all NFT purchases from this drop.
+    async fn purchases(&self, ctx: &Context<'_>) -> Result<Option<Vec<mint_histories::Model>>> {
+        let AppContext {
+            drop_mint_history_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        drop_mint_history_loader.load_one(self.drop.id).await
     }
 }
 

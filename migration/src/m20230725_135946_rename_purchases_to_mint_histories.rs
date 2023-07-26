@@ -14,7 +14,7 @@ impl MigrationTrait for Migration {
         let stmt = Statement::from_string(
             manager.get_database_backend(),
             r#"ALTER TABLE purchases
-                RENAME TO mint_history;"#
+                RENAME TO mint_histories;"#
                 .to_string(),
         );
 
@@ -22,8 +22,8 @@ impl MigrationTrait for Migration {
 
         let stmt = Statement::from_string(
             manager.get_database_backend(),
-            r#"ALTER TABLE mint_history
-        ADD COLUMN collection UUID CONSTRAINT mint_history_collection_fk REFERENCES collections(id)
+            r#"ALTER TABLE mint_histories
+        ADD COLUMN collection UUID CONSTRAINT mint_histories REFERENCES collections(id)
         ON UPDATE CASCADE ON DELETE CASCADE;"#
                 .to_string(),
         );
@@ -31,17 +31,17 @@ impl MigrationTrait for Migration {
 
         let stmt = Statement::from_string(
             manager.get_database_backend(),
-            r#" UPDATE MINT_HISTORY SET COLLECTION = C.ID
+            r#" UPDATE mint_histories SET COLLECTION = C.ID
                 FROM DROPS D
                 INNER JOIN COLLECTIONS C ON D.COLLECTION_ID = C.ID
-                WHERE MINT_HISTORY.DROP_ID = D.ID AND MINT_HISTORY.DROP_ID IS NOT NULL;"#
+                WHERE MINT_HISTORIES.DROP_ID = D.ID AND MINT_HISTORIES.DROP_ID IS NOT NULL;"#
                 .to_string(),
         );
         db.execute(stmt).await?;
 
         let stmt = Statement::from_string(
             manager.get_database_backend(),
-            r#"ALTER TABLE mint_history
+            r#"ALTER TABLE mint_histories
             DROP COLUMN drop_id;"#
                 .to_string(),
         );
@@ -50,7 +50,7 @@ impl MigrationTrait for Migration {
 
         let stmt = Statement::from_string(
             manager.get_database_backend(),
-            r#"ALTER TABLE mint_history
+            r#"ALTER TABLE mint_histories
             DROP COLUMN spent;"#
                 .to_string(),
         );

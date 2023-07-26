@@ -14,8 +14,8 @@ use crate::{
     db::Connection,
     entities::{
         collection_creators, collection_mints, collections, customer_wallets, drops,
-        metadata_json_attributes, metadata_json_files, metadata_jsons, mint_creators, mint_history,
-        nft_transfers,
+        metadata_json_attributes, metadata_json_files, metadata_jsons, mint_creators,
+        mint_histories, nft_transfers,
         prelude::{CollectionMints, Collections, Drops, MintHistory},
         project_wallets,
         sea_orm_active_enums::{Blockchain, CreationStatus},
@@ -566,7 +566,7 @@ impl Processor {
                 .context("collection mint not found in db")?;
 
         let mint_history = MintHistory::find()
-            .filter(mint_history::Column::MintId.eq(collection_mint_id))
+            .filter(mint_histories::Column::MintId.eq(collection_mint_id))
             .one(conn)
             .await
             .context("failed to load mint_history from db")?
@@ -583,7 +583,7 @@ impl Processor {
 
         let mut collection_mint_active_model: collection_mints::ActiveModel =
             collection_mint.clone().into();
-        let mut mint_history_am: mint_history::ActiveModel = mint_history.into();
+        let mut mint_history_am: mint_histories::ActiveModel = mint_history.into();
         let mut creation_status = NftCreationStatus::Completed;
 
         if let MintResult::Success(MintTransaction { signature, address }) = payload {
@@ -640,7 +640,7 @@ impl Processor {
                 .context("collection mint not found in db")?;
 
         let mint_history = MintHistory::find()
-            .filter(mint_history::Column::MintId.eq(collection_mint_id))
+            .filter(mint_histories::Column::MintId.eq(collection_mint_id))
             .one(conn)
             .await
             .context("failed to load mint_history from db")?
@@ -650,7 +650,7 @@ impl Processor {
 
         let mut collection_mint_active_model: collection_mints::ActiveModel =
             collection_mint.clone().into();
-        let mut mint_history_am: mint_history::ActiveModel = mint_history.into();
+        let mut mint_history_am: mint_histories::ActiveModel = mint_history.into();
         let mut creation_status = NftCreationStatus::Completed;
 
         if let MintResult::Success(MintTransaction { signature, address }) = payload {
