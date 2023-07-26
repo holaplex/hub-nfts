@@ -332,7 +332,7 @@ impl Processor {
         let mut collection_am: collections::ActiveModel = collection.clone().into();
 
         collection_am.total_mints = Set(collection.total_mints + 1);
-
+        collection_am.update(self.db.get()).await?;
         Ok(())
     }
 
