@@ -311,7 +311,7 @@ impl Mutation {
                     )),
                 }),
                 Some(&NftEventKey {
-                    id: String::new(),
+                    id: Uuid::new_v4().to_string(),
                     project_id: input.project.to_string(),
                     user_id: user_id.to_string(),
                 }),
