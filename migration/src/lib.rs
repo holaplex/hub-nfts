@@ -48,6 +48,8 @@ mod m20230706_142939_add_columns_project_id_and_credits_deduction_id_to_collecti
 mod m20230713_151414_create_mint_creators_table;
 mod m20230713_163043_add_column_compressed_to_collection_mints;
 mod m20230718_111347_add_created_at_and_created_by_columns_to_collections;
+mod m20230725_135946_rename_purchases_to_mint_histories;
+mod m20230725_144506_drop_solana_collections_table;
 
 pub struct Migrator;
 
@@ -103,6 +105,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20230713_151414_create_mint_creators_table::Migration),
             Box::new(m20230713_163043_add_column_compressed_to_collection_mints::Migration),
             Box::new(m20230718_111347_add_created_at_and_created_by_columns_to_collections::Migration),
+            Box::new(m20230725_135946_rename_purchases_to_mint_histories::Migration),
+            Box::new(m20230725_144506_drop_solana_collections_table::Migration),
         ]
     }
 }

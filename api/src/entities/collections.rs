@@ -33,6 +33,8 @@ pub enum Relation {
     CollectionMints,
     #[sea_orm(has_one = "super::drops::Entity")]
     Drop,
+    #[sea_orm(has_many = "super::mint_histories::Entity")]
+    MintHistories,
 }
 
 impl Related<super::collection_creators::Entity> for Entity {
@@ -50,6 +52,12 @@ impl Related<super::collection_mints::Entity> for Entity {
 impl Related<super::drops::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Drop.def()
+    }
+}
+
+impl Related<super::mint_histories::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MintHistories.def()
     }
 }
 

@@ -6,15 +6,15 @@ use sea_orm::{prelude::*, JoinType, Order, QueryOrder, QuerySelect};
 
 use crate::{
     db::Connection,
-    entities::{collection_mints, drops, purchases},
+    entities::{collection_mints, collections, drops, mint_histories},
 };
 
 #[derive(Debug, Clone)]
-pub struct CollectionLoader {
+pub struct CollectionMintHistoryLoader {
     pub db: Connection,
 }
 
-impl CollectionLoader {
+impl CollectionMintHistoryLoader {
     #[must_use]
     pub fn new(db: Connection) -> Self {
         Self { db }
@@ -22,34 +22,34 @@ impl CollectionLoader {
 }
 
 #[async_trait]
-impl DataLoader<Uuid> for CollectionLoader {
+impl DataLoader<Uuid> for CollectionMintHistoryLoader {
     type Error = FieldError;
-    type Value = Vec<purchases::Model>;
+    type Value = Vec<mint_histories::Model>;
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let conn = self.db.get();
-        let purchases = purchases::Entity::find()
+        let mint_histories = mint_histories::Entity::find()
             .join(
                 JoinType::InnerJoin,
-                purchases::Relation::CollectionMints.def(),
+                mint_histories::Relation::CollectionMints.def(),
             )
             .filter(
                 collection_mints::Column::CollectionId.is_in(keys.iter().map(ToOwned::to_owned)),
             )
             .select_also(collection_mints::Entity)
-            .order_by(purchases::Column::CreatedAt, Order::Desc)
+            .order_by(mint_histories::Column::CreatedAt, Order::Desc)
             .all(conn)
             .await?;
 
-        Ok(purchases
+        Ok(mint_histories
             .into_iter()
-            .fold(HashMap::new(), |mut acc, (purchase, collection_mint)| {
+            .fold(HashMap::new(), |mut acc, (r, collection_mint)| {
                 if let Some(collection_mint) = collection_mint {
                     acc.entry(collection_mint.collection_id)
                         .or_insert_with(Vec::new);
 
                     acc.entry(collection_mint.collection_id)
-                        .and_modify(|purchases| purchases.push(purchase));
+                        .and_modify(|mint_history| mint_history.push(r));
 
                     acc
                 } else {
@@ -60,11 +60,11 @@ impl DataLoader<Uuid> for CollectionLoader {
 }
 
 #[derive(Debug, Clone)]
-pub struct DropLoader {
+pub struct DropMintHistoryLoader {
     pub db: Connection,
 }
 
-impl DropLoader {
+impl DropMintHistoryLoader {
     #[must_use]
     pub fn new(db: Connection) -> Self {
         Self { db }
@@ -72,23 +72,27 @@ impl DropLoader {
 }
 
 #[async_trait]
-impl DataLoader<Uuid> for DropLoader {
+impl DataLoader<Uuid> for DropMintHistoryLoader {
     type Error = FieldError;
-    type Value = Vec<purchases::Model>;
+    type Value = Vec<mint_histories::Model>;
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let conn = self.db.get();
-        let purchases = drops::Entity::find()
-            .join(JoinType::InnerJoin, drops::Relation::Purchases.def())
-            .filter(purchases::Column::DropId.is_in(keys.iter().map(ToOwned::to_owned)))
-            .select_with(purchases::Entity)
-            .order_by(purchases::Column::CreatedAt, Order::Desc)
+        let mint_histories = drops::Entity::find()
+            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
+            .join(
+                JoinType::InnerJoin,
+                collections::Relation::MintHistories.def(),
+            )
+            .filter(drops::Column::Id.is_in(keys.iter().map(ToOwned::to_owned)))
+            .select_with(mint_histories::Entity)
+            .order_by(mint_histories::Column::CreatedAt, Order::Desc)
             .all(conn)
             .await?;
 
-        Ok(purchases
+        Ok(mint_histories
             .into_iter()
-            .map(|(drop, purchases)| (drop.id, purchases))
+            .map(|(drop, mint_histories)| (drop.id, mint_histories))
             .collect())
     }
 }

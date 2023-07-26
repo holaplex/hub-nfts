@@ -6,7 +6,7 @@ use crate::{
     entities::{
         collection_creators, collection_mints,
         collections::Model,
-        purchases,
+        mint_histories,
         sea_orm_active_enums::{Blockchain, CreationStatus},
     },
     AppContext,
@@ -141,14 +141,28 @@ impl Collection {
         holders_loader.load_one(self.id).await
     }
 
+    #[graphql(deprecation = "Use `mint_histories` instead")]
     /// A list of all NFT purchases from the collection, including both primary and secondary sales.
-    async fn purchases(&self, ctx: &Context<'_>) -> Result<Option<Vec<purchases::Model>>> {
+    async fn purchases(&self, ctx: &Context<'_>) -> Result<Option<Vec<mint_histories::Model>>> {
         let AppContext {
-            collection_purchases_loader,
+            collection_mint_history_loader,
             ..
         } = ctx.data::<AppContext>()?;
 
-        collection_purchases_loader.load_one(self.id).await
+        collection_mint_history_loader.load_one(self.id).await
+    }
+
+    /// A list of all NFT mints from the collection, including both primary and secondary sales.
+    async fn mint_histories(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<Vec<mint_histories::Model>>> {
+        let AppContext {
+            collection_mint_history_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        collection_mint_history_loader.load_one(self.id).await
     }
 
     async fn drop(&self, ctx: &Context<'_>) -> Result<Option<Drop>> {

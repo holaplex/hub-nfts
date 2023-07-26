@@ -22,8 +22,8 @@ use async_graphql::{
 };
 use blockchains::{polygon::Polygon, solana::Solana};
 use dataloaders::{
-    CollectionDropLoader, CollectionLoader, CollectionMintsLoader, CollectionMintsOwnerLoader,
-    CollectionPurchasesLoader, CreatorsLoader, DropLoader, DropPurchasesLoader, HoldersLoader,
+    CollectionDropLoader, CollectionLoader, CollectionMintHistoryLoader, CollectionMintsLoader,
+    CollectionMintsOwnerLoader, CreatorsLoader, DropLoader, DropMintHistoryLoader, HoldersLoader,
     MetadataJsonAttributesLoader, MetadataJsonLoader, ProjectCollectionLoader,
     ProjectCollectionsLoader, ProjectDropsLoader,
 };
@@ -267,8 +267,8 @@ pub struct AppContext {
     drop_loader: DataLoader<DropLoader>,
     creators_loader: DataLoader<CreatorsLoader>,
     holders_loader: DataLoader<HoldersLoader>,
-    collection_purchases_loader: DataLoader<CollectionPurchasesLoader>,
-    drop_purchases_loader: DataLoader<DropPurchasesLoader>,
+    collection_mint_history_loader: DataLoader<CollectionMintHistoryLoader>,
+    drop_mint_history_loader: DataLoader<DropMintHistoryLoader>,
 }
 
 impl AppContext {
@@ -299,10 +299,10 @@ impl AppContext {
         let drop_loader = DataLoader::new(DropLoader::new(db.clone()), tokio::spawn);
         let creators_loader = DataLoader::new(CreatorsLoader::new(db.clone()), tokio::spawn);
         let holders_loader = DataLoader::new(HoldersLoader::new(db.clone()), tokio::spawn);
-        let collection_purchases_loader =
-            DataLoader::new(CollectionPurchasesLoader::new(db.clone()), tokio::spawn);
-        let drop_purchases_loader =
-            DataLoader::new(DropPurchasesLoader::new(db.clone()), tokio::spawn);
+        let collection_mint_history_loader =
+            DataLoader::new(CollectionMintHistoryLoader::new(db.clone()), tokio::spawn);
+        let drop_mint_history_loader =
+            DataLoader::new(DropMintHistoryLoader::new(db.clone()), tokio::spawn);
 
         Self {
             db,
@@ -321,8 +321,8 @@ impl AppContext {
             drop_loader,
             creators_loader,
             holders_loader,
-            collection_purchases_loader,
-            drop_purchases_loader,
+            collection_mint_history_loader,
+            drop_mint_history_loader,
         }
     }
 }

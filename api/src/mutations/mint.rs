@@ -11,9 +11,9 @@ use crate::{
     blockchains::{polygon::Polygon, solana::Solana, CollectionEvent, DropEvent},
     db::Connection,
     entities::{
-        collection_mints, collections, drops, mint_creators,
+        collection_mints, collections, drops, mint_creators, mint_histories,
         prelude::{Collections, Drops},
-        project_wallets, purchases,
+        project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
@@ -152,11 +152,10 @@ impl Mutation {
         collection_am.update(conn).await?;
 
         // inserts a purchase record in the database
-        let purchase_am = purchases::ActiveModel {
+        let purchase_am = mint_histories::ActiveModel {
             mint_id: Set(collection_mint_model.id),
             wallet: Set(input.recipient),
-            spent: Set(drop_model.price),
-            drop_id: Set(Some(drop_model.id)),
+            collection_id: Set(collection.id),
             tx_signature: Set(None),
             status: Set(CreationStatus::Pending),
             created_at: Set(Utc::now().into()),
@@ -439,20 +438,17 @@ impl Mutation {
         collection_am.total_mints = Set(collection.total_mints.add(1));
         collection_am.update(conn).await?;
 
-        // TODO: Switch to purchase history
-        // inserts a purchase record in the database
-        // let purchase_am = purchases::ActiveModel {
-        //     mint_id: Set(collection_mint_model.id),
-        //     wallet: Set(input.recipient),
-        //     spent: Set(drop_model.price),
-        //     drop_id: Set(Some(drop_model.id)),
-        //     tx_signature: Set(None),
-        //     status: Set(CreationStatus::Pending),
-        //     created_at: Set(Utc::now().into()),
-        //     ..Default::default()
-        // };
+        let mint_history_am = mint_histories::ActiveModel {
+            mint_id: Set(collection_mint_model.id),
+            wallet: Set(input.recipient),
+            collection_id: Set(collection.id),
+            tx_signature: Set(None),
+            status: Set(CreationStatus::Pending),
+            created_at: Set(Utc::now().into()),
+            ..Default::default()
+        };
 
-        // purchase_am.insert(conn).await?;
+        mint_history_am.insert(conn).await?;
 
         submit_pending_deduction(credits, db, DeductionParams {
             balance,
