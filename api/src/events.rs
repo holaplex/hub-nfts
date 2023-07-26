@@ -214,7 +214,7 @@ impl Processor {
             project_id: Set(project_id.parse()?),
             credits_deduction_id: Set(None),
             creation_status: Set(CreationStatus::Created),
-            total_mints: Set(-1),
+            total_mints: Set(0),
             address: Set(Some(mint_address)),
             signature: Set(None),
             seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
@@ -233,7 +233,7 @@ impl Processor {
             image: Set(image),
             animation_url: Set(None),
             external_url: Set(None),
-            ..Default::default()
+            identifier: Set(String::new()),
         };
 
         let json_model = metadata_json.insert(self.db.get()).await?;
@@ -307,7 +307,7 @@ impl Processor {
             image: Set(image),
             animation_url: Set(None),
             external_url: Set(None),
-            ..Default::default()
+            identifier: Set(String::new()),
         };
 
         let json_model = metadata_json.insert(self.db.get()).await?;
@@ -323,6 +323,15 @@ impl Processor {
         }
         index_attributes(&self.db, json_model.id, attributes).await?;
         index_files(&self.db, json_model.id, files).await?;
+
+        let collection = Collections::find_by_id(collection_id.parse()?)
+            .one(self.db.get())
+            .await
+            .context("failed to load collection from db")?
+            .context("collection not found in db")?;
+        let mut collection_am: collections::ActiveModel = collection.clone().into();
+
+        collection_am.total_mints = Set(collection.total_mints + 1);
 
         Ok(())
     }
