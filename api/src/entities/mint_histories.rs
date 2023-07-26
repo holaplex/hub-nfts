@@ -24,7 +24,7 @@ pub struct Model {
     /// The date and time when the purchase was created.
     pub created_at: DateTimeWithTimeZone,
     /// The ID of the collection that facilitated the purchase, if any.
-    pub collection: Option<Uuid>,
+    pub collection_id: Uuid,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -39,7 +39,7 @@ pub enum Relation {
     CollectionMints,
     #[sea_orm(
         belongs_to = "super::collections::Entity",
-        from = "Column::Collection",
+        from = "Column::CollectionId",
         to = "super::collections::Column::Id",
         on_update = "Cascade",
         on_delete = "Cascade"

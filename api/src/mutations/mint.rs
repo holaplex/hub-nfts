@@ -155,7 +155,7 @@ impl Mutation {
         let purchase_am = mint_histories::ActiveModel {
             mint_id: Set(collection_mint_model.id),
             wallet: Set(input.recipient),
-            collection: Set(Some(collection.id)),
+            collection_id: Set(collection.id),
             tx_signature: Set(None),
             status: Set(CreationStatus::Pending),
             created_at: Set(Utc::now().into()),
@@ -441,7 +441,7 @@ impl Mutation {
         let mint_history_am = mint_histories::ActiveModel {
             mint_id: Set(collection_mint_model.id),
             wallet: Set(input.recipient),
-            collection: Set(Some(collection.id)),
+            collection_id: Set(collection.id),
             tx_signature: Set(None),
             status: Set(CreationStatus::Pending),
             created_at: Set(Utc::now().into()),
