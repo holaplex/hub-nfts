@@ -23,7 +23,7 @@ impl MigrationTrait for Migration {
         let stmt = Statement::from_string(
             manager.get_database_backend(),
             r#"ALTER TABLE mint_histories
-        ADD COLUMN collection_id UUID NOT NULL CONSTRAINT mint_histories REFERENCES collections(id)
+        ADD COLUMN collection_id UUID CONSTRAINT mint_histories REFERENCES collections(id)
         ON UPDATE CASCADE ON DELETE CASCADE;"#
                 .to_string(),
         );
@@ -37,6 +37,13 @@ impl MigrationTrait for Migration {
                 WHERE MINT_HISTORIES.DROP_ID = D.ID AND MINT_HISTORIES.DROP_ID IS NOT NULL;"#
                 .to_string(),
         );
+        db.execute(stmt).await?;
+
+        let stmt = Statement::from_string(
+            manager.get_database_backend(),
+            r#"ALTER TABLE mint_histories ALTER COLUMN collection_id SET NOT NULL;"#.to_string(),
+        );
+
         db.execute(stmt).await?;
 
         let stmt = Statement::from_string(
