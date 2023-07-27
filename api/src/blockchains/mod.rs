@@ -1,7 +1,7 @@
 pub mod polygon;
 pub mod solana;
 
-use hub_core::{anyhow::Result, uuid::Uuid};
+use hub_core::anyhow::Result;
 
 use crate::proto::NftEventKey;
 
@@ -15,42 +15,25 @@ pub struct TransactionResponse {
     pub signed_message_signatures: Vec<String>,
 }
 
-/// A trait that defines the fundamental operations that can be performed
-/// on a given blockchain for a specific edition of an NFT.
 #[async_trait::async_trait]
-pub trait Edition<A, B, C, D, E, M> {
-    /// Creates a new NFT on the blockchain. The specifics of the creation
-    /// process, such as the parameters it takes and the values it returns,
-    /// are dependent on the implementation of this method for the specific blockchain.
-    async fn create(&self, payload: A) -> Result<(M, TransactionResponse)>;
-
-    /// Mints a new instance of the NFT on the blockchain. The specifics of the minting
-    /// process, such as the parameters it takes and the values it returns,
-    /// are dependent on the implementation of this method for the specific blockchain.
-    async fn mint(&self, payload: B) -> Result<(M, TransactionResponse)>;
-
-    /// Updates an existing collection on the blockchain. The specifics of the update
-    /// process, such as the parameters it takes and the values it returns,
-    /// are dependent on the implementation of this method for the specific blockchain.
-    async fn update(&self, payload: C) -> Result<(M, TransactionResponse)>;
-
-    /// Transfers an NFT from one account to another on the blockchain. The specifics of the transfer
-    /// process, such as the parameters it takes and the values it returns,
-    /// are dependent on the implementation of this method for the specific blockchain.
-    async fn transfer(&self, payload: D) -> Result<(Uuid, TransactionResponse)>;
-
-    /// Retries a failed drop of an NFT on the blockchain. The specifics of the retry drop
-    /// process, such as the parameters it takes and the values it returns,
-    /// are dependent on the implementation of this method for the specific blockchain.
-    async fn retry_drop(&self, payload: E) -> Result<(M, TransactionResponse)>;
+pub trait DropEvent<A, B, C> {
+    async fn create_drop(&self, key: NftEventKey, payload: A) -> Result<()>;
+    async fn retry_create_drop(&self, key: NftEventKey, payload: A) -> Result<()>;
+    async fn update_drop(&self, key: NftEventKey, payload: C) -> Result<()>;
+    async fn mint_drop(&self, key: NftEventKey, payload: B) -> Result<()>;
+    async fn retry_mint_drop(&self, key: NftEventKey, payload: B) -> Result<()>;
 }
 
 #[async_trait::async_trait]
-pub trait Event<A, B, C, D> {
-    async fn create_drop(&self, key: NftEventKey, payload: A) -> Result<()>;
-    async fn retry_create_drop(&self, key: NftEventKey, payload: A) -> Result<()>;
-    async fn update_drop(&self, key: NftEventKey, payload: D) -> Result<()>;
-    async fn mint_drop(&self, key: NftEventKey, payload: B) -> Result<()>;
-    async fn retry_mint_drop(&self, key: NftEventKey, payload: B) -> Result<()>;
-    async fn transfer_asset(&self, key: NftEventKey, payload: C) -> Result<()>;
+pub trait CollectionEvent<A, B, C> {
+    async fn create_collection(&self, key: NftEventKey, payload: A) -> Result<()>;
+    async fn retry_create_collection(&self, key: NftEventKey, payload: A) -> Result<()>;
+    async fn update_collection(&self, key: NftEventKey, payload: B) -> Result<()>;
+    async fn mint_to_collection(&self, key: NftEventKey, payload: C) -> Result<()>;
+    async fn retry_mint_to_collection(&self, key: NftEventKey, payload: C) -> Result<()>;
+}
+
+#[async_trait::async_trait]
+pub trait TransferEvent<A> {
+    async fn transfer_asset(&self, key: NftEventKey, payload: A) -> Result<()>;
 }

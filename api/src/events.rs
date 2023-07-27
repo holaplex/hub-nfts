@@ -13,9 +13,11 @@ use sea_orm::{
 use crate::{
     db::Connection,
     entities::{
-        collection_mints, collections, customer_wallets, drops, nft_transfers,
-        prelude::{CollectionMints, Purchases},
-        project_wallets, purchases,
+        collection_creators, collection_mints, collections, customer_wallets, drops,
+        metadata_json_attributes, metadata_json_files, metadata_jsons, mint_creators,
+        mint_histories, nft_transfers,
+        prelude::{CollectionMints, Collections, Drops, MintHistory},
+        project_wallets,
         sea_orm_active_enums::{Blockchain, CreationStatus},
         transfer_charges,
     },
@@ -27,9 +29,10 @@ use crate::{
             Blockchain as ProtoBlockchainEnum, CustomerWallet, Event as TreasuryEvent,
             PolygonTransactionResult, ProjectWallet, TransactionStatus,
         },
-        CreationStatus as NftCreationStatus, DropCreation, MintCreation, MintOwnershipUpdate,
-        MintedTokensOwnershipUpdate, NftEventKey, NftEvents, SolanaCompletedMintTransaction,
-        SolanaCompletedTransferTransaction, SolanaNftEventKey, TreasuryEventKey,
+        Attribute, CreationStatus as NftCreationStatus, DropCreation, File, Metadata,
+        MintCollectionCreation, MintCreation, MintOwnershipUpdate, MintedTokensOwnershipUpdate,
+        NftEventKey, NftEvents, SolanaCollectionPayload, SolanaCompletedMintTransaction,
+        SolanaCompletedTransferTransaction, SolanaMintPayload, SolanaNftEventKey, TreasuryEventKey,
     },
     Actions, Services,
 };
@@ -95,12 +98,26 @@ impl Processor {
                 },
                 None | Some(_) => Ok(()),
             },
-            Services::Solana(SolanaNftEventKey { id, .. }, e) => match e.event {
+            Services::Solana(
+                SolanaNftEventKey {
+                    id,
+                    project_id,
+                    user_id,
+                },
+                e,
+            ) => match e.event {
                 Some(
                     SolanaNftsEvent::CreateDropSubmitted(payload)
                     | SolanaNftsEvent::RetryCreateDropSubmitted(payload),
                 ) => {
                     self.drop_created(id, MintResult::Success(payload.into()))
+                        .await
+                },
+                Some(
+                    SolanaNftsEvent::CreateCollectionSubmitted(payload)
+                    | SolanaNftsEvent::RetryCreateCollectionSubmitted(payload),
+                ) => {
+                    self.collection_created(id, MintResult::Success(payload.into()))
                         .await
                 },
                 Some(
@@ -110,28 +127,47 @@ impl Processor {
                     self.drop_minted(id, MintResult::Success(payload.into()))
                         .await
                 },
+                Some(
+                    SolanaNftsEvent::MintToCollectionSubmitted(payload)
+                    | SolanaNftsEvent::RetryMintToCollectionSubmitted(payload),
+                ) => {
+                    self.minted_to_collection(id, MintResult::Success(payload.into()))
+                        .await
+                },
                 Some(SolanaNftsEvent::TransferAssetSubmitted(
                     SolanaCompletedTransferTransaction { signature },
                 )) => {
                     self.mint_transferred(id, TransferResult::Success(signature))
                         .await
                 },
-                Some(SolanaNftsEvent::CreateDropFailed(_)) => {
-                    self.drop_created(id, MintResult::Failure).await
-                },
+                Some(
+                    SolanaNftsEvent::CreateDropFailed(_)
+                    | SolanaNftsEvent::RetryCreateDropFailed(_),
+                ) => self.drop_created(id, MintResult::Failure).await,
+                Some(
+                    SolanaNftsEvent::CreateCollectionFailed(_)
+                    | SolanaNftsEvent::RetryCreateCollectionFailed(_),
+                ) => self.collection_created(id, MintResult::Failure).await,
                 Some(SolanaNftsEvent::MintDropFailed(_)) => {
                     self.drop_minted(id, MintResult::Failure).await
                 },
+                Some(
+                    SolanaNftsEvent::MintToCollectionFailed(_)
+                    | SolanaNftsEvent::RetryMintToCollectionFailed(_),
+                ) => self.minted_to_collection(id, MintResult::Failure).await,
                 Some(SolanaNftsEvent::TransferAssetFailed(_)) => {
                     self.mint_transferred(id, TransferResult::Failure).await
                 },
                 Some(SolanaNftsEvent::RetryMintDropFailed(_)) => {
                     self.drop_minted(id, MintResult::Failure).await
                 },
-                Some(SolanaNftsEvent::RetryCreateDropFailed(_)) => {
-                    self.drop_created(id, MintResult::Failure).await
-                },
                 Some(SolanaNftsEvent::UpdateMintOwner(e)) => self.update_mint_owner(id, e).await,
+                Some(SolanaNftsEvent::ImportedExternalCollection(e)) => {
+                    self.index_collection(id, project_id, user_id, e).await
+                },
+                Some(SolanaNftsEvent::ImportedExternalMint(e)) => {
+                    self.index_mint(id, user_id, e).await
+                },
                 None | Some(_) => Ok(()),
             },
             Services::Polygon(_, e) => match e.event {
@@ -141,6 +177,163 @@ impl Processor {
                 None | Some(_) => Ok(()),
             },
         }
+    }
+
+    async fn index_collection(
+        &self,
+        id: String,
+        project_id: String,
+        created_by: String,
+        payload: SolanaCollectionPayload,
+    ) -> Result<()> {
+        let SolanaCollectionPayload {
+            supply,
+            mint_address,
+            seller_fee_basis_points,
+            creators,
+            metadata,
+            files,
+            ..
+        } = payload;
+
+        let metadata = metadata.context("no collection metadata found")?;
+
+        let Metadata {
+            name,
+            description,
+            symbol,
+            attributes,
+            uri,
+            image,
+        } = metadata;
+
+        let collection_am = collections::ActiveModel {
+            id: Set(id.parse()?),
+            blockchain: Set(Blockchain::Solana),
+            supply: Set(supply.map(Into::into)),
+            project_id: Set(project_id.parse()?),
+            credits_deduction_id: Set(None),
+            creation_status: Set(CreationStatus::Created),
+            total_mints: Set(0),
+            address: Set(Some(mint_address)),
+            signature: Set(None),
+            seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
+            created_by: Set(created_by.parse()?),
+            created_at: Set(Utc::now().into()),
+        };
+
+        collection_am.insert(self.db.get()).await?;
+
+        let metadata_json = metadata_jsons::ActiveModel {
+            id: Set(id.parse()?),
+            name: Set(name),
+            uri: Set(uri),
+            symbol: Set(symbol),
+            description: Set(description.unwrap_or_default()),
+            image: Set(image),
+            animation_url: Set(None),
+            external_url: Set(None),
+            identifier: Set(String::new()),
+        };
+
+        let json_model = metadata_json.insert(self.db.get()).await?;
+        for creator in creators {
+            let collection_creator = collection_creators::ActiveModel {
+                collection_id: Set(id.parse()?),
+                address: Set(creator.address),
+                verified: Set(creator.verified),
+                share: Set(creator.share.try_into()?),
+            };
+            collection_creator.insert(self.db.get()).await?;
+        }
+        index_attributes(&self.db, json_model.id, attributes).await?;
+        index_files(&self.db, json_model.id, files).await?;
+
+        Ok(())
+    }
+
+    async fn index_mint(
+        &self,
+        id: String,
+        created_by: String,
+        payload: SolanaMintPayload,
+    ) -> Result<()> {
+        let SolanaMintPayload {
+            collection_id,
+            mint_address,
+            owner,
+            seller_fee_basis_points,
+            compressed,
+            creators,
+            files,
+            metadata,
+            ..
+        } = payload;
+
+        let metadata = metadata.context("no collection metadata found")?;
+
+        let Metadata {
+            name,
+            description,
+            symbol,
+            attributes,
+            uri,
+            image,
+        } = metadata;
+
+        let mint_am = collection_mints::ActiveModel {
+            id: Set(id.parse()?),
+            collection_id: Set(collection_id.parse()?),
+            address: Set(Some(mint_address)),
+            owner: Set(owner),
+            creation_status: Set(CreationStatus::Created),
+            created_by: Set(created_by.parse()?),
+            created_at: Set(Utc::now().into()),
+            signature: Set(None),
+            edition: Set(-1),
+            seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
+            credits_deduction_id: Set(None),
+            compressed: Set(compressed),
+        };
+
+        let mint_model = mint_am.insert(self.db.get()).await?;
+
+        let metadata_json = metadata_jsons::ActiveModel {
+            id: Set(id.parse()?),
+            name: Set(name),
+            uri: Set(uri),
+            symbol: Set(symbol),
+            description: Set(description.unwrap_or_default()),
+            image: Set(image),
+            animation_url: Set(None),
+            external_url: Set(None),
+            identifier: Set(String::new()),
+        };
+
+        let json_model = metadata_json.insert(self.db.get()).await?;
+
+        for creator in creators {
+            let mint_creator_am = mint_creators::ActiveModel {
+                collection_mint_id: Set(mint_model.id),
+                address: Set(creator.address),
+                verified: Set(creator.verified),
+                share: Set(creator.share.try_into()?),
+            };
+            mint_creator_am.insert(self.db.get()).await?;
+        }
+        index_attributes(&self.db, json_model.id, attributes).await?;
+        index_files(&self.db, json_model.id, files).await?;
+
+        let collection = Collections::find_by_id(collection_id.parse()?)
+            .one(self.db.get())
+            .await
+            .context("failed to load collection from db")?
+            .context("collection not found in db")?;
+        let mut collection_am: collections::ActiveModel = collection.clone().into();
+
+        collection_am.total_mints = Set(collection.total_mints + 1);
+        collection_am.update(self.db.get()).await?;
+        Ok(())
     }
 
     async fn update_mint_owner(&self, id: String, payload: MintOwnershipUpdate) -> Result<()> {
@@ -268,7 +461,7 @@ impl Processor {
         let conn = self.db.get();
         let collection_id = Uuid::from_str(&id)?;
 
-        let (collection_model, drop) = collections::Entity::find_by_id(collection_id)
+        let (collection_model, drop) = Collections::find_by_id(collection_id)
             .join(JoinType::InnerJoin, collections::Relation::Drop.def())
             .select_also(drops::Entity)
             .one(conn)
@@ -320,34 +513,91 @@ impl Processor {
         Ok(())
     }
 
+    async fn collection_created(&self, id: String, payload: MintResult) -> Result<()> {
+        let conn = self.db.get();
+        let collection_id = Uuid::from_str(&id)?;
+
+        let collection_model = collections::Entity::find_by_id(collection_id)
+            .one(conn)
+            .await
+            .context("failed to load collection from db")?
+            .context("collection not found in db")?;
+
+        let mut collection_active_model: collections::ActiveModel = collection_model.clone().into();
+        let mut creation_status = NftCreationStatus::Completed;
+
+        if let MintResult::Success(MintTransaction { signature, address }) = payload {
+            collection_active_model.signature = Set(Some(signature));
+            collection_active_model.address = Set(Some(address));
+            collection_active_model.creation_status = Set(CreationStatus::Created);
+
+            let deduction_id = collection_model
+                .credits_deduction_id
+                .context("drop has no deduction id")?;
+            self.credits
+                .confirm_deduction(TransactionId(deduction_id))
+                .await?;
+        } else {
+            collection_active_model.creation_status = Set(CreationStatus::Failed);
+            creation_status = NftCreationStatus::Failed;
+        }
+
+        self.producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::DropCreated(DropCreation {
+                        status: creation_status as i32,
+                    })),
+                }),
+                Some(&NftEventKey {
+                    id: collection_model.id.to_string(),
+                    project_id: collection_model.project_id.to_string(),
+                    user_id: collection_model.created_by.to_string(),
+                }),
+            )
+            .await?;
+
+        collection_active_model.update(conn).await?;
+
+        Ok(())
+    }
+
     async fn drop_minted(&self, id: String, payload: MintResult) -> Result<()> {
         let conn = self.db.get();
         let collection_mint_id = Uuid::from_str(&id)?;
 
-        let collection_mint = collection_mints::Entity::find_by_id(collection_mint_id)
+        let (collection_mint, collection) =
+            collection_mints::Entity::find_by_id(collection_mint_id)
+                .find_also_related(collections::Entity)
+                .one(conn)
+                .await
+                .context("failed to load collection mint from db")?
+                .context("collection mint not found in db")?;
+
+        let mint_history = MintHistory::find()
+            .filter(mint_histories::Column::MintId.eq(collection_mint_id))
             .one(conn)
             .await
-            .context("failed to load collection mint from db")?
-            .context("collection mint not found in db")?;
+            .context("failed to load mint_history from db")?
+            .context("mint_history not found in db")?;
 
-        let (purchase, drop) = Purchases::find()
-            .find_also_related(drops::Entity)
-            .filter(purchases::Column::MintId.eq(collection_mint_id))
+        let collection = collection.context("collection not found")?;
+
+        let drop = Drops::find()
+            .filter(drops::Column::CollectionId.eq(collection.id))
             .one(conn)
             .await
-            .context("failed to load purchase from db")?
-            .context("purchase not found in db")?;
-
-        let drop = drop.context("drop not found")?;
+            .context("failed to load drop from db")?
+            .context("drop not found in db")?;
 
         let mut collection_mint_active_model: collection_mints::ActiveModel =
             collection_mint.clone().into();
-        let mut purchase_am: purchases::ActiveModel = purchase.into();
+        let mut mint_history_am: mint_histories::ActiveModel = mint_history.into();
         let mut creation_status = NftCreationStatus::Completed;
 
         if let MintResult::Success(MintTransaction { signature, address }) = payload {
-            purchase_am.status = Set(CreationStatus::Created);
-            purchase_am.tx_signature = Set(Some(signature.clone()));
+            mint_history_am.status = Set(CreationStatus::Created);
+            mint_history_am.tx_signature = Set(Some(signature.clone()));
             collection_mint_active_model.creation_status = Set(CreationStatus::Created);
             collection_mint_active_model.signature = Set(Some(signature));
             collection_mint_active_model.address = Set(Some(address));
@@ -360,7 +610,7 @@ impl Processor {
                 .confirm_deduction(TransactionId(deduction_id))
                 .await?;
         } else {
-            purchase_am.status = Set(CreationStatus::Failed);
+            mint_history_am.status = Set(CreationStatus::Failed);
             collection_mint_active_model.creation_status = Set(CreationStatus::Failed);
             creation_status = NftCreationStatus::Failed;
         }
@@ -382,7 +632,74 @@ impl Processor {
             .await?;
 
         collection_mint_active_model.update(conn).await?;
-        purchase_am.update(conn).await?;
+        mint_history_am.update(conn).await?;
+
+        Ok(())
+    }
+
+    async fn minted_to_collection(&self, id: String, payload: MintResult) -> Result<()> {
+        let conn = self.db.get();
+        let collection_mint_id = Uuid::from_str(&id)?;
+
+        let (collection_mint, collection) =
+            collection_mints::Entity::find_by_id_with_collection(collection_mint_id)
+                .one(conn)
+                .await
+                .context("failed to load collection mint from db")?
+                .context("collection mint not found in db")?;
+
+        let mint_history = MintHistory::find()
+            .filter(mint_histories::Column::MintId.eq(collection_mint_id))
+            .one(conn)
+            .await
+            .context("failed to load mint_history from db")?
+            .context("mint_history not found in db")?;
+
+        let collection = collection.context("collection not found")?;
+
+        let mut collection_mint_active_model: collection_mints::ActiveModel =
+            collection_mint.clone().into();
+        let mut mint_history_am: mint_histories::ActiveModel = mint_history.into();
+        let mut creation_status = NftCreationStatus::Completed;
+
+        if let MintResult::Success(MintTransaction { signature, address }) = payload {
+            mint_history_am.status = Set(CreationStatus::Created);
+            mint_history_am.tx_signature = Set(Some(signature.clone()));
+            collection_mint_active_model.creation_status = Set(CreationStatus::Created);
+            collection_mint_active_model.signature = Set(Some(signature));
+            collection_mint_active_model.address = Set(Some(address));
+
+            let deduction_id = collection_mint
+                .credits_deduction_id
+                .context("deduction id not found")?;
+
+            self.credits
+                .confirm_deduction(TransactionId(deduction_id))
+                .await?;
+        } else {
+            mint_history_am.status = Set(CreationStatus::Failed);
+            collection_mint_active_model.creation_status = Set(CreationStatus::Failed);
+            creation_status = NftCreationStatus::Failed;
+        }
+
+        self.producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::MintedToCollection(MintCollectionCreation {
+                        collection_id: collection.id.to_string(),
+                        status: creation_status as i32,
+                    })),
+                }),
+                Some(&NftEventKey {
+                    id: collection_mint.id.to_string(),
+                    project_id: collection.project_id.to_string(),
+                    user_id: collection_mint.created_by.to_string(),
+                }),
+            )
+            .await?;
+
+        collection_mint_active_model.update(conn).await?;
+        mint_history_am.update(conn).await?;
 
         Ok(())
     }
@@ -468,4 +785,38 @@ impl From<PolygonTransactionResult> for TransferResult {
             Some(signature) => Self::Success(signature),
         }
     }
+}
+
+async fn index_attributes(
+    db: &Connection,
+    json_id: Uuid,
+    attributes: Vec<Attribute>,
+) -> Result<()> {
+    for attr in attributes {
+        let attribute = metadata_json_attributes::ActiveModel {
+            metadata_json_id: Set(json_id),
+            trait_type: Set(attr.trait_type),
+            value: Set(attr.value),
+            ..Default::default()
+        };
+
+        attribute.insert(db.get()).await?;
+    }
+
+    Ok(())
+}
+
+async fn index_files(db: &Connection, json_id: Uuid, files: Vec<File>) -> Result<()> {
+    for file in files {
+        let file_am = metadata_json_files::ActiveModel {
+            metadata_json_id: Set(json_id),
+            uri: Set(Some(file.uri)),
+            file_type: Set(file.mime),
+            ..Default::default()
+        };
+
+        file_am.insert(db.get()).await?;
+    }
+
+    Ok(())
 }

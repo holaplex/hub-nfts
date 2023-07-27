@@ -1,14 +1,11 @@
-use std::str::FromStr;
-
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
-use reqwest::Url;
 use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
-use solana_program::pubkey::Pubkey;
 
+use super::collection::{validate_creators, validate_json, validate_solana_creator_verification};
 use crate::{
-    blockchains::{polygon::Polygon, solana::Solana, Event},
+    blockchains::{polygon::Polygon, solana::Solana, DropEvent},
     collection::Collection,
     db::Connection,
     entities::{
@@ -18,7 +15,7 @@ use crate::{
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
     metadata_json::MetadataJson,
-    objects::{CollectionCreator, Drop, MetadataJsonInput},
+    objects::{Creator, Drop, MetadataJsonInput},
     proto::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, EditionInfo,
         NftEventKey, NftEvents,
@@ -77,6 +74,8 @@ impl Mutation {
             supply: Set(input.supply.map(TryFrom::try_from).transpose()?),
             creation_status: Set(CreationStatus::Pending),
             seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
+            created_by: Set(user_id),
+            project_id: Set(input.project),
             ..Default::default()
         };
 
@@ -290,6 +289,10 @@ impl Mutation {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
+
+        let mut drop_am: drops::ActiveModel = drop.into();
+        drop_am.creation_status = Set(CreationStatus::Pending);
+        let drop = drop_am.update(conn).await?;
 
         submit_pending_deduction(credits, db, DeductionParams {
             balance,
@@ -627,11 +630,17 @@ async fn submit_pending_deduction(
         blockchain,
         action,
     } = params;
+    let conn = db.get();
 
-    let drop_model = drops::Entity::find_by_id(drop)
-        .one(db.get())
+    let (drop_model, collection) = Drops::find()
+        .join(JoinType::InnerJoin, drops::Relation::Collections.def())
+        .select_also(Collections)
+        .filter(drops::Column::Id.eq(drop))
+        .one(conn)
         .await?
         .ok_or(Error::new("drop not found"))?;
+
+    let collection = collection.ok_or(Error::new("collection not found"))?;
 
     if drop_model.credits_deduction_id.is_some() {
         return Ok(());
@@ -651,8 +660,12 @@ async fn submit_pending_deduction(
     let deduction_id = id.ok_or(Error::new("Organization does not have enough credits"))?;
 
     let mut drop: drops::ActiveModel = drop_model.into();
+    let mut collection: collections::ActiveModel = collection.into();
     drop.credits_deduction_id = Set(Some(deduction_id.0));
-    drop.update(db.get()).await?;
+    collection.credits_deduction_id = Set(Some(deduction_id.0));
+
+    collection.update(conn).await?;
+    drop.update(conn).await?;
 
     Ok(())
 }
@@ -693,7 +706,7 @@ pub struct CreateDropInput {
     pub start_time: Option<DateTimeWithTimeZone>,
     pub end_time: Option<DateTimeWithTimeZone>,
     pub blockchain: BlockchainEnum,
-    pub creators: Vec<CollectionCreator>,
+    pub creators: Vec<Creator>,
     pub metadata_json: MetadataJsonInput,
 }
 
@@ -739,134 +752,6 @@ fn validate_end_time(end_time: &Option<DateTimeWithTimeZone>) -> Result<()> {
     Ok(())
 }
 
-fn validate_solana_creator_verification(
-    project_treasury_wallet_address: &str,
-    creators: &Vec<CollectionCreator>,
-) -> Result<()> {
-    for creator in creators {
-        if creator.verified.unwrap_or_default()
-            && creator.address != project_treasury_wallet_address
-        {
-            return Err(Error::new(format!(
-                "Only the project treasury wallet of {project_treasury_wallet_address} can be verified in the mutation. Other creators must be verified independently. See the Metaplex documentation for more details."
-            )));
-        }
-    }
-
-    Ok(())
-}
-
-/// Validates the addresses of the creators for a given blockchain.
-/// # Returns
-/// - Ok(()) if all creator addresses are valid blockchain addresses.
-///
-/// # Errors
-/// - Err with an appropriate error message if any creator address is not a valid address.
-/// - Err if the blockchain is not supported.
-fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<CollectionCreator>) -> Result<()> {
-    let royalty_share = creators.iter().map(|c| c.share).sum::<u8>();
-
-    if royalty_share != 100 {
-        return Err(Error::new(
-            "The sum of all creator shares must be equal to 100",
-        ));
-    }
-
-    match blockchain {
-        BlockchainEnum::Solana => {
-            if creators.len() > 5 {
-                return Err(Error::new(
-                    "Maximum number of creators is 5 for Solana Blockchain",
-                ));
-            }
-
-            for creator in creators {
-                validate_solana_address(&creator.address)?;
-            }
-        },
-        BlockchainEnum::Polygon => {
-            if creators.len() != 1 {
-                return Err(Error::new(
-                    "Only one creator is allowed for Polygon Blockchain",
-                ));
-            }
-
-            let address = &creators[0].clone().address;
-            validate_evm_address(address)?;
-        },
-        BlockchainEnum::Ethereum => return Err(Error::new("Blockchain not supported yet")),
-    }
-
-    Ok(())
-}
-
-pub fn validate_solana_address(address: &str) -> Result<()> {
-    if Pubkey::from_str(address).is_err() {
-        return Err(Error::new(format!(
-            "{address} is not a valid Solana address"
-        )));
-    }
-
-    Ok(())
-}
-
-pub fn validate_evm_address(address: &str) -> Result<()> {
-    let err = Err(Error::new(format!("{address} is not a valid EVM address")));
-
-    // Ethereum address must start with '0x'
-    if !address.starts_with("0x") {
-        return err;
-    }
-
-    // Ethereum address must be exactly 40 characters long after removing '0x'
-    if address.len() != 42 {
-        return err;
-    }
-
-    // Check that the address contains only hexadecimal characters
-    if !address[2..].chars().all(|c| c.is_ascii_hexdigit()) {
-        return err;
-    }
-
-    Ok(())
-}
-
-/// Validates the JSON metadata input for the NFT drop.
-/// # Returns
-/// - Ok(()) if all JSON fields are valid.
-///
-/// # Errors
-/// - Err with an appropriate error message if any JSON field is invalid.
-fn validate_json(blockchain: BlockchainEnum, json: &MetadataJsonInput) -> Result<()> {
-    json.animation_url
-        .as_ref()
-        .map(|animation_url| Url::from_str(animation_url))
-        .transpose()
-        .map_err(|_| Error::new("Invalid animation url"))?;
-
-    json.external_url
-        .as_ref()
-        .map(|external_url| Url::from_str(external_url))
-        .transpose()
-        .map_err(|_| Error::new("Invalid external url"))?;
-
-    Url::from_str(&json.image).map_err(|_| Error::new("Invalid image url"))?;
-
-    if blockchain != BlockchainEnum::Solana {
-        return Ok(());
-    }
-
-    if json.name.chars().count() > 32 {
-        return Err(Error::new("Name must be less than 32 characters"));
-    }
-
-    if json.symbol.chars().count() > 10 {
-        return Err(Error::new("Symbol must be less than 10 characters"));
-    }
-
-    Ok(())
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct RetryDropInput {
     pub drop: Uuid,
@@ -893,7 +778,7 @@ pub struct PatchDropInput {
     /// The new metadata JSON for the drop
     pub metadata_json: Option<MetadataJsonInput>,
     /// The creators of the drop
-    pub creators: Option<Vec<CollectionCreator>>,
+    pub creators: Option<Vec<Creator>>,
 }
 
 /// Represents the result of a successful patch drop mutation.

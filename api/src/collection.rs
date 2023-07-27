@@ -7,13 +7,13 @@ use crate::{
         collection_creators::ActiveModel as CollectionCreatorActiveModel,
         collections::{ActiveModel, Model},
     },
-    objects::CollectionCreator,
+    objects::Creator,
 };
 
 #[derive(Debug, Clone)]
 pub struct Collection {
     collection: ActiveModel,
-    creators: Option<Vec<CollectionCreator>>,
+    creators: Option<Vec<Creator>>,
 }
 
 impl Collection {
@@ -25,7 +25,7 @@ impl Collection {
         }
     }
 
-    pub fn creators(&mut self, creators: Vec<CollectionCreator>) -> &Collection {
+    pub fn creators(&mut self, creators: Vec<Creator>) -> &Collection {
         self.creators = Some(creators);
 
         self

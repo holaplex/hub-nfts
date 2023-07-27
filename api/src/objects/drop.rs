@@ -4,10 +4,9 @@ use sea_orm::entity::prelude::*;
 
 use super::Collection;
 use crate::{
-    entities::{collections, drops, purchases, sea_orm_active_enums::CreationStatus},
+    entities::{collections, drops, mint_histories, sea_orm_active_enums::CreationStatus},
     AppContext,
 };
-
 /// An NFT campaign that controls the minting rules for a collection, such as its start date and end date.
 #[derive(Clone, Debug)]
 pub struct Drop {
@@ -125,14 +124,15 @@ impl Drop {
         }
     }
 
+    #[graphql(deprecation = "Use `mint_histories` under `Collection` Object instead.")]
     /// A list of all NFT purchases from this drop.
-    async fn purchases(&self, ctx: &Context<'_>) -> Result<Option<Vec<purchases::Model>>> {
+    async fn purchases(&self, ctx: &Context<'_>) -> Result<Option<Vec<mint_histories::Model>>> {
         let AppContext {
-            drop_purchases_loader,
+            drop_mint_history_loader,
             ..
         } = ctx.data::<AppContext>()?;
 
-        drop_purchases_loader.load_one(self.drop.id).await
+        drop_mint_history_loader.load_one(self.drop.id).await
     }
 }
 

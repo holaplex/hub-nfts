@@ -1,13 +1,14 @@
 use hub_core::{anyhow::Result, producer::Producer};
 
-use super::Event;
+use super::{CollectionEvent, DropEvent, TransferEvent};
 use crate::proto::{
     nft_events::Event::{
-        SolanaCreateDrop, SolanaMintDrop, SolanaRetryDrop, SolanaRetryMintDrop,
-        SolanaTransferAsset, SolanaUpdateDrop,
+        SolanaCreateCollection, SolanaCreateDrop, SolanaMintDrop, SolanaMintToCollection,
+        SolanaRetryCreateCollection, SolanaRetryDrop, SolanaRetryMintDrop,
+        SolanaRetryMintToCollection, SolanaTransferAsset, SolanaUpdateCollection, SolanaUpdateDrop,
     },
-    MetaplexMasterEditionTransaction, MintMetaplexEditionTransaction, NftEventKey, NftEvents,
-    TransferMetaplexAssetTransaction,
+    MetaplexMasterEditionTransaction, MintMetaplexEditionTransaction,
+    MintMetaplexMetadataTransaction, NftEventKey, NftEvents, TransferMetaplexAssetTransaction,
 };
 
 #[derive(Clone)]
@@ -24,11 +25,15 @@ impl Solana {
     #[must_use]
     pub fn event(
         &self,
-    ) -> impl Event<
+    ) -> impl DropEvent<
         MetaplexMasterEditionTransaction,
         MintMetaplexEditionTransaction,
-        TransferMetaplexAssetTransaction,
         MetaplexMasterEditionTransaction,
+    > + TransferEvent<TransferMetaplexAssetTransaction>
+    + CollectionEvent<
+        MetaplexMasterEditionTransaction,
+        MetaplexMasterEditionTransaction,
+        MintMetaplexMetadataTransaction,
     > {
         self.clone()
     }
@@ -36,10 +41,9 @@ impl Solana {
 
 #[async_trait::async_trait]
 impl
-    Event<
+    DropEvent<
         MetaplexMasterEditionTransaction,
         MintMetaplexEditionTransaction,
-        TransferMetaplexAssetTransaction,
         MetaplexMasterEditionTransaction,
     > for Solana
 {
@@ -112,14 +116,96 @@ impl
 
         Ok(())
     }
+}
 
+#[async_trait::async_trait]
+impl TransferEvent<TransferMetaplexAssetTransaction> for Solana {
     async fn transfer_asset(
         &self,
         key: NftEventKey,
         payload: TransferMetaplexAssetTransaction,
     ) -> Result<()> {
-        let event: NftEvents = NftEvents {
+        let event = NftEvents {
             event: Some(SolanaTransferAsset(payload)),
+        };
+
+        self.producer.send(Some(&event), Some(&key)).await?;
+
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl
+    CollectionEvent<
+        MetaplexMasterEditionTransaction,
+        MetaplexMasterEditionTransaction,
+        MintMetaplexMetadataTransaction,
+    > for Solana
+{
+    async fn create_collection(
+        &self,
+        key: NftEventKey,
+        payload: MetaplexMasterEditionTransaction,
+    ) -> Result<()> {
+        let event = NftEvents {
+            event: Some(SolanaCreateCollection(payload)),
+        };
+
+        self.producer.send(Some(&event), Some(&key)).await?;
+
+        Ok(())
+    }
+
+    async fn retry_create_collection(
+        &self,
+        key: NftEventKey,
+        payload: MetaplexMasterEditionTransaction,
+    ) -> Result<()> {
+        let event = NftEvents {
+            event: Some(SolanaRetryCreateCollection(payload)),
+        };
+
+        self.producer.send(Some(&event), Some(&key)).await?;
+
+        Ok(())
+    }
+
+    async fn update_collection(
+        &self,
+        key: NftEventKey,
+        payload: MetaplexMasterEditionTransaction,
+    ) -> Result<()> {
+        let event = NftEvents {
+            event: Some(SolanaUpdateCollection(payload)),
+        };
+
+        self.producer.send(Some(&event), Some(&key)).await?;
+
+        Ok(())
+    }
+
+    async fn mint_to_collection(
+        &self,
+        key: NftEventKey,
+        payload: MintMetaplexMetadataTransaction,
+    ) -> Result<()> {
+        let event = NftEvents {
+            event: Some(SolanaMintToCollection(payload)),
+        };
+
+        self.producer.send(Some(&event), Some(&key)).await?;
+
+        Ok(())
+    }
+
+    async fn retry_mint_to_collection(
+        &self,
+        key: NftEventKey,
+        payload: MintMetaplexMetadataTransaction,
+    ) -> Result<()> {
+        let event = NftEvents {
+            event: Some(SolanaRetryMintToCollection(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
