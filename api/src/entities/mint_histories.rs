@@ -7,11 +7,11 @@ use super::sea_orm_active_enums::CreationStatus;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
 #[sea_orm(table_name = "mint_histories")]
-#[graphql(concrete(name = "MintHistories", params()))]
+#[graphql(concrete(name = "MintHistory", params()))]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// The ID of the NFT being purchased.
+    /// The ID of the NFT minted.
     pub mint_id: Uuid,
     /// The wallet address of the buyer.
     #[sea_orm(column_type = "Text")]
@@ -23,7 +23,7 @@ pub struct Model {
     pub status: CreationStatus,
     /// The date and time when the purchase was created.
     pub created_at: DateTimeWithTimeZone,
-    /// The ID of the collection that facilitated the purchase, if any.
+    /// The ID of the collection that facilitated the mint, if any.
     pub collection_id: Uuid,
 }
 
