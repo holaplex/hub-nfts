@@ -269,11 +269,15 @@ impl Mutation {
         validate_solana_address(&input.collection)?;
 
         let collection = Collections::find()
-            .filter(collections::Column::Address.eq(input.collection.clone()))
+            .filter(
+                collections::Column::Address
+                    .eq(input.collection.clone())
+                    .and(collections::Column::ProjectId.eq(input.project)),
+            )
             .one(db.get())
             .await?;
 
-        if let Some(collection) = collection {
+        if let Some(collection) = collection.clone() {
             let mints = CollectionMints::find()
                 .filter(collection_mints::Column::CollectionId.eq(collection.id))
                 .all(&txn)
@@ -311,7 +315,7 @@ impl Mutation {
                     )),
                 }),
                 Some(&NftEventKey {
-                    id: Uuid::new_v4().to_string(),
+                    id: collection.map_or(Uuid::new_v4(), |c| c.id).to_string(),
                     project_id: input.project.to_string(),
                     user_id: user_id.to_string(),
                 }),
