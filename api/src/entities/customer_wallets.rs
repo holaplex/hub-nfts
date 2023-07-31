@@ -19,3 +19,9 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+impl Entity {
+    pub fn find_by_address(address: String) -> Select<Self> {
+        Self::find().filter(Column::Address.eq(address))
+    }
+}
