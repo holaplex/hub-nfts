@@ -51,13 +51,14 @@ impl MetadataJson {
         metadata_json_attributes_loader.load_one(self.id).await
     }
 
-    async fn image(&self, ctx: &Context<'_>) -> Result<Option<String>> {
+    async fn image(&self, ctx: &Context<'_>) -> Result<String> {
         let asset_proxy = ctx.data::<AssetProxy>()?;
         let url = Url::parse(&self.image_original)?;
+        
         asset_proxy
             .proxy_ipfs_image(&url, None)
             .map_err(Into::into)
-            .map(|u| u.map(Into::into))
+            .map(|u| u.map_or(self.image_original.clone(), Into::into))
     }
 }
 
