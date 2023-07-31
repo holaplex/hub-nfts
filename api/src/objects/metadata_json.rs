@@ -54,7 +54,7 @@ impl MetadataJson {
     async fn image(&self, ctx: &Context<'_>) -> Result<String> {
         let asset_proxy = ctx.data::<AssetProxy>()?;
         let url = Url::parse(&self.image_original)?;
-        
+
         asset_proxy
             .proxy_ipfs_image(&url, None)
             .map_err(Into::into)
