@@ -31,6 +31,7 @@ pub trait CollectionEvent<A, B, C> {
     async fn update_collection(&self, key: NftEventKey, payload: B) -> Result<()>;
     async fn mint_to_collection(&self, key: NftEventKey, payload: C) -> Result<()>;
     async fn retry_mint_to_collection(&self, key: NftEventKey, payload: C) -> Result<()>;
+    async fn update_collection_mint(&self, key: NftEventKey, payload: C) -> Result<()>;
 }
 
 #[async_trait::async_trait]

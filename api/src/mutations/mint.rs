@@ -2,7 +2,7 @@ use std::ops::Add;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
-use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
+use sea_orm::{prelude::*, JoinType, QuerySelect, Set, TransactionTrait};
 
 use super::collection::{
     fetch_owner, validate_creators, validate_json, validate_solana_creator_verification,
@@ -11,8 +11,8 @@ use crate::{
     blockchains::{polygon::Polygon, solana::Solana, CollectionEvent, DropEvent},
     db::Connection,
     entities::{
-        collection_mints, collections, drops, mint_creators, mint_histories,
-        prelude::{Collections, Drops},
+        collection_mints, collections, drops, metadata_jsons, mint_creators, mint_histories,
+        prelude::{CollectionMints, Collections, Drops},
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
@@ -486,6 +486,139 @@ impl Mutation {
         })
     }
 
+    pub async fn update_collection_mint(
+        &self,
+        ctx: &Context<'_>,
+        input: UpdateCollectionMint,
+    ) -> Result<UpdateCollectionMintPayload> {
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
+        let conn = db.get();
+        let solana = ctx.data::<Solana>()?;
+        let nft_storage = ctx.data::<NftStorageClient>()?;
+
+        let UserID(id) = user_id;
+        let OrganizationId(org) = organization_id;
+
+        let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
+
+        let creators = input.creators;
+
+        let (mint, collection) = CollectionMints::find()
+            .find_also_related(Collections)
+            .filter(collection_mints::Column::Id.eq(input.mint))
+            .one(conn)
+            .await?
+            .ok_or(Error::new("Mint not found"))?;
+
+        if mint.creation_status != CreationStatus::Created {
+            return Err(Error::new("Mint not created"));
+        }
+
+        let collection = collection.ok_or(Error::new("Collection not found"))?;
+        let blockchain = collection.blockchain;
+
+        validate_creators(blockchain, &creators)?;
+        validate_json(blockchain, &input.metadata_json)?;
+
+        let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
+
+        let owner_address = fetch_owner(conn, collection.project_id, collection.blockchain).await?;
+
+        if collection.blockchain == BlockchainEnum::Solana {
+            validate_solana_creator_verification(&owner_address, &creators)?;
+        }
+
+        let creators_am = creators
+            .clone()
+            .into_iter()
+            .map(|creator| {
+                Ok(mint_creators::ActiveModel {
+                    collection_mint_id: Set(mint.id),
+                    address: Set(creator.address),
+                    verified: Set(creator.verified.unwrap_or_default()),
+                    share: Set(creator.share.try_into()?),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        conn.transaction::<_, (), DbErr>(|txn| {
+            Box::pin(async move {
+                mint_creators::Entity::delete_many()
+                    .filter(mint_creators::Column::CollectionMintId.eq(mint.id))
+                    .exec(txn)
+                    .await?;
+
+                mint_creators::Entity::insert_many(creators_am)
+                    .exec(txn)
+                    .await?;
+
+                let metadata_json_model = metadata_jsons::Entity::find()
+                    .filter(metadata_jsons::Column::Id.eq(mint.id))
+                    .one(txn)
+                    .await?
+                    .ok_or(DbErr::RecordNotFound("Metadata Json not found".to_string()))?;
+
+                metadata_json_model.delete(txn).await?;
+
+                Ok(())
+            })
+        })
+        .await?;
+
+        let metadata_json = MetadataJson::new(input.metadata_json)
+            .upload(nft_storage)
+            .await?
+            .save(mint.id, db)
+            .await?;
+
+        match collection.blockchain {
+            BlockchainEnum::Solana => {
+                solana
+                    .event()
+                    .update_collection_mint(
+                        NftEventKey {
+                            id: mint.id.to_string(),
+                            project_id: collection.project_id.to_string(),
+                            user_id: user_id.to_string(),
+                        },
+                        proto::MintMetaplexMetadataTransaction {
+                            metadata: Some(MetaplexMetadata {
+                                owner_address,
+                                name: metadata_json.name,
+                                symbol: metadata_json.symbol,
+                                metadata_uri: metadata_json.uri,
+                                seller_fee_basis_points: seller_fee_basis_points.into(),
+                                creators: creators
+                                    .into_iter()
+                                    .map(TryFrom::try_from)
+                                    .collect::<Result<_>>()?,
+                            }),
+                            collection_id: collection.id.to_string(),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+            },
+            BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
+                return Err(Error::new("blockchain not supported as this time"));
+            },
+        };
+
+        Ok(UpdateCollectionMintPayload {
+            collection_mint: mint.into(),
+        })
+    }
+
     pub async fn retry_mint_to_collection(
         &self,
         ctx: &Context<'_>,
@@ -723,8 +856,21 @@ pub struct MintToCollectionInput {
     compressed: Option<bool>,
 }
 
+#[derive(Debug, Clone, InputObject)]
+pub struct UpdateCollectionMint {
+    mint: Uuid,
+    metadata_json: MetadataJsonInput,
+    seller_fee_basis_points: Option<u16>,
+    creators: Vec<Creator>,
+}
+
 #[derive(Debug, Clone, SimpleObject)]
 pub struct MintToCollectionPayload {
+    collection_mint: collection_mints::CollectionMint,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct UpdateCollectionMintPayload {
     collection_mint: collection_mints::CollectionMint,
 }
 

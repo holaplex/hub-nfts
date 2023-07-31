@@ -5,12 +5,12 @@ use crate::proto::{
     nft_events::Event::{
         SolanaCreateCollection, SolanaCreateDrop, SolanaMintDrop, SolanaMintToCollection,
         SolanaRetryCreateCollection, SolanaRetryDrop, SolanaRetryMintDrop,
-        SolanaRetryMintToCollection, SolanaTransferAsset, SolanaUpdateCollection, SolanaUpdateDrop,
+        SolanaRetryMintToCollection, SolanaTransferAsset, SolanaUpdateCollection,
+        SolanaUpdateCollectionMint, SolanaUpdateDrop,
     },
     MetaplexMasterEditionTransaction, MintMetaplexEditionTransaction,
     MintMetaplexMetadataTransaction, NftEventKey, NftEvents, TransferMetaplexAssetTransaction,
 };
-
 #[derive(Clone)]
 pub struct Solana {
     producer: Producer<NftEvents>,
@@ -206,6 +206,20 @@ impl
     ) -> Result<()> {
         let event = NftEvents {
             event: Some(SolanaRetryMintToCollection(payload)),
+        };
+
+        self.producer.send(Some(&event), Some(&key)).await?;
+
+        Ok(())
+    }
+
+    async fn update_collection_mint(
+        &self,
+        key: NftEventKey,
+        payload: MintMetaplexMetadataTransaction,
+    ) -> Result<()> {
+        let event = NftEvents {
+            event: Some(SolanaUpdateCollectionMint(payload)),
         };
 
         self.producer.send(Some(&event), Some(&key)).await?;
