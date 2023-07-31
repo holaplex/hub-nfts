@@ -1,6 +1,6 @@
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::credits::CreditsClient;
-use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
+use sea_orm::{prelude::*, Set};
 use serde::{Deserialize, Serialize};
 
 use super::collection::{validate_evm_address, validate_solana_address};
@@ -9,8 +9,7 @@ use crate::{
     db::Connection,
     entities::{
         collection_mints::{self, CollectionMint},
-        collections, customer_wallets, drops,
-        prelude::{Collections, CustomerWallets, Drops},
+        prelude::CustomerWallets,
         sea_orm_active_enums::{Blockchain, CreationStatus},
         transfer_charges,
     },
@@ -68,11 +67,11 @@ impl Mutation {
 
         let TransferAssetInput { id, recipient } = input.clone();
 
-        let (collection_mint_model, collection) = collection_mints::Entity::find_by_id(id)
-            .find_also_related(Collections)
-            .one(conn)
-            .await?
-            .ok_or(Error::new("mint not found"))?;
+        let (collection_mint_model, collection) =
+            collection_mints::Entity::find_by_id_with_collection(id)
+                .one(conn)
+                .await?
+                .ok_or(Error::new("mint not found"))?;
 
         if collection_mint_model.creation_status != CreationStatus::Created {
             return Err(Error::new("NFT is not minted"));
@@ -81,20 +80,12 @@ impl Mutation {
         let collection = collection.ok_or(Error::new("collection not found"))?;
         input.validate_recipient_address(collection.blockchain)?;
 
-        let drop = Drops::find()
-            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-            .filter(collections::Column::Id.eq(collection.id))
-            .one(conn)
-            .await?
-            .ok_or(Error::new("drop not found"))?;
-
         let owner_address = collection_mint_model.owner.clone();
 
-        CustomerWallets::find()
-            .filter(customer_wallets::Column::Address.eq(owner_address.clone()))
+        CustomerWallets::find_by_address(owner_address.clone())
             .one(conn)
             .await?
-            .ok_or(Error::new("Sender wallet is not managed by Hub"))?;
+            .ok_or(Error::new("Sender wallet is not managed by HUB"))?;
 
         let transfer_charges_am = transfer_charges::ActiveModel {
             ..Default::default()
@@ -104,7 +95,7 @@ impl Mutation {
         let event_key = NftEventKey {
             id: transfer_charge_model.id.to_string(),
             user_id: user_id.to_string(),
-            project_id: drop.project_id.to_string(),
+            project_id: collection.project_id.to_string(),
         };
 
         let collection_mint_id = collection_mint_model.id.to_string();
