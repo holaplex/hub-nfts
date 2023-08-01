@@ -457,7 +457,11 @@ impl Mutation {
             org_id,
             mint: collection_mint_model.id,
             blockchain: collection.blockchain,
-            action: Actions::MintEdition,
+            action: if compressed {
+                Actions::MintCompressed
+            } else {
+                Actions::Mint
+            },
         })
         .await?;
 
