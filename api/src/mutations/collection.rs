@@ -130,7 +130,7 @@ impl Mutation {
             balance,
             collection: collection.id,
             blockchain: input.blockchain,
-            action: Actions::CreateDrop,
+            action: Actions::CreateCollection,
         })
         .await?;
 
@@ -246,7 +246,7 @@ impl Mutation {
             org_id,
             collection: collection.id,
             blockchain: collection.blockchain,
-            action: Actions::RetryDrop,
+            action: Actions::RetryCollection,
         })
         .await?;
 
