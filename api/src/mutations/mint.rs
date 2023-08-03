@@ -357,15 +357,16 @@ impl Mutation {
 
         let collection = collection.ok_or(Error::new("collection not found"))?;
         let blockchain = collection.blockchain;
+        let compressed = input.compressed.unwrap_or_default();
 
         validate_creators(blockchain, &creators)?;
         validate_json(blockchain, &input.metadata_json)?;
         check_collection_status(&collection)?;
-        validate_compress(blockchain, input.compressed)?;
+        validate_compress(blockchain, compressed)?;
 
         let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
 
-        let owner_address = fetch_owner(conn, collection.project_id, collection.blockchain).await?;
+        let owner_address = fetch_owner(conn, collection.project_id, blockchain).await?;
 
         if collection.blockchain == BlockchainEnum::Solana {
             validate_solana_creator_verification(&owner_address, &creators)?;
@@ -378,7 +379,7 @@ impl Mutation {
             creation_status: Set(CreationStatus::Pending),
             seller_fee_basis_points: Set(collection.seller_fee_basis_points),
             created_by: Set(user_id),
-            compressed: Set(input.compressed),
+            compressed: Set(compressed),
             ..Default::default()
         };
 
@@ -424,7 +425,7 @@ impl Mutation {
                                 .collect::<Result<_>>()?,
                         }),
                         recipient_address: input.recipient.to_string(),
-                        compressed: input.compressed,
+                        compressed,
                         collection_id: collection.id.to_string(),
                     })
                     .await?;
@@ -456,7 +457,11 @@ impl Mutation {
             org_id,
             mint: collection_mint_model.id,
             blockchain: collection.blockchain,
-            action: Actions::MintEdition,
+            action: if compressed {
+                Actions::MintCompressed
+            } else {
+                Actions::Mint
+            },
         })
         .await?;
 
@@ -715,7 +720,7 @@ pub struct MintToCollectionInput {
     metadata_json: MetadataJsonInput,
     seller_fee_basis_points: Option<u16>,
     creators: Vec<Creator>,
-    compressed: bool,
+    compressed: Option<bool>,
 }
 
 #[derive(Debug, Clone, SimpleObject)]

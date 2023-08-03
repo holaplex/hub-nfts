@@ -199,6 +199,10 @@ pub enum Actions {
     RetryMint,
     RetryDrop,
     TransferAsset,
+    Mint,
+    MintCompressed,
+    CreateCollection,
+    RetryCollection,
 }
 
 impl From<Actions> for hub_core::credits::Action {
@@ -209,6 +213,10 @@ impl From<Actions> for hub_core::credits::Action {
             Actions::RetryMint => hub_core::credits::Action::RetryMint,
             Actions::RetryDrop => hub_core::credits::Action::RetryDrop,
             Actions::TransferAsset => hub_core::credits::Action::TransferAsset,
+            Actions::Mint => hub_core::credits::Action::Mint,
+            Actions::MintCompressed => hub_core::credits::Action::MintCompressed,
+            Actions::CreateCollection => hub_core::credits::Action::CreateCollection,
+            Actions::RetryCollection => hub_core::credits::Action::RetryCollection,
         }
     }
 }

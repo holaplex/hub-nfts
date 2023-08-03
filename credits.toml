@@ -1,19 +1,39 @@
 [MintEdition]
-solana = 5
-polygon = 10
+solana = 60
+polygon = 25
+
+[Mint]
+solana = 60
+polygon = 25
 
 [CreateDrop]
-solana = 5
-polygon = 15
+solana = 40
+polygon = 40
 
 [RetryMint]
-solana = 5
-polygon = 10
+solana = 0
+polygon = 0
 
 [TransferAsset]
-solana = 5
+solana = 10
+polygon = 10
+
+[CreateWallet]
+solana = 10
 polygon = 10
 
 [RetryDrop]
-solana = 5
-polygon = 10
+solana = 0
+polygon = 0
+
+[CreateCollection]
+solana = 40
+polygon = 0
+
+[MintCompressed]
+solana = 1
+polygon = 0
+
+[RetryCollection]
+solana = 0
+polygon = 0
