@@ -13,6 +13,8 @@ use crate::{
 };
 
 /// An NFT collection that has either a fixed supply or unlimited mints. NFT collections are deployed to a desired blockchain.
+/// On Solana, when the collection is associated to a drop it is a master_edition. When the collection is not associated to a drop it is a sized Metaplex certified collection.
+/// On EVM chains, the collection is a ERC-1155 token.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Collection {
     /// The unique identifier for the collection.
@@ -33,9 +35,13 @@ pub struct Collection {
     pub signature: Option<String>,
     /// The royalties assigned to mints belonging to the collection expressed in basis points.
     pub seller_fee_basis_points: i16,
+    /// The project id of the collection.
     pub project_id: Uuid,
+    /// The credits deduction id of the collection.
     pub credits_deduction_id: Option<Uuid>,
+    /// The date and time in UTC when the collection was created.
     pub created_at: DateTimeWithTimeZone,
+    /// The user id of the person who created the collection.
     pub created_by: Uuid,
 }
 

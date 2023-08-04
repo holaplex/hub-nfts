@@ -5,6 +5,7 @@ use sea_orm::entity::prelude::*;
 
 use super::sea_orm_active_enums::CreationStatus;
 
+/// A record of a minted NFT.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
 #[sea_orm(table_name = "mint_histories")]
 #[graphql(concrete(name = "MintHistory", params()))]
