@@ -2,15 +2,22 @@
 
 use sea_orm::entity::prelude::*;
 
+/// A record of a transfer of an NFT.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "nft_transfers")]
 pub struct Model {
+    /// The ID of the NFT transfer.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
+    /// The transaction signature of the transfer.
     pub tx_signature: Option<String>,
+    /// The ID of the NFT that was transferred.
     pub collection_mint_id: Uuid,
+    /// The wallet address of the sender.
     pub sender: String,
+    /// The wallet address of the recipient.
     pub recipient: String,
+    /// The date and time when the transfer was created.
     pub created_at: DateTimeWithTimeZone,
 }
 

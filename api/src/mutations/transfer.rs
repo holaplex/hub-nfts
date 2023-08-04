@@ -23,24 +23,8 @@ pub struct Mutation;
 #[Object(name = "TransferAssetMutation")]
 impl Mutation {
     /// Transfers an asset from one user to another on a supported blockchain network.
-    ///
-    /// # Arguments
-    ///
-    /// * `self` - A reference to the current instance of the struct.
-    /// * `ctx` - A context object containing application context data.
-    /// * `input` - A TransferAssetInput struct containing the input data for the asset transfer.
-    ///
-    /// # Returns
-    ///
-    /// Returns a Result containing a TransferAssetPayload struct with the updated mint information upon success.
-    ///
-    /// # Errors
-    /// This function returns an error :
-    /// If the specified blockchain is not currently supported.
-    /// If the specified mint does not exist.
-    ///  If there is an error while making a transfer request to the Solana blockchain.
-    ///If there is an error while sending the TransferAsset event to the event producer.
-
+    /// The mutation supports transferring standard or compressed NFTs.
+    /// The mutation is rejected if the wallet address is not managed by HUB.
     pub async fn transfer_asset(
         &self,
         ctx: &Context<'_>,

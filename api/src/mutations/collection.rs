@@ -32,9 +32,8 @@ pub struct Mutation;
 
 #[Object(name = "CollectionMutation")]
 impl Mutation {
-    /// This mutation creates a new NFT drop and its associated collection. The drop returns immediately with a creation status of CREATING. You can [set up a webhook](https://docs.holaplex.dev/hub/For%20Developers/webhooks-overview) to receive a notification when the drop is ready to be minted.
-    /// Error
-    /// If the drop cannot be saved to the database or fails to be emitted for submission to the desired blockchain, the mutation will result in an error.
+    /// This mutation creates a new NFT collection. The collection returns immediately with a creation status of CREATING. You can [set up a webhook](https://docs.holaplex.dev/hub/For%20Developers/webhooks-overview) to receive a notification when the collection is ready to be minted.
+    /// For Solana, the collection is a sized Metaplex certified collection.
     pub async fn create_collection(
         &self,
         ctx: &Context<'_>,
@@ -154,13 +153,7 @@ impl Mutation {
         })
     }
 
-    /// This mutation retries an existing drop.
-    /// The drop returns immediately with a creation status of CREATING.
-    /// You can [set up a webhook](https://docs.holaplex.dev/hub/For%20Developers/webhooks-overview) to receive a notification when the drop is ready to be minted.
-    /// Errors
-    /// The mutation will fail if the drop and its related collection cannot be located,
-    /// if the transaction response cannot be built,
-    /// or if the transaction event cannot be emitted.
+    /// This mutation tries to re-create a failed collection.
     pub async fn retry_collection(
         &self,
         ctx: &Context<'_>,
@@ -177,7 +170,6 @@ impl Mutation {
         let OrganizationId(org) = organization_id;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
-        let _polygon = ctx.data::<Polygon>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
         let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
@@ -190,8 +182,8 @@ impl Mutation {
             .await?
             .ok_or(Error::new("collection not found"))?;
 
-        if collection.creation_status == CreationStatus::Created {
-            return Err(Error::new("collection already created"));
+        if collection.creation_status != CreationStatus::Failed {
+            return Err(Error::new("only failed collections can be retried"));
         }
 
         let metadata_json = MetadataJsons::find_by_id(collection.id)
@@ -255,6 +247,7 @@ impl Mutation {
         })
     }
 
+    /// This mutation imports a Solana collection. See the [guide](https://docs.holaplex.com/hub/Guides/import-collection) for importing instructions.
     pub async fn import_solana_collection(
         &self,
         ctx: &Context<'_>,
@@ -327,9 +320,7 @@ impl Mutation {
         })
     }
 
-    /// This mutation allows updating a drop and it's associated collection by ID.
-    /// It returns an error if it fails to reach the database, emit update events or assemble the on-chain transaction.
-    /// Returns the `PatchDropPayload` object on success.
+    /// Update a collection attributes or creators.
     pub async fn patch_collection(
         &self,
         ctx: &Context<'_>,
@@ -701,17 +692,19 @@ pub fn validate_json(blockchain: BlockchainEnum, json: &MetadataJsonInput) -> Re
     Ok(())
 }
 
+/// Input object for retrying a collection by ID.
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct RetryCollectionInput {
     pub id: Uuid,
 }
 
+/// The patched collection.
 #[derive(Debug, Clone, SimpleObject)]
 pub struct RetryCollectionPayload {
     collection: CollectionObject,
 }
 
-/// Input object for patching a drop and associated collection by ID
+/// Input object for patching a collection by ID.
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct PatchCollectionInput {
     /// The unique identifier of the drop
@@ -722,13 +715,14 @@ pub struct PatchCollectionInput {
     pub creators: Option<Vec<Creator>>,
 }
 
-/// Represents the result of a successful patch drop mutation.
+/// Represents the result of a successful patch collection mutation.
 #[derive(Debug, Clone, SimpleObject)]
 pub struct PatchCollectionPayload {
-    /// The drop that has been patched.
+    /// The collection that has been patched.
     collection: CollectionObject,
 }
 
+/// Input object for importing a collection.
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct ImportCollectionInput {
     project: Uuid,
@@ -736,7 +730,9 @@ pub struct ImportCollectionInput {
     collection: String,
 }
 
+/// Represents the result of a successful import collection mutation.
 #[derive(Debug, Clone, SimpleObject)]
 pub struct ImportCollectionPayload {
+    /// The status of the collection import.
     status: CreationStatus,
 }
