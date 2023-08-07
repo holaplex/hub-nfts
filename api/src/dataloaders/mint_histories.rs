@@ -96,3 +96,40 @@ impl DataLoader<Uuid> for DropMintHistoryLoader {
             .collect())
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct MinterLoader {
+    pub db: Connection,
+}
+
+impl MinterLoader {
+    #[must_use]
+    pub fn new(db: Connection) -> Self {
+        Self { db }
+    }
+}
+
+#[async_trait]
+impl DataLoader<String> for MinterLoader {
+    type Error = FieldError;
+    type Value = Vec<mint_histories::Model>;
+
+    async fn load(&self, keys: &[String]) -> Result<HashMap<String, Self::Value>, Self::Error> {
+        let mint_histories = mint_histories::Entity::find()
+            .filter(mint_histories::Column::Wallet.is_in(keys.iter().map(ToOwned::to_owned)))
+            .all(self.db.get())
+            .await?;
+
+        Ok(mint_histories
+            .into_iter()
+            .fold(HashMap::new(), |mut acc, mint_history| {
+                acc.entry(mint_history.wallet.clone())
+                    .or_insert_with(Vec::new);
+
+                acc.entry(mint_history.wallet.clone())
+                    .and_modify(|mint_histories| mint_histories.push(mint_history));
+
+                acc
+            }))
+    }
+}

@@ -1,7 +1,10 @@
 use async_graphql::{ComplexObject, Context, Result, SimpleObject};
 use hub_core::uuid::Uuid;
 
-use crate::{entities::collection_mints, AppContext};
+use crate::{
+    entities::{collection_mints, mint_histories},
+    AppContext,
+};
 
 /// A project customer.
 #[derive(SimpleObject, Debug, Clone)]
@@ -30,6 +33,30 @@ impl Customer {
         if let Some(addresses) = self.addresses.clone() {
             Ok(Some(
                 collection_mints_owner_loader
+                    .load_many(addresses)
+                    .await?
+                    .into_values()
+                    .flatten()
+                    .collect(),
+            ))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// The NFTs minted by the customer.
+    async fn mint_histories(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<Vec<mint_histories::Model>>> {
+        let AppContext {
+            minter_mint_history_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        if let Some(addresses) = self.addresses.clone() {
+            Ok(Some(
+                minter_mint_history_loader
                     .load_many(addresses)
                     .await?
                     .into_values()
