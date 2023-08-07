@@ -156,7 +156,7 @@ impl Mutation {
         collection_am.total_mints = Set(edition);
         collection_am.update(conn).await?;
 
-        // inserts a purchase record in the database
+        // inserts a mint histories record in the database
         let purchase_am = mint_histories::ActiveModel {
             mint_id: Set(collection_mint_model.id),
             wallet: Set(input.recipient),
@@ -326,6 +326,8 @@ impl Mutation {
         })
     }
 
+    /// This mutation mints either a compressed or standard NFT to a collection.
+    /// For Solana, the mint is verified and the collection size incremented.
     pub async fn mint_to_collection(
         &self,
         ctx: &Context<'_>,
@@ -647,6 +649,7 @@ impl Mutation {
         })
     }
 
+    // Retries a mint which failed by passing its ID.
     pub async fn retry_mint_to_collection(
         &self,
         ctx: &Context<'_>,
@@ -678,8 +681,8 @@ impl Mutation {
                 .await?
                 .ok_or(Error::new("collection mint not found"))?;
 
-        if collection_mint_model.creation_status == CreationStatus::Created {
-            return Err(Error::new("mint is already created"));
+        if collection_mint_model.creation_status != CreationStatus::Failed {
+            return Err(Error::new("only failed mints can be retried"));
         }
 
         let collection = collection.ok_or(Error::new("collection  not found"))?;
@@ -852,7 +855,9 @@ fn check_collection_status(collection_model: &collections::Model) -> Result<(), 
 /// Represents input data for `mint_edition` mutation with a UUID and recipient as fields
 #[derive(Debug, Clone, InputObject)]
 pub struct MintDropInput {
+    /// The ID of the drop to mint to
     drop: Uuid,
+    /// The recipient of the mint
     recipient: String,
 }
 
@@ -874,12 +879,20 @@ pub struct RetryMintEditionPayload {
     collection_mint: collection_mints::CollectionMint,
 }
 
+/// Represents input data for `mint_to_collection` mutation with a collection ID, recipient, metadata, and optional seller fee basis points as fields
 #[derive(Debug, Clone, InputObject)]
 pub struct MintToCollectionInput {
+    /// The ID of the collection to mint to
     collection: Uuid,
+    /// The recipient of the mint
     recipient: String,
+    /// The metadata of the mint
     metadata_json: MetadataJsonInput,
+    /// The optional seller fee basis points
     seller_fee_basis_points: Option<u16>,
+    /// The creators to be assigned to the NFT.
+    /// For Solana, this can be up to five creators. If the project treasury wallet is set as a creator and verified set to true the creator will be verified on chain.
+    /// For Polygon, this can be only 1 creator.
     creators: Vec<Creator>,
     compressed: Option<bool>,
 }
@@ -892,8 +905,10 @@ pub struct UpdateMintInput {
     creators: Vec<Creator>,
 }
 
+/// Represents payload data for `mint_to_collection` mutation
 #[derive(Debug, Clone, SimpleObject)]
 pub struct MintToCollectionPayload {
+    /// The minted NFT
     collection_mint: collection_mints::CollectionMint,
 }
 
@@ -902,12 +917,16 @@ pub struct UpdateMintPayload {
     collection_mint: collection_mints::CollectionMint,
 }
 
+/// Represents input data for `retry_mint_to_collection` mutation with an ID as a field of type UUID
 #[derive(Debug, Clone, InputObject)]
 pub struct RetryMintToCollectionInput {
+    /// The ID of the collection mint to retry
     id: Uuid,
 }
 
+/// Represents payload data for `retry_mint_to_collection` mutation
 #[derive(Debug, Clone, SimpleObject)]
 pub struct RetryMintToCollectionPayload {
+    /// The retried minted NFT
     collection_mint: collection_mints::CollectionMint,
 }

@@ -723,7 +723,7 @@ impl Processor {
         let transfer_id = Uuid::from_str(&id)?;
 
         let transfer_charge = transfer_charges::Entity::find()
-            .filter(transfer_charges::Column::CreditsDeductionId.eq(transfer_id))
+            .filter(transfer_charges::Column::Id.eq(transfer_id))
             .one(conn)
             .await?
             .context("failed to load transfer charge from db")?;
