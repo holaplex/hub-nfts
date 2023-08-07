@@ -25,7 +25,7 @@ use dataloaders::{
     CollectionDropLoader, CollectionLoader, CollectionMintHistoryLoader, CollectionMintLoader,
     CollectionMintsLoader, CollectionMintsOwnerLoader, CreatorsLoader, DropLoader,
     DropMintHistoryLoader, HoldersLoader, MetadataJsonAttributesLoader, MetadataJsonLoader,
-    ProjectCollectionLoader, ProjectCollectionsLoader, ProjectDropsLoader,
+    MinterMintHistoryLoader, ProjectCollectionLoader, ProjectCollectionsLoader, ProjectDropsLoader,
 };
 use db::Connection;
 use hub_core::{
@@ -278,6 +278,7 @@ pub struct AppContext {
     holders_loader: DataLoader<HoldersLoader>,
     collection_mint_history_loader: DataLoader<CollectionMintHistoryLoader>,
     drop_mint_history_loader: DataLoader<DropMintHistoryLoader>,
+    minter_mint_history_loader: DataLoader<MinterMintHistoryLoader>,
 }
 
 impl AppContext {
@@ -314,6 +315,8 @@ impl AppContext {
             DataLoader::new(DropMintHistoryLoader::new(db.clone()), tokio::spawn);
         let single_collection_mint_loader =
             DataLoader::new(CollectionMintLoader::new(db.clone()), tokio::spawn);
+        let minter_mint_history_loader =
+            DataLoader::new(MinterMintHistoryLoader::new(db.clone()), tokio::spawn);
 
         Self {
             db,
@@ -335,6 +338,7 @@ impl AppContext {
             holders_loader,
             collection_mint_history_loader,
             drop_mint_history_loader,
+            minter_mint_history_loader,
         }
     }
 }
