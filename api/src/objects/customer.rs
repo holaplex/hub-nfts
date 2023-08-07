@@ -45,6 +45,7 @@ impl Customer {
     }
 
     /// The NFTs minted by the customer.
+    #[graphql(requires = "addresses")]
     async fn mint_histories(
         &self,
         ctx: &Context<'_>,
