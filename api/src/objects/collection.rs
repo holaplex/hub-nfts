@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// An NFT collection that has either a fixed supply or unlimited mints. NFT collections are deployed to a desired blockchain.
-/// On Solana, when the collection is associated to a drop it is a master_edition. When the collection is not associated to a drop it is a sized Metaplex certified collection.
+/// On Solana, when the collection is associated to a drop it is a `master_edition`. When the collection is not associated to a drop it is a sized Metaplex certified collection.
 /// On EVM chains, the collection is a ERC-1155 token.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Collection {
