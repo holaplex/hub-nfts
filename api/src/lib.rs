@@ -203,6 +203,7 @@ pub enum Actions {
     MintCompressed,
     CreateCollection,
     RetryCollection,
+    UpdateMint,
 }
 
 impl From<Actions> for hub_core::credits::Action {
@@ -217,6 +218,7 @@ impl From<Actions> for hub_core::credits::Action {
             Actions::MintCompressed => hub_core::credits::Action::MintCompressed,
             Actions::CreateCollection => hub_core::credits::Action::CreateCollection,
             Actions::RetryCollection => hub_core::credits::Action::RetryCollection,
+            Actions::UpdateMint => hub_core::credits::Action::UpdateMint,
         }
     }
 }

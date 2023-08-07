@@ -1,7 +1,11 @@
 use std::ops::Add;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
+use hub_core::{
+    chrono::Utc,
+    credits::{Blockchain, CreditsClient},
+    producer::Producer,
+};
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set, TransactionTrait};
 
 use super::collection::{
@@ -15,6 +19,7 @@ use crate::{
         prelude::{CollectionMints, Collections, Drops},
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
+        update_histories,
     },
     metadata_json::MetadataJson,
     objects::{Creator, MetadataJsonInput},
@@ -486,11 +491,11 @@ impl Mutation {
         })
     }
 
-    pub async fn update_collection_mint(
+    pub async fn update_mint(
         &self,
         ctx: &Context<'_>,
-        input: UpdateCollectionMint,
-    ) -> Result<UpdateCollectionMintPayload> {
+        input: UpdateMintInput,
+    ) -> Result<UpdateMintPayload> {
         let AppContext {
             db,
             user_id,
@@ -510,6 +515,7 @@ impl Mutation {
         let balance = balance
             .0
             .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
+        let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
 
         let creators = input.creators;
 
@@ -551,6 +557,17 @@ impl Mutation {
             })
             .collect::<Result<Vec<_>>>()?;
 
+        let deduction_id = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::UpdateMint,
+                Blockchain::Solana,
+                balance,
+            )
+            .await?
+            .ok_or(Error::new("Organization does not have enough credits"))?;
+
         conn.transaction::<_, (), DbErr>(|txn| {
             Box::pin(async move {
                 mint_creators::Entity::delete_many()
@@ -581,17 +598,28 @@ impl Mutation {
             .save(mint.id, db)
             .await?;
 
+        let mint_history_am = update_histories::ActiveModel {
+            mint_id: Set(mint.id),
+            txn_signature: Set(None),
+            credit_deduction_id: Set(deduction_id.0),
+            created_by: Set(user_id),
+            status: Set(CreationStatus::Pending),
+            ..Default::default()
+        };
+
+        let mint_history = mint_history_am.insert(db.get()).await?;
+
         match collection.blockchain {
             BlockchainEnum::Solana => {
                 solana
                     .event()
                     .update_collection_mint(
                         NftEventKey {
-                            id: mint.id.to_string(),
+                            id: mint_history.id.to_string(),
                             project_id: collection.project_id.to_string(),
                             user_id: user_id.to_string(),
                         },
-                        proto::MintMetaplexMetadataTransaction {
+                        proto::UpdateSolanaMintPayload {
                             metadata: Some(MetaplexMetadata {
                                 owner_address,
                                 name: metadata_json.name,
@@ -604,7 +632,7 @@ impl Mutation {
                                     .collect::<Result<_>>()?,
                             }),
                             collection_id: collection.id.to_string(),
-                            ..Default::default()
+                            mint_id: mint.id.to_string(),
                         },
                     )
                     .await?;
@@ -614,7 +642,7 @@ impl Mutation {
             },
         };
 
-        Ok(UpdateCollectionMintPayload {
+        Ok(UpdateMintPayload {
             collection_mint: mint.into(),
         })
     }
@@ -857,7 +885,7 @@ pub struct MintToCollectionInput {
 }
 
 #[derive(Debug, Clone, InputObject)]
-pub struct UpdateCollectionMint {
+pub struct UpdateMintInput {
     mint: Uuid,
     metadata_json: MetadataJsonInput,
     seller_fee_basis_points: Option<u16>,
@@ -870,7 +898,7 @@ pub struct MintToCollectionPayload {
 }
 
 #[derive(Debug, Clone, SimpleObject)]
-pub struct UpdateCollectionMintPayload {
+pub struct UpdateMintPayload {
     collection_mint: collection_mints::CollectionMint,
 }
 
