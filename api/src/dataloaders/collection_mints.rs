@@ -81,3 +81,33 @@ impl DataLoader<String> for OwnerLoader {
             }))
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct CollectionMintLoader {
+    pub db: Connection,
+}
+
+impl CollectionMintLoader {
+    #[must_use]
+    pub fn new(db: Connection) -> Self {
+        Self { db }
+    }
+}
+
+#[async_trait]
+impl DataLoader<Uuid> for CollectionMintLoader {
+    type Error = FieldError;
+    type Value = collection_mints::CollectionMint;
+
+    async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
+        let collection_mints = collection_mints::Entity::find()
+            .filter(collection_mints::Column::Id.is_in(keys.iter().map(ToOwned::to_owned)))
+            .all(self.db.get())
+            .await?;
+
+        Ok(collection_mints
+            .into_iter()
+            .map(|collection_mint| (collection_mint.id, collection_mint.into()))
+            .collect())
+    }
+}
