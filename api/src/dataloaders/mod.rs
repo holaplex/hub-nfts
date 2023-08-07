@@ -13,7 +13,8 @@ mod project_collections;
 pub use collection::Loader as CollectionLoader;
 pub use collection_drop::Loader as CollectionDropLoader;
 pub use collection_mints::{
-    Loader as CollectionMintsLoader, OwnerLoader as CollectionMintsOwnerLoader,
+    CollectionMintLoader, Loader as CollectionMintsLoader,
+    OwnerLoader as CollectionMintsOwnerLoader,
 };
 pub use creators::Loader as CreatorsLoader;
 pub use drop::Loader as DropLoader;
