@@ -140,7 +140,10 @@ impl Processor {
                     self.minted_to_collection(id, MintResult::Success(payload.into()))
                         .await
                 },
-                Some(SolanaNftsEvent::UpdateCollectionMintSubmitted(payload)) => {
+                Some(
+                    SolanaNftsEvent::UpdateCollectionMintSubmitted(payload)
+                    | SolanaNftsEvent::RetryUpdateMintSubmitted(payload),
+                ) => {
                     self.mint_updated(id, UpdateResult::Success(payload.signature))
                         .await
                 },
@@ -171,9 +174,10 @@ impl Processor {
                 Some(SolanaNftsEvent::RetryMintDropFailed(_)) => {
                     self.drop_minted(id, MintResult::Failure).await
                 },
-                Some(SolanaNftsEvent::UpdateCollectionMintFailed(_)) => {
-                    self.mint_updated(id, UpdateResult::Failure).await
-                },
+                Some(
+                    SolanaNftsEvent::UpdateCollectionMintFailed(_)
+                    | SolanaNftsEvent::RetryUpdateMintFailed(_),
+                ) => self.mint_updated(id, UpdateResult::Failure).await,
                 Some(SolanaNftsEvent::UpdateMintOwner(e)) => self.update_mint_owner(id, e).await,
                 Some(SolanaNftsEvent::ImportedExternalCollection(e)) => {
                     self.index_collection(id, project_id, user_id, e).await

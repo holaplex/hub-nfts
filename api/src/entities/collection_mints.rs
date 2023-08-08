@@ -146,6 +146,8 @@ pub enum Relation {
     MintHistories,
     #[sea_orm(has_many = "super::nft_transfers::Entity")]
     NftTransfers,
+    #[sea_orm(has_many = "super::update_histories::Entity")]
+    UpdateHistories,
 }
 
 impl Related<super::collections::Entity> for Entity {
@@ -169,6 +171,12 @@ impl Related<super::mint_histories::Entity> for Entity {
 impl Related<super::nft_transfers::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::NftTransfers.def()
+    }
+}
+
+impl Related<super::update_histories::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UpdateHistories.def()
     }
 }
 

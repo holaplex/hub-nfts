@@ -25,7 +25,7 @@ use crate::{
     objects::{Creator, MetadataJsonInput},
     proto::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, MetaplexMetadata,
-        MintCollectionCreation, MintCreation, NftEventKey, NftEvents,
+        MintCollectionCreation, MintCreation, NftEventKey, NftEvents, RetryUpdateSolanaMintPayload,
     },
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
@@ -600,7 +600,7 @@ impl Mutation {
             .save(mint.id, db)
             .await?;
 
-        let mint_history_am = update_histories::ActiveModel {
+        let update_history_am = update_histories::ActiveModel {
             mint_id: Set(mint.id),
             txn_signature: Set(None),
             credit_deduction_id: Set(deduction_id.0),
@@ -609,7 +609,7 @@ impl Mutation {
             ..Default::default()
         };
 
-        let mint_history = mint_history_am.insert(db.get()).await?;
+        let update_history = update_history_am.insert(db.get()).await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
@@ -617,7 +617,7 @@ impl Mutation {
                     .event()
                     .update_collection_mint(
                         NftEventKey {
-                            id: mint_history.id.to_string(),
+                            id: update_history.id.to_string(),
                             project_id: collection.project_id.to_string(),
                             user_id: user_id.to_string(),
                         },
@@ -646,6 +646,59 @@ impl Mutation {
 
         Ok(UpdateMintPayload {
             collection_mint: mint.into(),
+        })
+    }
+
+    pub async fn retry_update_mint(
+        &self,
+        ctx: &Context<'_>,
+        input: RetryUpdateMintInput,
+    ) -> Result<RetryUpdateMintPayload> {
+        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+
+        let conn = db.get();
+        let solana = ctx.data::<Solana>()?;
+
+        let UserID(id) = user_id;
+        let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
+
+        let (update_history, collection) = update_histories::Entity::find_by_id(input.revision_id)
+            .inner_join(CollectionMints)
+            .join(
+                JoinType::InnerJoin,
+                collection_mints::Relation::Collections.def(),
+            )
+            .select_also(Collections)
+            .one(conn)
+            .await?
+            .ok_or(Error::new("Update history not found"))?;
+
+        let collection = collection.ok_or(Error::new("Collection not found"))?;
+
+        match collection.blockchain {
+            BlockchainEnum::Solana => {
+                solana
+                    .event()
+                    .retry_update_mint(
+                        NftEventKey {
+                            id: update_history.id.to_string(),
+                            project_id: collection.project_id.to_string(),
+                            user_id: user_id.to_string(),
+                        },
+                        RetryUpdateSolanaMintPayload {
+                            mint_id: update_history.mint_id.to_string(),
+                            collection_id: collection.id.to_string(),
+                        },
+                    )
+                    .await?;
+            },
+            BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
+                return Err(Error::new("blockchain not supported as this time"));
+            },
+        };
+
+        Ok(RetryUpdateMintPayload {
+            status: CreationStatus::Pending,
         })
     }
 
@@ -929,4 +982,14 @@ pub struct RetryMintToCollectionInput {
 pub struct RetryMintToCollectionPayload {
     /// The retried minted NFT
     collection_mint: collection_mints::CollectionMint,
+}
+
+#[derive(Debug, Clone, InputObject)]
+pub struct RetryUpdateMintInput {
+    revision_id: Uuid,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct RetryUpdateMintPayload {
+    status: CreationStatus,
 }

@@ -5,8 +5,8 @@ sha512 = "d75800df0d4744c6b0f4d9a9952d3bfd0bb6b24a8babd19104cc11b54a525f85551b3c
 
 [[schemas]]
 subject = "nfts"
-version = 24
-sha512 = "e4be4beae6db9911bd5a5ab9d807dc9b0c027dba67bfb5c114cf805edba9f67c758769a7dd9d69d0f692e567fc35001d69d00b9aa59a92b9ef004aba79fbc6b9"
+version = 25
+sha512 = "90dadff6bc75b59bb79d9ed2a65d582923f9ce66b5915c020306571bb446d68ff6648543386838510a60081d7cbb14f43fa2ae22c4c8ecd85874bee4323dd26a"
 
 [[schemas]]
 subject = "organization"
@@ -20,8 +20,8 @@ sha512 = "c5ddf43d2958ec690ee2261d0ff9808b67ce810d2fc4b6077f96f561929a920f03509f
 
 [[schemas]]
 subject = "solana_nfts"
-version = 8
-sha512 = "2a57c4200577f8a6efa36e2c045a5bd3eb0dba11466659a80dd82f5422db4ac119f529d391805d14449b0ffac6048ae789727075882f9b0496dac710e32f4ff5"
+version = 9
+sha512 = "312a84e8ae8b9222c7ec2b307d036dae0bd8dac4363e813c2fcffd5d7fba8741bd802953b1ec0a96baf57a7ce852debb724fcccf3b0bd8a27a9e4cc60344a56f"
 
 [[schemas]]
 subject = "timestamp"
@@ -30,5 +30,5 @@ sha512 = "d167e0a143c813073eef8597f0b237e5a8eaf32abbf709724e8071b2dd73ce0438b82f
 
 [[schemas]]
 subject = "treasury"
-version = 20
-sha512 = "f3ff35aeb4bfa3a76b4cb985c4f2fc4b3dab1d0bb1585d4d720ff2c1087a879b56531efd3ecdebbb0968fae23371ec03aa944eec0ed07c0a3db7d66aa2074e2e"
+version = 21
+sha512 = "734cff313b8b4854b9a4c03cfd6f95f07b1fd86f8678393ab466443d9da4d6e7c9fc400bdbcc718d83e6c7711857941d4b6dc0ea5d1d926f05a7859a65a15509"

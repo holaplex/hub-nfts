@@ -1,9 +1,11 @@
 pub mod polygon;
 pub mod solana;
 
+use std::marker::PhantomData;
+
 use hub_core::anyhow::Result;
 
-use crate::proto::{NftEventKey, UpdateSolanaMintPayload};
+use crate::proto::{NftEventKey, RetryUpdateSolanaMintPayload, UpdateSolanaMintPayload};
 
 /// Represents a response from a transaction on the blockchain. This struct
 /// provides the serialized message and the signatures of the signed message.
@@ -35,6 +37,11 @@ pub trait CollectionEvent<A, B, C> {
         &self,
         key: NftEventKey,
         payload: UpdateSolanaMintPayload,
+    ) -> Result<()>;
+    async fn retry_update_mint(
+        &self,
+        key: NftEventKey,
+        payload: RetryUpdateSolanaMintPayload,
     ) -> Result<()>;
 }
 
