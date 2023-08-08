@@ -750,16 +750,20 @@ impl Processor {
             .one(self.db.get())
             .await?
             .context("Update history record not found")?;
-        let mut update_history: update_histories::ActiveModel = update_history.into();
+        let mut update_history_am: update_histories::ActiveModel = update_history.clone().into();
 
         if let UpdateResult::Success(signature) = payload {
-            update_history.txn_signature = Set(Some(signature));
-            update_history.status = Set(CreationStatus::Created);
+            update_history_am.txn_signature = Set(Some(signature));
+            update_history_am.status = Set(CreationStatus::Created);
+
+            self.credits
+                .confirm_deduction(TransactionId(update_history.credit_deduction_id))
+                .await?;
         } else {
-            update_history.status = Set(CreationStatus::Failed);
+            update_history_am.status = Set(CreationStatus::Failed);
         }
 
-        update_history.update(self.db.get()).await?;
+        update_history_am.update(self.db.get()).await?;
 
         Ok(())
     }

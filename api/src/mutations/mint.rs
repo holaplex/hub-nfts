@@ -673,6 +673,14 @@ impl Mutation {
             .await?
             .ok_or(Error::new("Update history not found"))?;
 
+        if update_history.status == CreationStatus::Created {
+            return Err(Error::new("Mint already updated"));
+        }
+
+        let mut update_history_am = update_histories::ActiveModel::from(update_history.clone());
+        update_history_am.status = Set(CreationStatus::Pending);
+        update_history_am.update(db.get()).await?;
+
         let collection = collection.ok_or(Error::new("Collection not found"))?;
 
         match collection.blockchain {

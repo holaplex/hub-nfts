@@ -1,8 +1,6 @@
 pub mod polygon;
 pub mod solana;
 
-use std::marker::PhantomData;
-
 use hub_core::anyhow::Result;
 
 use crate::proto::{NftEventKey, RetryUpdateSolanaMintPayload, UpdateSolanaMintPayload};

@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use hub_core::{anyhow::Result, producer::Producer};
 
 use super::{CollectionEvent, DropEvent, TransferEvent};
