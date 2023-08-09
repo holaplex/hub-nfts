@@ -7,8 +7,8 @@ use hub_core::{
 };
 use sea_orm::{
     sea_query::{Expr, SimpleExpr},
-    ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, JoinType, QueryFilter, QuerySelect,
-    RelationTrait, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait,
+    Set, TransactionTrait,
 };
 
 use crate::{

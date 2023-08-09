@@ -1,7 +1,10 @@
 use std::str::FromStr;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{credits::CreditsClient, producer::Producer};
+use hub_core::{
+    credits::{CreditsClient, DeductionErrorKind, TransactionId},
+    producer::Producer,
+};
 use reqwest::Url;
 use sea_orm::{prelude::*, ModelTrait, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
@@ -10,7 +13,6 @@ use solana_program::pubkey::Pubkey;
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, CollectionEvent},
     collection::Collection,
-    db::Connection,
     entities::{
         collection_creators, collection_mints, collections, metadata_jsons,
         prelude::{CollectionCreators, CollectionMints, Collections, MetadataJsons},
@@ -24,7 +26,7 @@ use crate::{
         CreationStatus as NftCreationStatus, Creator as ProtoCreator, MasterEdition,
         MetaplexMasterEditionTransaction, NftEventKey, NftEvents,
     },
-    Actions, AppContext, NftStorageClient, OrganizationId, UserID,
+    Actions, AppContext, NftStorageClient, UserID,
 };
 
 #[derive(Default)]
@@ -58,7 +60,6 @@ impl Mutation {
         let conn = db.get();
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let solana = ctx.data::<Solana>()?;
-        let _polygon = ctx.data::<Polygon>()?;
         let nft_storage = ctx.data::<NftStorageClient>()?;
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
@@ -70,6 +71,30 @@ impl Mutation {
             validate_solana_creator_verification(&owner_address, &input.creators)?;
         }
 
+        let TransactionId(credits_deduction_id) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::CreateCollection,
+                input.blockchain.into(),
+                balance,
+            )
+            .await
+            .map_err(|e| match e.kind() {
+                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
+                    "insufficient balance: available: {available}, cost: {cost}"
+                )),
+                DeductionErrorKind::MissingItem => Error::new(format!(
+                    "{:?} is not supported by the blockchain {} at this time",
+                    e.item(),
+                    e.blockchain()
+                )),
+                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
+                DeductionErrorKind::Send(_) => {
+                    Error::new("unable to send credit deduction request")
+                },
+            })?;
+
         let collection_am = collections::ActiveModel {
             blockchain: Set(input.blockchain),
             supply: Set(Some(0)),
@@ -77,6 +102,7 @@ impl Mutation {
             project_id: Set(input.project),
             created_by: Set(user_id),
             seller_fee_basis_points: Set(0),
+            credits_deduction_id: Set(Some(credits_deduction_id)),
             ..Default::default()
         };
 
@@ -123,16 +149,6 @@ impl Mutation {
             },
         };
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            user_id,
-            org_id,
-            balance,
-            collection: collection.id,
-            blockchain: input.blockchain,
-            action: Actions::CreateCollection,
-        })
-        .await?;
-
         nfts_producer
             .send(
                 Some(&NftEvents {
@@ -159,23 +175,11 @@ impl Mutation {
         ctx: &Context<'_>,
         input: RetryCollectionInput,
     ) -> Result<CreateCollectionPayload> {
-        let AppContext {
-            db,
-            user_id,
-            organization_id,
-            balance,
-            ..
-        } = ctx.data::<AppContext>()?;
+        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let UserID(id) = user_id;
-        let OrganizationId(org) = organization_id;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
-        let credits = ctx.data::<CreditsClient<Actions>>()?;
         let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
-        let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
-        let balance = balance
-            .0
-            .ok_or(Error::new("X-ORGANIZATION-BALANCE header not found"))?;
         let collection = Collections::find()
             .filter(collections::Column::Id.eq(input.id))
             .one(db.get())
@@ -231,16 +235,6 @@ impl Mutation {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
-
-        submit_pending_deduction(credits, db, DeductionParams {
-            balance,
-            user_id,
-            org_id,
-            collection: collection.id,
-            blockchain: collection.blockchain,
-            action: Actions::RetryCollection,
-        })
-        .await?;
 
         Ok(CreateCollectionPayload {
             collection: collection.into(),
@@ -454,59 +448,6 @@ impl Mutation {
             collection: collection.into(),
         })
     }
-}
-
-struct DeductionParams {
-    balance: u64,
-    user_id: Uuid,
-    org_id: Uuid,
-    collection: Uuid,
-    blockchain: BlockchainEnum,
-    action: Actions,
-}
-
-async fn submit_pending_deduction(
-    credits: &CreditsClient<Actions>,
-    db: &Connection,
-    params: DeductionParams,
-) -> Result<()> {
-    let DeductionParams {
-        balance,
-        user_id,
-        org_id,
-        collection,
-        blockchain,
-        action,
-    } = params;
-
-    let collection_model = Collections::find()
-        .filter(collections::Column::Id.eq(collection))
-        .one(db.get())
-        .await?
-        .ok_or(Error::new("drop not found"))?;
-
-    if collection_model.credits_deduction_id.is_some() {
-        return Ok(());
-    }
-
-    let id = match blockchain {
-        BlockchainEnum::Solana => {
-            credits
-                .submit_pending_deduction(org_id, user_id, action, blockchain.into(), balance)
-                .await?
-        },
-        BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
-            return Err(Error::new("blockchain not supported yet"));
-        },
-    };
-
-    let deduction_id = id.ok_or(Error::new("Organization does not have enough credits"))?;
-
-    let mut collection_am: collections::ActiveModel = collection_model.into();
-    collection_am.credits_deduction_id = Set(Some(deduction_id.0));
-    collection_am.update(db.get()).await?;
-
-    Ok(())
 }
 
 pub async fn fetch_owner(

@@ -1,7 +1,11 @@
 use std::ops::Add;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
+use hub_core::{
+    chrono::Utc,
+    credits::{CreditsClient, DeductionErrorKind, TransactionId},
+    producer::Producer,
+};
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
 
 use super::collection::{
@@ -9,7 +13,6 @@ use super::collection::{
 };
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, CollectionEvent, DropEvent},
-    db::Connection,
     entities::{
         collection_mints, collections, drops, mint_creators, mint_histories,
         prelude::{Collections, Drops},
@@ -97,6 +100,26 @@ impl Mutation {
             )))?
             .wallet_address;
 
+        let TransactionId(credits_deduction_id) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::MintEdition,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await
+            .map_err(|e| match e.kind() {
+                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
+                    "insufficient balance: available: {available}, cost: {cost}"
+                )),
+                DeductionErrorKind::MissingItem => Error::new("action not supported at this time"),
+                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
+                DeductionErrorKind::Send(_) => {
+                    Error::new("unable to send credit deduction request")
+                },
+            })?;
+
         // insert a collection mint record into database
         let collection_mint_active_model = collection_mints::ActiveModel {
             collection_id: Set(collection.id),
@@ -105,6 +128,7 @@ impl Mutation {
             seller_fee_basis_points: Set(collection.seller_fee_basis_points),
             created_by: Set(user_id),
             edition: Set(edition),
+            credits_deduction_id: Set(Some(credits_deduction_id)),
             ..Default::default()
         };
 
@@ -164,16 +188,6 @@ impl Mutation {
 
         purchase_am.insert(conn).await?;
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            balance,
-            user_id,
-            org_id,
-            mint: collection_mint_model.id,
-            blockchain: collection.blockchain,
-            action: Actions::MintEdition,
-        })
-        .await?;
-
         nfts_producer
             .send(
                 Some(&NftEvents {
@@ -203,26 +217,13 @@ impl Mutation {
         ctx: &Context<'_>,
         input: RetryMintEditionInput,
     ) -> Result<RetryMintEditionPayload> {
-        let AppContext {
-            db,
-            user_id,
-            organization_id,
-            balance,
-            ..
-        } = ctx.data::<AppContext>()?;
-        let credits = ctx.data::<CreditsClient<Actions>>()?;
+        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
         let polygon = ctx.data::<Polygon>()?;
 
         let UserID(id) = user_id;
-        let OrganizationId(org) = organization_id;
-
         let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
-        let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
-        let balance = balance
-            .0
-            .ok_or(Error::new("X-ORGANIZATION-BALANCE header not found"))?;
 
         let (collection_mint_model, drop) = collection_mints::Entity::find()
             .join(
@@ -306,16 +307,6 @@ impl Mutation {
         mint_am.creation_status = Set(CreationStatus::Pending);
         let collection_mint_model = mint_am.update(conn).await?;
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            balance,
-            user_id,
-            org_id,
-            mint: collection_mint_model.id,
-            blockchain: collection.blockchain,
-            action: Actions::RetryMint,
-        })
-        .await?;
-
         Ok(RetryMintEditionPayload {
             collection_mint: collection_mint_model.into(),
         })
@@ -374,6 +365,33 @@ impl Mutation {
             validate_solana_creator_verification(&owner_address, &creators)?;
         }
 
+        let action = if compressed {
+            Actions::MintCompressed
+        } else {
+            Actions::Mint
+        };
+
+        let TransactionId(credits_deduction_id) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                action,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await
+            .map_err(|e| match e.kind() {
+                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
+                    "insufficient balance: available: {}, cost: {}",
+                    available, cost
+                )),
+                DeductionErrorKind::MissingItem => Error::new("action not supported at this time"),
+                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
+                DeductionErrorKind::Send(_) => {
+                    Error::new("unable to send credit deduction request")
+                },
+            })?;
+
         // insert a collection mint record into database
         let collection_mint_active_model = collection_mints::ActiveModel {
             collection_id: Set(collection.id),
@@ -382,6 +400,7 @@ impl Mutation {
             seller_fee_basis_points: Set(collection.seller_fee_basis_points),
             created_by: Set(user_id),
             compressed: Set(compressed),
+            credits_deduction_id: Set(Some(credits_deduction_id)),
             ..Default::default()
         };
 
@@ -453,20 +472,6 @@ impl Mutation {
 
         mint_history_am.insert(conn).await?;
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            balance,
-            user_id,
-            org_id,
-            mint: collection_mint_model.id,
-            blockchain: collection.blockchain,
-            action: if compressed {
-                Actions::MintCompressed
-            } else {
-                Actions::Mint
-            },
-        })
-        .await?;
-
         nfts_producer
             .send(
                 Some(&NftEvents {
@@ -494,25 +499,13 @@ impl Mutation {
         ctx: &Context<'_>,
         input: RetryMintEditionInput,
     ) -> Result<RetryMintEditionPayload> {
-        let AppContext {
-            db,
-            user_id,
-            organization_id,
-            balance,
-            ..
-        } = ctx.data::<AppContext>()?;
-        let credits = ctx.data::<CreditsClient<Actions>>()?;
+        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
 
         let UserID(id) = user_id;
-        let OrganizationId(org) = organization_id;
 
         let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
-        let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
-        let balance = balance
-            .0
-            .ok_or(Error::new("X-ORGANIZATION-BALANCE header not found"))?;
 
         let (collection_mint_model, collection) =
             collection_mints::Entity::find_by_id_with_collection(input.id)
@@ -572,71 +565,10 @@ impl Mutation {
             },
         };
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            balance,
-            user_id,
-            org_id,
-            mint: collection_mint_model.id,
-            blockchain: collection.blockchain,
-            action: Actions::RetryMint,
-        })
-        .await?;
-
         Ok(RetryMintEditionPayload {
             collection_mint: collection_mint_model.into(),
         })
     }
-}
-
-struct DeductionParams {
-    balance: u64,
-    user_id: Uuid,
-    org_id: Uuid,
-    mint: Uuid,
-    blockchain: BlockchainEnum,
-    action: Actions,
-}
-async fn submit_pending_deduction(
-    credits: &CreditsClient<Actions>,
-    db: &Connection,
-    params: DeductionParams,
-) -> Result<()> {
-    let DeductionParams {
-        balance,
-        user_id,
-        org_id,
-        mint,
-        blockchain,
-        action,
-    } = params;
-
-    let mint_model = collection_mints::Entity::find_by_id(mint)
-        .one(db.get())
-        .await?
-        .ok_or(Error::new("drop not found"))?;
-
-    if mint_model.credits_deduction_id.is_some() {
-        return Ok(());
-    }
-
-    let id = match blockchain {
-        BlockchainEnum::Solana | BlockchainEnum::Polygon => {
-            credits
-                .submit_pending_deduction(org_id, user_id, action, blockchain.into(), balance)
-                .await?
-        },
-        BlockchainEnum::Ethereum => {
-            return Err(Error::new("blockchain not supported yet"));
-        },
-    };
-
-    let deduction_id = id.ok_or(Error::new("Organization does not have enough credits"))?;
-
-    let mut mint: collection_mints::ActiveModel = mint_model.into();
-    mint.credits_deduction_id = Set(Some(deduction_id.0));
-    mint.update(db.get()).await?;
-
-    Ok(())
 }
 
 fn validate_compress(blockchain: BlockchainEnum, compressed: bool) -> Result<(), Error> {
