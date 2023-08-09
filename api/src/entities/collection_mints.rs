@@ -6,6 +6,7 @@ use sea_orm::{entity::prelude::*, JoinType, QuerySelect, SelectTwo};
 use super::{
     collections,
     sea_orm_active_enums::{Blockchain, CreationStatus},
+    update_histories,
 };
 use crate::{
     objects::{Collection, MetadataJson},
@@ -93,6 +94,19 @@ impl CollectionMint {
             Blockchain::Polygon => metadata_json_loader.load_one(self.collection_id).await,
             Blockchain::Ethereum => Err(Error::new("Ethereum not supported")),
         }
+    }
+
+    /// The update history of the mint.
+    async fn update_histories(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<Vec<update_histories::Model>>> {
+        let AppContext {
+            update_mint_history_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        update_mint_history_loader.load_one(self.id).await
     }
 }
 

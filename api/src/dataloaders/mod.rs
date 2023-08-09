@@ -9,6 +9,7 @@ mod metadata_json;
 mod mint_histories;
 mod project_collection;
 mod project_collections;
+mod update_histories;
 
 pub use collection::Loader as CollectionLoader;
 pub use collection_drop::Loader as CollectionDropLoader;
@@ -28,3 +29,4 @@ pub use mint_histories::{
 };
 pub use project_collection::ProjectCollectionLoader;
 pub use project_collections::ProjectCollectionsLoader;
+pub use update_histories::UpdateMintHistoryLoader;
