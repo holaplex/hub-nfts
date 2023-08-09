@@ -23,7 +23,7 @@ use crate::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, EditionInfo,
         NftEventKey, NftEvents,
     },
-    Actions, AppContext, NftStorageClient, UserID,
+    Actions, AppContext, NftStorageClient,
 };
 
 #[derive(Default)]
@@ -219,12 +219,27 @@ impl Mutation {
         ctx: &Context<'_>,
         input: RetryDropInput,
     ) -> Result<CreateDropPayload> {
-        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
-        let UserID(id) = user_id;
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        let user_id = user_id.0.ok_or(Error::new("X-USER-ID header not found"))?;
+        let org_id = organization_id
+            .0
+            .ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
+
         let conn = db.get();
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
         let solana = ctx.data::<Solana>()?;
         let polygon = ctx.data::<Polygon>()?;
-        let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
+
         let (drop, collection) = Drops::find_by_id(input.drop)
             .find_also_related(Collections)
             .one(conn)
@@ -247,6 +262,26 @@ impl Mutation {
             .await?;
 
         let owner_address = fetch_owner(conn, drop.project_id, collection.blockchain).await?;
+
+        let TransactionId(_) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::RetryDrop,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await
+            .map_err(|e| match e.kind() {
+                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
+                    "insufficient balance: available: {available}, cost: {cost}"
+                )),
+                DeductionErrorKind::MissingItem => Error::new("action not supported at this time"),
+                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
+                DeductionErrorKind::Send(_) => {
+                    Error::new("unable to send credit deduction request")
+                },
+            })?;
 
         let event_key = NftEventKey {
             id: collection.id.to_string(),

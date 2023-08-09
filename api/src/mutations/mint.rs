@@ -217,13 +217,26 @@ impl Mutation {
         ctx: &Context<'_>,
         input: RetryMintEditionInput,
     ) -> Result<RetryMintEditionPayload> {
-        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
         let polygon = ctx.data::<Polygon>()?;
 
         let UserID(id) = user_id;
+        let OrganizationId(org) = organization_id;
+
         let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
+        let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
 
         let (collection_mint_model, drop) = collection_mints::Entity::find()
             .join(
@@ -269,6 +282,26 @@ impl Mutation {
                 collection.blockchain
             )))?
             .wallet_address;
+
+        let TransactionId(_) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::RetryMint,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await
+            .map_err(|e| match e.kind() {
+                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
+                    "insufficient balance: available: {available}, cost: {cost}"
+                )),
+                DeductionErrorKind::MissingItem => Error::new("action not supported at this time"),
+                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
+                DeductionErrorKind::Send(_) => {
+                    Error::new("unable to send credit deduction request")
+                },
+            })?;
 
         let event_key = NftEventKey {
             id: collection_mint_model.id.to_string(),
@@ -499,13 +532,25 @@ impl Mutation {
         ctx: &Context<'_>,
         input: RetryMintEditionInput,
     ) -> Result<RetryMintEditionPayload> {
-        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
 
         let UserID(id) = user_id;
+        let OrganizationId(org) = organization_id;
 
         let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
+        let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
 
         let (collection_mint_model, collection) =
             collection_mints::Entity::find_by_id_with_collection(input.id)
@@ -538,6 +583,26 @@ impl Mutation {
         let creators = mint_creators::Entity::find_by_collection_mint_id(collection_mint_model.id)
             .all(conn)
             .await?;
+
+        let TransactionId(_) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::RetryMint,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await
+            .map_err(|e| match e.kind() {
+                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
+                    "insufficient balance: available: {available}, cost: {cost}"
+                )),
+                DeductionErrorKind::MissingItem => Error::new("action not supported at this time"),
+                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
+                DeductionErrorKind::Send(_) => {
+                    Error::new("unable to send credit deduction request")
+                },
+            })?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
