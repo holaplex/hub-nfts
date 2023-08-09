@@ -1,12 +1,11 @@
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::credits::CreditsClient;
+use hub_core::credits::{CreditsClient, DeductionErrorKind, TransactionId};
 use sea_orm::{prelude::*, Set};
 use serde::{Deserialize, Serialize};
 
 use super::collection::{validate_evm_address, validate_solana_address};
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, TransferEvent},
-    db::Connection,
     entities::{
         collection_mints::{self, CollectionMint},
         prelude::CustomerWallets,
@@ -71,7 +70,18 @@ impl Mutation {
             .await?
             .ok_or(Error::new("Sender wallet is not managed by HUB"))?;
 
+        let TransactionId(credits_deduction_id) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::TransferAsset,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await?;
+
         let transfer_charges_am = transfer_charges::ActiveModel {
+            credits_deduction_id: Set(Some(credits_deduction_id)),
             ..Default::default()
         };
 
@@ -115,62 +125,10 @@ impl Mutation {
             },
         };
 
-        submit_pending_deduction(
-            credits,
-            db,
-            balance,
-            org_id,
-            user_id,
-            transfer_charge_model.id,
-            collection.blockchain,
-        )
-        .await?;
-
         Ok(TransferAssetPayload {
             mint: collection_mint_model.into(),
         })
     }
-}
-
-async fn submit_pending_deduction(
-    credits: &CreditsClient<Actions>,
-    db: &Connection,
-    balance: u64,
-    org_id: Uuid,
-    user_id: Uuid,
-    transfer_id: Uuid,
-    blockchain: Blockchain,
-) -> Result<()> {
-    let id = match blockchain {
-        Blockchain::Solana | Blockchain::Polygon => {
-            credits
-                .submit_pending_deduction(
-                    org_id,
-                    user_id,
-                    Actions::TransferAsset,
-                    blockchain.into(),
-                    balance,
-                )
-                .await?
-        },
-        Blockchain::Ethereum => {
-            return Err(Error::new("blockchain not supported yet"));
-        },
-    };
-
-    let deduction_id = id.ok_or(Error::new("Organization does not have enough credits"))?;
-
-    let transfer_charge_model = transfer_charges::Entity::find()
-        .filter(transfer_charges::Column::Id.eq(transfer_id))
-        .one(db.get())
-        .await?
-        .ok_or(Error::new("transfer charge not found"))?;
-
-    let mut transfer_charge: transfer_charges::ActiveModel = transfer_charge_model.into();
-    transfer_charge.credits_deduction_id = Set(Some(deduction_id.0));
-    transfer_charge.update(db.get()).await?;
-
-    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]

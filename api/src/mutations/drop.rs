@@ -1,5 +1,9 @@
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
+use hub_core::{
+    chrono::Utc,
+    credits::{CreditsClient, DeductionErrorKind, TransactionId},
+    producer::Producer,
+};
 use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +11,6 @@ use super::collection::{validate_creators, validate_json, validate_solana_creato
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, DropEvent},
     collection::Collection,
-    db::Connection,
     entities::{
         collection_creators, collections, drops, metadata_jsons,
         prelude::{CollectionCreators, Collections, Drops, MetadataJsons},
@@ -20,7 +23,7 @@ use crate::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, EditionInfo,
         NftEventKey, NftEvents,
     },
-    Actions, AppContext, NftStorageClient, OrganizationId, UserID,
+    Actions, AppContext, NftStorageClient,
 };
 
 #[derive(Default)]
@@ -67,6 +70,16 @@ impl Mutation {
             validate_solana_creator_verification(&owner_address, &input.creators)?;
         }
 
+        let TransactionId(credits_deduction_id) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::CreateDrop,
+                input.blockchain.into(),
+                balance,
+            )
+            .await?;
+
         let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
 
         let collection_am = collections::ActiveModel {
@@ -76,6 +89,7 @@ impl Mutation {
             seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
             created_by: Set(user_id),
             project_id: Set(input.project),
+            credits_deduction_id: Set(Some(credits_deduction_id)),
             ..Default::default()
         };
 
@@ -99,6 +113,7 @@ impl Mutation {
             price: Set(input.price.unwrap_or_default().try_into()?),
             created_by: Set(user_id),
             created_at: Set(Utc::now().into()),
+            credits_deduction_id: Set(Some(credits_deduction_id)),
             ..Default::default()
         };
 
@@ -157,16 +172,6 @@ impl Mutation {
             },
         };
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            user_id,
-            org_id,
-            balance,
-            drop: drop_model.id,
-            blockchain: input.blockchain,
-            action: Actions::CreateDrop,
-        })
-        .await?;
-
         nfts_producer
             .send(
                 Some(&NftEvents {
@@ -206,20 +211,23 @@ impl Mutation {
             balance,
             ..
         } = ctx.data::<AppContext>()?;
-        let UserID(id) = user_id;
-        let OrganizationId(org) = organization_id;
-        let conn = db.get();
-        let solana = ctx.data::<Solana>()?;
-        let polygon = ctx.data::<Polygon>()?;
-        let credits = ctx.data::<CreditsClient<Actions>>()?;
-        let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
-        let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
+
+        let user_id = user_id.0.ok_or(Error::new("X-USER-ID header not found"))?;
+        let org_id = organization_id
+            .0
+            .ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
         let balance = balance
             .0
-            .ok_or(Error::new("X-ORGANIZATION-BALANCE header not found"))?;
+            .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
+
+        let conn = db.get();
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
+        let solana = ctx.data::<Solana>()?;
+        let polygon = ctx.data::<Polygon>()?;
+
         let (drop, collection) = Drops::find_by_id(input.drop)
             .find_also_related(Collections)
-            .one(db.get())
+            .one(conn)
             .await?
             .ok_or(Error::new("drop not found"))?;
 
@@ -239,6 +247,16 @@ impl Mutation {
             .await?;
 
         let owner_address = fetch_owner(conn, drop.project_id, collection.blockchain).await?;
+
+        let TransactionId(_) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::RetryDrop,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await?;
 
         let event_key = NftEventKey {
             id: collection.id.to_string(),
@@ -293,16 +311,6 @@ impl Mutation {
         let mut drop_am: drops::ActiveModel = drop.into();
         drop_am.creation_status = Set(CreationStatus::Pending);
         let drop = drop_am.update(conn).await?;
-
-        submit_pending_deduction(credits, db, DeductionParams {
-            balance,
-            user_id,
-            org_id,
-            drop: drop.id,
-            blockchain: collection.blockchain,
-            action: Actions::RetryDrop,
-        })
-        .await?;
 
         Ok(CreateDropPayload {
             drop: Drop::new(drop, collection),
@@ -606,68 +614,6 @@ impl Mutation {
             drop: Drop::new(drop_model, collection),
         })
     }
-}
-
-struct DeductionParams {
-    balance: u64,
-    user_id: Uuid,
-    org_id: Uuid,
-    drop: Uuid,
-    blockchain: BlockchainEnum,
-    action: Actions,
-}
-
-async fn submit_pending_deduction(
-    credits: &CreditsClient<Actions>,
-    db: &Connection,
-    params: DeductionParams,
-) -> Result<()> {
-    let DeductionParams {
-        balance,
-        user_id,
-        org_id,
-        drop,
-        blockchain,
-        action,
-    } = params;
-    let conn = db.get();
-
-    let (drop_model, collection) = Drops::find()
-        .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-        .select_also(Collections)
-        .filter(drops::Column::Id.eq(drop))
-        .one(conn)
-        .await?
-        .ok_or(Error::new("drop not found"))?;
-
-    let collection = collection.ok_or(Error::new("collection not found"))?;
-
-    if drop_model.credits_deduction_id.is_some() {
-        return Ok(());
-    }
-
-    let id = match blockchain {
-        BlockchainEnum::Solana | BlockchainEnum::Polygon => {
-            credits
-                .submit_pending_deduction(org_id, user_id, action, blockchain.into(), balance)
-                .await?
-        },
-        BlockchainEnum::Ethereum => {
-            return Err(Error::new("blockchain not supported yet"));
-        },
-    };
-
-    let deduction_id = id.ok_or(Error::new("Organization does not have enough credits"))?;
-
-    let mut drop: drops::ActiveModel = drop_model.into();
-    let mut collection: collections::ActiveModel = collection.into();
-    drop.credits_deduction_id = Set(Some(deduction_id.0));
-    collection.credits_deduction_id = Set(Some(deduction_id.0));
-
-    collection.update(conn).await?;
-    drop.update(conn).await?;
-
-    Ok(())
 }
 
 async fn fetch_owner(
