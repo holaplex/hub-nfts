@@ -108,17 +108,7 @@ impl Mutation {
                 collection.blockchain.into(),
                 balance,
             )
-            .await
-            .map_err(|e| match e.kind() {
-                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
-                    "insufficient balance: available: {available}, cost: {cost}"
-                )),
-                DeductionErrorKind::MissingItem => Error::new("action not supported at this time"),
-                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
-                DeductionErrorKind::Send(_) => {
-                    Error::new("unable to send credit deduction request")
-                },
-            })?;
+            .await?;
 
         // insert a collection mint record into database
         let collection_mint_active_model = collection_mints::ActiveModel {
@@ -291,17 +281,7 @@ impl Mutation {
                 collection.blockchain.into(),
                 balance,
             )
-            .await
-            .map_err(|e| match e.kind() {
-                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
-                    "insufficient balance: available: {available}, cost: {cost}"
-                )),
-                DeductionErrorKind::MissingItem => Error::new("action not supported at this time"),
-                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
-                DeductionErrorKind::Send(_) => {
-                    Error::new("unable to send credit deduction request")
-                },
-            })?;
+            .await?;
 
         let event_key = NftEventKey {
             id: collection_mint_model.id.to_string(),
@@ -412,18 +392,7 @@ impl Mutation {
                 collection.blockchain.into(),
                 balance,
             )
-            .await
-            .map_err(|e| match e.kind() {
-                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
-                    "insufficient balance: available: {}, cost: {}",
-                    available, cost
-                )),
-                DeductionErrorKind::MissingItem => Error::new("action not supported at this time"),
-                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
-                DeductionErrorKind::Send(_) => {
-                    Error::new("unable to send credit deduction request")
-                },
-            })?;
+            .await?;
 
         // insert a collection mint record into database
         let collection_mint_active_model = collection_mints::ActiveModel {
@@ -592,17 +561,7 @@ impl Mutation {
                 collection.blockchain.into(),
                 balance,
             )
-            .await
-            .map_err(|e| match e.kind() {
-                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
-                    "insufficient balance: available: {available}, cost: {cost}"
-                )),
-                DeductionErrorKind::MissingItem => Error::new("action not supported at this time"),
-                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
-                DeductionErrorKind::Send(_) => {
-                    Error::new("unable to send credit deduction request")
-                },
-            })?;
+            .await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {

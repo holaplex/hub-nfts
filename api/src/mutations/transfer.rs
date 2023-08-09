@@ -78,17 +78,7 @@ impl Mutation {
                 collection.blockchain.into(),
                 balance,
             )
-            .await
-            .map_err(|e| match e.kind() {
-                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
-                    "insufficient balance: available: {available}, cost: {cost}"
-                )),
-                DeductionErrorKind::MissingItem => Error::new("action not supported at this time"),
-                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
-                DeductionErrorKind::Send(_) => {
-                    Error::new("unable to send credit deduction request")
-                },
-            })?;
+            .await?;
 
         let transfer_charges_am = transfer_charges::ActiveModel {
             credits_deduction_id: Set(Some(credits_deduction_id)),

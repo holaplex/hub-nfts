@@ -79,21 +79,7 @@ impl Mutation {
                 input.blockchain.into(),
                 balance,
             )
-            .await
-            .map_err(|e| match e.kind() {
-                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
-                    "insufficient balance: available: {available}, cost: {cost}"
-                )),
-                DeductionErrorKind::MissingItem => Error::new(format!(
-                    "{:?} is not supported by the blockchain {} at this time",
-                    e.item(),
-                    e.blockchain()
-                )),
-                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
-                DeductionErrorKind::Send(_) => {
-                    Error::new("unable to send credit deduction request")
-                },
-            })?;
+            .await?;
 
         let collection_am = collections::ActiveModel {
             blockchain: Set(input.blockchain),
@@ -224,17 +210,7 @@ impl Mutation {
                 collection.blockchain.into(),
                 balance,
             )
-            .await
-            .map_err(|e| match e.kind() {
-                DeductionErrorKind::InsufficientBalance { available, cost } => Error::new(format!(
-                    "insufficient balance: available: {available}, cost: {cost}"
-                )),
-                DeductionErrorKind::MissingItem => Error::new("action not supported at this time"),
-                DeductionErrorKind::InvalidCost(_) => Error::new("invalid cost"),
-                DeductionErrorKind::Send(_) => {
-                    Error::new("unable to send credit deduction request")
-                },
-            })?;
+            .await?;
 
         let event_key = NftEventKey {
             id: collection.id.to_string(),
