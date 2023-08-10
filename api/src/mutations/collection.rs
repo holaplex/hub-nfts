@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{
-    credits::{CreditsClient, DeductionErrorKind, TransactionId},
+    credits::{CreditsClient, TransactionId},
     producer::Producer,
 };
 use reqwest::Url;

@@ -6,6 +6,7 @@ use sea_orm::{entity::prelude::*, JoinType, QuerySelect, SelectTwo};
 use super::{
     collections,
     sea_orm_active_enums::{Blockchain, CreationStatus},
+    update_histories,
 };
 use crate::{
     objects::{Collection, MetadataJson},
@@ -94,6 +95,19 @@ impl CollectionMint {
             Blockchain::Ethereum => Err(Error::new("Ethereum not supported")),
         }
     }
+
+    /// The update history of the mint.
+    async fn update_histories(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<Vec<update_histories::Model>>> {
+        let AppContext {
+            update_mint_history_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        update_mint_history_loader.load_one(self.id).await
+    }
 }
 
 impl From<Model> for CollectionMint {
@@ -146,6 +160,8 @@ pub enum Relation {
     MintHistories,
     #[sea_orm(has_many = "super::nft_transfers::Entity")]
     NftTransfers,
+    #[sea_orm(has_many = "super::update_histories::Entity")]
+    UpdateHistories,
 }
 
 impl Related<super::collections::Entity> for Entity {
@@ -169,6 +185,12 @@ impl Related<super::mint_histories::Entity> for Entity {
 impl Related<super::nft_transfers::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::NftTransfers.def()
+    }
+}
+
+impl Related<super::update_histories::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UpdateHistories.def()
     }
 }
 

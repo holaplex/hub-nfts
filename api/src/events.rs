@@ -17,10 +17,10 @@ use crate::{
         collection_creators, collection_mints, collections, customer_wallets, drops,
         metadata_json_attributes, metadata_json_files, metadata_jsons, mint_creators,
         mint_histories, nft_transfers,
-        prelude::{CollectionMints, Collections, Drops, MintHistory},
+        prelude::{CollectionMints, Collections, Drops, MintHistory, UpdateHistories},
         project_wallets,
         sea_orm_active_enums::{Blockchain, CreationStatus},
-        transfer_charges,
+        transfer_charges, update_histories,
     },
     proto::{
         nft_events::Event as NftEvent,
@@ -33,7 +33,8 @@ use crate::{
         Attribute, CreationStatus as NftCreationStatus, DropCreation, File, Metadata,
         MintCollectionCreation, MintCreation, MintOwnershipUpdate, MintedTokensOwnershipUpdate,
         NftEventKey, NftEvents, SolanaCollectionPayload, SolanaCompletedMintTransaction,
-        SolanaCompletedTransferTransaction, SolanaMintPayload, SolanaNftEventKey, TreasuryEventKey,
+        SolanaCompletedTransferTransaction, SolanaMintPayload, SolanaNftEventKey,
+        SolanaUpdatedMintPayload, TreasuryEventKey,
     },
     Actions, Services,
 };
@@ -59,6 +60,12 @@ enum MintResult {
 
 #[derive(Clone)]
 enum TransferResult {
+    Success(String),
+    Failure,
+}
+
+#[derive(Clone)]
+enum UpdateResult {
     Success(String),
     Failure,
 }
@@ -135,6 +142,13 @@ impl Processor {
                     self.minted_to_collection(id, MintResult::Success(payload.into()))
                         .await
                 },
+                Some(
+                    SolanaNftsEvent::UpdateCollectionMintSubmitted(payload)
+                    | SolanaNftsEvent::RetryUpdateMintSubmitted(payload),
+                ) => {
+                    self.mint_updated(id, project_id, UpdateResult::Success(payload.signature))
+                        .await
+                },
                 Some(SolanaNftsEvent::TransferAssetSubmitted(
                     SolanaCompletedTransferTransaction { signature },
                 )) => {
@@ -162,6 +176,13 @@ impl Processor {
                 Some(SolanaNftsEvent::RetryMintDropFailed(_)) => {
                     self.drop_minted(id, MintResult::Failure).await
                 },
+                Some(
+                    SolanaNftsEvent::UpdateCollectionMintFailed(_)
+                    | SolanaNftsEvent::RetryUpdateMintFailed(_),
+                ) => {
+                    self.mint_updated(id, project_id, UpdateResult::Failure)
+                        .await
+                },
                 Some(SolanaNftsEvent::UpdateMintOwner(e)) => self.update_mint_owner(id, e).await,
                 Some(SolanaNftsEvent::ImportedExternalCollection(e)) => {
                     self.index_collection(id, project_id, user_id, e).await
@@ -169,6 +190,7 @@ impl Processor {
                 Some(SolanaNftsEvent::ImportedExternalMint(e)) => {
                     self.index_mint(id, user_id, e).await
                 },
+
                 None | Some(_) => Ok(()),
             },
             Services::Polygon(_, e) => match e.event {
@@ -727,6 +749,49 @@ impl Processor {
                 .confirm_deduction(TransactionId(deduction_id))
                 .await?;
         }
+
+        Ok(())
+    }
+
+    async fn mint_updated(
+        &self,
+        id: String,
+        project_id: String,
+        payload: UpdateResult,
+    ) -> Result<()> {
+        let update_history = UpdateHistories::find_by_id(id.parse()?)
+            .one(self.db.get())
+            .await?
+            .context("Update history record not found")?;
+        let mut update_history_am: update_histories::ActiveModel = update_history.clone().into();
+
+        if let UpdateResult::Success(signature) = payload {
+            update_history_am.txn_signature = Set(Some(signature));
+            update_history_am.status = Set(CreationStatus::Created);
+
+            self.credits
+                .confirm_deduction(TransactionId(update_history.credit_deduction_id))
+                .await?;
+
+            self.producer
+                .send(
+                    Some(&NftEvents {
+                        event: Some(NftEvent::SolanaMintUpdated(SolanaUpdatedMintPayload {
+                            mint_id: update_history.mint_id.to_string(),
+                        })),
+                    }),
+                    Some(&NftEventKey {
+                        id,
+                        project_id,
+                        user_id: update_history.created_by.to_string(),
+                    }),
+                )
+                .await?;
+        } else {
+            update_history_am.status = Set(CreationStatus::Failed);
+        }
+
+        update_history_am.update(self.db.get()).await?;
 
         Ok(())
     }

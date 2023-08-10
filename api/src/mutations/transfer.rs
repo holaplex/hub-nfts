@@ -1,5 +1,5 @@
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::credits::{CreditsClient, DeductionErrorKind, TransactionId};
+use hub_core::credits::{CreditsClient, TransactionId};
 use sea_orm::{prelude::*, Set};
 use serde::{Deserialize, Serialize};
 
