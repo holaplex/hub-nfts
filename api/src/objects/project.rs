@@ -1,4 +1,4 @@
-use async_graphql::{ComplexObject, Context, Result, SimpleObject};
+use async_graphql::{ComplexObject, Context, Error, Result, SimpleObject};
 use hub_core::uuid::Uuid;
 
 use crate::{
@@ -28,7 +28,20 @@ impl Project {
     async fn drop(&self, ctx: &Context<'_>, id: Uuid) -> Result<Option<Drop>> {
         let AppContext { drop_loader, .. } = ctx.data::<AppContext>()?;
 
-        drop_loader.load_one(id).await
+        let drop = drop_loader.load_one(id).await?;
+
+        if let Some(drop) = drop {
+            if drop.drop.project_id == self.id {
+                return Ok(Some(drop));
+            }
+
+            return Err(Error::new(format!(
+                "Drop {} is not associated with project {}",
+                id, self.id
+            )));
+        }
+
+        Ok(None)
     }
 
     /// The collections associated with the project.
@@ -47,6 +60,19 @@ impl Project {
             ..
         } = ctx.data::<AppContext>()?;
 
-        project_collection_loader.load_one(id).await
+        let collection = project_collection_loader.load_one(id).await?;
+
+        if let Some(collection) = collection {
+            if collection.project_id == self.id {
+                return Ok(Some(collection));
+            }
+
+            return Err(Error::new(format!(
+                "Collection {} is not associated with project {}",
+                id, self.id
+            )));
+        }
+
+        Ok(None)
     }
 }
