@@ -6,6 +6,7 @@ use hub_core::{
     uuid::Uuid,
 };
 use sea_orm::{
+    sea_query::{Expr, SimpleExpr},
     ActiveModelTrait, ColumnTrait, EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait,
     Set, TransactionTrait,
 };
@@ -342,15 +343,18 @@ impl Processor {
         index_attributes(&self.db, json_model.id, attributes).await?;
         index_files(&self.db, json_model.id, files).await?;
 
-        let collection = Collections::find_by_id(collection_id.parse()?)
-            .one(self.db.get())
-            .await
-            .context("failed to load collection from db")?
-            .context("collection not found in db")?;
-        let mut collection_am: collections::ActiveModel = collection.clone().into();
+        let collection_id = Uuid::from_str(&collection_id)?;
 
-        collection_am.total_mints = Set(collection.total_mints + 1);
-        collection_am.update(self.db.get()).await?;
+        collections::Entity::update_many()
+            .col_expr(
+                collections::Column::TotalMints,
+                <Expr as Into<SimpleExpr>>::into(Expr::col(collections::Column::TotalMints))
+                    .add(SimpleExpr::Value(1.into())),
+            )
+            .filter(collections::Column::Id.eq(collection_id))
+            .exec(self.db.get())
+            .await?;
+
         Ok(())
     }
 
