@@ -526,7 +526,7 @@ impl Mutation {
 
         let (mint, collection) = CollectionMints::find()
             .find_also_related(Collections)
-            .filter(collection_mints::Column::Id.eq(input.mint))
+            .filter(collection_mints::Column::Id.eq(input.id))
             .one(conn)
             .await?
             .ok_or(Error::new("Mint not found"))?;
@@ -911,9 +911,15 @@ pub struct MintToCollectionInput {
 
 #[derive(Debug, Clone, InputObject)]
 pub struct UpdateMintInput {
-    mint: Uuid,
+    /// The ID of the mint to be updated
+    id: Uuid,
+    /// The metadata of the mint
     metadata_json: MetadataJsonInput,
+    /// The optional seller fee basis points
     seller_fee_basis_points: Option<u16>,
+    /// The creators to be assigned to the NFT.
+    /// For Solana, this can be up to five creators. If the project treasury wallet is set as a creator and verified set to true the creator will be verified on chain.
+    /// For Polygon, this can be only 1 creator.
     creators: Vec<Creator>,
 }
 
@@ -945,6 +951,7 @@ pub struct RetryMintToCollectionPayload {
 
 #[derive(Debug, Clone, InputObject)]
 pub struct RetryUpdateMintInput {
+    /// Update History ID
     revision_id: Uuid,
 }
 
