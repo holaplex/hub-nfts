@@ -4,6 +4,7 @@ use async_graphql::{dataloader::Loader as DataLoader, FieldError, Result};
 use poem::async_trait;
 use sea_orm::prelude::*;
 
+use super::mint_histories::lowercase_evm_addresses;
 use crate::{db::Connection, entities::collection_mints};
 
 #[derive(Debug, Clone)]
@@ -63,6 +64,8 @@ impl DataLoader<String> for OwnerLoader {
     type Value = Vec<collection_mints::CollectionMint>;
 
     async fn load(&self, keys: &[String]) -> Result<HashMap<String, Self::Value>, Self::Error> {
+        let keys = lowercase_evm_addresses(keys);
+
         let collection_mints = collection_mints::Entity::find()
             .filter(collection_mints::Column::Owner.is_in(keys.iter().map(ToOwned::to_owned)))
             .all(self.db.get())

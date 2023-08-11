@@ -115,6 +115,8 @@ impl DataLoader<String> for MinterLoader {
     type Value = Vec<mint_histories::Model>;
 
     async fn load(&self, keys: &[String]) -> Result<HashMap<String, Self::Value>, Self::Error> {
+        let keys = lowercase_evm_addresses(keys);
+
         let mint_histories = mint_histories::Entity::find()
             .filter(mint_histories::Column::Wallet.is_in(keys.iter().map(ToOwned::to_owned)))
             .all(self.db.get())
@@ -132,4 +134,16 @@ impl DataLoader<String> for MinterLoader {
                 acc
             }))
     }
+}
+
+pub fn lowercase_evm_addresses(keys: &[String]) -> Vec<String> {
+    keys.iter()
+        .map(|key| {
+            if key.starts_with("0x") {
+                key.to_lowercase()
+            } else {
+                key.clone()
+            }
+        })
+        .collect::<Vec<_>>()
 }
