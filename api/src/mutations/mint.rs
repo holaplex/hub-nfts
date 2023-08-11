@@ -496,6 +496,9 @@ impl Mutation {
         })
     }
 
+    /// This mutation updates a mint.
+    /// # Errors
+    /// If the mint cannot be saved to the database or fails to be emitted for submission to the desired blockchain, the mutation will result in an error.
     pub async fn update_mint(
         &self,
         ctx: &Context<'_>,
@@ -651,6 +654,9 @@ impl Mutation {
         })
     }
 
+    /// This mutation retries updating a mint that failed by providing the ID of the `update_history`.
+    /// # Errors
+    /// If the mint cannot be saved to the database or fails to be emitted for submission to the desired blockchain, the mutation will result in an error.
     pub async fn retry_update_mint(
         &self,
         ctx: &Context<'_>,
