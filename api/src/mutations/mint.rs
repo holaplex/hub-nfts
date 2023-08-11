@@ -3,7 +3,7 @@ use std::ops::Add;
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{
     chrono::Utc,
-    credits::{Blockchain, CreditsClient, TransactionId},
+    credits::{CreditsClient, TransactionId},
     producer::Producer,
 };
 use sea_orm::{prelude::*, JoinType, QuerySelect, Set, TransactionTrait};
@@ -567,7 +567,7 @@ impl Mutation {
                 org_id,
                 user_id,
                 Actions::UpdateMint,
-                Blockchain::Solana,
+                collection.blockchain.into(),
                 balance,
             )
             .await?;
