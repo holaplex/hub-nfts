@@ -404,6 +404,7 @@ impl Mutation {
             created_by: Set(user_id),
             compressed: Set(compressed),
             credits_deduction_id: Set(Some(credits_deduction_id)),
+            edition: Set(-1),
             ..Default::default()
         };
 
@@ -536,6 +537,12 @@ impl Mutation {
 
         if mint.creation_status != CreationStatus::Created {
             return Err(Error::new("Mint not created"));
+        }
+
+        if mint.edition != -1 {
+            return Err(Error::new(
+                "Mint does not belong to Metaplex Certified Collection",
+            ));
         }
 
         let collection = collection.ok_or(Error::new("Collection not found"))?;
