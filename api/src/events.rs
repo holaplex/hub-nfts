@@ -33,8 +33,7 @@ use crate::{
         Attribute, CreationStatus as NftCreationStatus, DropCreation, File, Metadata,
         MintCollectionCreation, MintCreation, MintOwnershipUpdate, MintedTokensOwnershipUpdate,
         NftEventKey, NftEvents, SolanaCollectionPayload, SolanaCompletedMintTransaction,
-        SolanaCompletedTransferTransaction, SolanaMintPayload, SolanaNftEventKey,
-        SolanaUpdatedMintPayload, TreasuryEventKey,
+        SolanaCompletedTransferTransaction, SolanaMintPayload, SolanaNftEventKey, TreasuryEventKey,
     },
     Actions, Services,
 };
