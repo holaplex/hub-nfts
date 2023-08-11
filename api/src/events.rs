@@ -146,7 +146,7 @@ impl Processor {
                     SolanaNftsEvent::UpdateCollectionMintSubmitted(payload)
                     | SolanaNftsEvent::RetryUpdateMintSubmitted(payload),
                 ) => {
-                    self.mint_updated(id, project_id, UpdateResult::Success(payload.signature))
+                    self.mint_updated(id, UpdateResult::Success(payload.signature))
                         .await
                 },
                 Some(SolanaNftsEvent::TransferAssetSubmitted(
@@ -179,10 +179,7 @@ impl Processor {
                 Some(
                     SolanaNftsEvent::UpdateCollectionMintFailed(_)
                     | SolanaNftsEvent::RetryUpdateMintFailed(_),
-                ) => {
-                    self.mint_updated(id, project_id, UpdateResult::Failure)
-                        .await
-                },
+                ) => self.mint_updated(id, UpdateResult::Failure).await,
                 Some(SolanaNftsEvent::UpdateMintOwner(e)) => self.update_mint_owner(id, e).await,
                 Some(SolanaNftsEvent::ImportedExternalCollection(e)) => {
                     self.index_collection(id, project_id, user_id, e).await
@@ -753,12 +750,7 @@ impl Processor {
         Ok(())
     }
 
-    async fn mint_updated(
-        &self,
-        id: String,
-        project_id: String,
-        payload: UpdateResult,
-    ) -> Result<()> {
+    async fn mint_updated(&self, id: String, payload: UpdateResult) -> Result<()> {
         let update_history = UpdateHistories::find_by_id(id.parse()?)
             .one(self.db.get())
             .await?
@@ -771,21 +763,6 @@ impl Processor {
 
             self.credits
                 .confirm_deduction(TransactionId(update_history.credit_deduction_id))
-                .await?;
-
-            self.producer
-                .send(
-                    Some(&NftEvents {
-                        event: Some(NftEvent::SolanaMintUpdated(SolanaUpdatedMintPayload {
-                            mint_id: update_history.mint_id.to_string(),
-                        })),
-                    }),
-                    Some(&NftEventKey {
-                        id: update_history.id.to_string(),
-                        project_id,
-                        user_id: update_history.created_by.to_string(),
-                    }),
-                )
                 .await?;
         } else {
             update_history_am.status = Set(CreationStatus::Failed);
