@@ -781,7 +781,7 @@ impl Processor {
                         })),
                     }),
                     Some(&NftEventKey {
-                        id,
+                        id: update_history.id.to_string(),
                         project_id,
                         user_id: update_history.created_by.to_string(),
                     }),
