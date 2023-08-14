@@ -153,7 +153,7 @@ impl DataLoader<Uuid> for CollectionMintMintHistoryLoader {
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let mint_histories = mint_histories::Entity::find()
-            .filter(mint_histories::Column::Id.is_in(keys.iter().map(ToOwned::to_owned)))
+            .filter(mint_histories::Column::MintId.is_in(keys.iter().map(ToOwned::to_owned)))
             .all(self.db.get())
             .await?;
 
