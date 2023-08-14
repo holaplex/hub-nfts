@@ -22,11 +22,11 @@ use async_graphql::{
 };
 use blockchains::{polygon::Polygon, solana::Solana};
 use dataloaders::{
-    CollectionDropLoader, CollectionLoader, CollectionMintHistoryLoader, CollectionMintLoader,
-    CollectionMintsLoader, CollectionMintsOwnerLoader, CreatorsLoader, DropLoader,
-    DropMintHistoryLoader, HoldersLoader, MetadataJsonAttributesLoader, MetadataJsonLoader,
-    MinterMintHistoryLoader, ProjectCollectionLoader, ProjectCollectionsLoader, ProjectDropsLoader,
-    UpdateMintHistoryLoader,
+    CollectionDropLoader, CollectionLoader, CollectionMintHistoriesLoader, CollectionMintLoader,
+    CollectionMintMintHistoryLoader, CollectionMintTransfersLoader, CollectionMintsLoader,
+    CollectionMintsOwnerLoader, CreatorsLoader, DropLoader, DropMintHistoryLoader, HoldersLoader,
+    MetadataJsonAttributesLoader, MetadataJsonLoader, MintCreatorsLoader, MinterMintHistoryLoader,
+    ProjectCollectionLoader, ProjectCollectionsLoader, ProjectDropsLoader, UpdateMintHistoryLoader,
 };
 use db::Connection;
 use hub_core::{
@@ -279,10 +279,13 @@ pub struct AppContext {
     drop_loader: DataLoader<DropLoader>,
     creators_loader: DataLoader<CreatorsLoader>,
     holders_loader: DataLoader<HoldersLoader>,
-    collection_mint_history_loader: DataLoader<CollectionMintHistoryLoader>,
+    collection_mint_history_loader: DataLoader<CollectionMintHistoriesLoader>,
     drop_mint_history_loader: DataLoader<DropMintHistoryLoader>,
     minter_mint_history_loader: DataLoader<MinterMintHistoryLoader>,
     update_mint_history_loader: DataLoader<UpdateMintHistoryLoader>,
+    mint_creators_loader: DataLoader<MintCreatorsLoader>,
+    collection_mint_mint_history_loader: DataLoader<CollectionMintMintHistoryLoader>,
+    collection_mint_transfers_loader: DataLoader<CollectionMintTransfersLoader>,
 }
 
 impl AppContext {
@@ -313,8 +316,8 @@ impl AppContext {
         let drop_loader = DataLoader::new(DropLoader::new(db.clone()), tokio::spawn);
         let creators_loader = DataLoader::new(CreatorsLoader::new(db.clone()), tokio::spawn);
         let holders_loader = DataLoader::new(HoldersLoader::new(db.clone()), tokio::spawn);
-        let collection_mint_history_loader =
-            DataLoader::new(CollectionMintHistoryLoader::new(db.clone()), tokio::spawn);
+        let collection_mint_history_loader: DataLoader<CollectionMintHistoriesLoader> =
+            DataLoader::new(CollectionMintHistoriesLoader::new(db.clone()), tokio::spawn);
         let drop_mint_history_loader =
             DataLoader::new(DropMintHistoryLoader::new(db.clone()), tokio::spawn);
         let single_collection_mint_loader =
@@ -323,6 +326,15 @@ impl AppContext {
             DataLoader::new(MinterMintHistoryLoader::new(db.clone()), tokio::spawn);
         let update_mint_history_loader =
             DataLoader::new(UpdateMintHistoryLoader::new(db.clone()), tokio::spawn);
+        let mint_creators_loader =
+            DataLoader::new(MintCreatorsLoader::new(db.clone()), tokio::spawn);
+        let collection_mint_mint_history_loader = DataLoader::new(
+            CollectionMintMintHistoryLoader::new(db.clone()),
+            tokio::spawn,
+        );
+        let collection_mint_transfers_loader =
+            DataLoader::new(CollectionMintTransfersLoader::new(db.clone()), tokio::spawn);
+
         Self {
             db,
             user_id,
@@ -345,6 +357,9 @@ impl AppContext {
             drop_mint_history_loader,
             minter_mint_history_loader,
             update_mint_history_loader,
+            mint_creators_loader,
+            collection_mint_mint_history_loader,
+            collection_mint_transfers_loader,
         }
     }
 }

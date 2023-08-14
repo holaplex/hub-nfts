@@ -7,6 +7,7 @@ use crate::proto;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
 #[sea_orm(table_name = "mint_creators")]
+#[graphql(concrete(name = "MintCreator", params()))]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub collection_mint_id: Uuid,
