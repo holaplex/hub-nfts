@@ -1,9 +1,10 @@
 use hub_core::{
-    chrono::{DateTime, NaiveDateTime, Utc},
+    chrono::{DateTime, NaiveDateTime, Offset, Utc},
     credits::{CreditsClient, TransactionId},
     prelude::*,
     producer::Producer,
-    uuid::Uuid,
+    thiserror,
+    uuid::{self, Uuid},
 };
 use sea_orm::{
     sea_query::{Expr, SimpleExpr},
@@ -37,6 +38,68 @@ use crate::{
     },
     Actions, Services,
 };
+
+#[derive(Debug, thiserror::Error, Triage)]
+pub enum ProcessorErrorKind {
+    #[error("Invalid timestamp in event payload")]
+    InvalidTimestamp,
+    #[error("Invalid blockchain in event payload")]
+    InvalidBlockchain,
+    #[error("Invalid transaction status in event payload")]
+    InvalidTransactionStatus,
+    #[error("No collection metadata found in event payload")]
+    MissingCollectionMetadata,
+    #[error("No credit deduction ID found in event payload")]
+    MissingDeductionId,
+    #[error("No associated collection found in database")]
+    DbMissingCollection,
+    #[error("No associated collection mint found in database")]
+    DbMissingCollectionMint,
+    #[error("No associated drop found in database")]
+    DbMissingDrop,
+    #[error("No associated mint history found in database")]
+    DbMissingMintHistory,
+    #[error("No associated transfer charge found in database")]
+    DbMissingTransferCharge,
+    #[error("No associated update history found in database")]
+    DbMissingUpdateHistory,
+
+    #[error("Database record contains no deduction ID")]
+    RecordMissingDeductionId,
+
+    #[error("Invalid basis point value for seller fee")]
+    #[permanent]
+    InvalidSellerFee(#[source] std::num::TryFromIntError),
+    #[error("Invalid percent value for creator share")]
+    #[permanent]
+    InvalidCreatorShare(#[source] std::num::TryFromIntError),
+    #[error("Invalid UUID")]
+    InvalidUuid(#[from] uuid::Error),
+    #[error("Database error")]
+    DbError(#[from] sea_orm::DbErr),
+    #[error("Error sending message")]
+    SendError(#[from] hub_core::producer::SendError),
+    #[error("Error handling credit deduction")]
+    Credits(#[from] hub_core::credits::DeductionError<Actions>),
+}
+
+#[derive(Debug, thiserror::Error, Triage)]
+#[error("Error handling event")]
+pub struct ProcessorError {
+    #[source]
+    kind: ProcessorErrorKind,
+    // TODO
+}
+
+impl ProcessorError {
+    #[inline]
+    fn new(kind: ProcessorErrorKind) -> Self {
+        Self { kind }
+    }
+}
+
+pub type ProcessResult<T> = std::result::Result<T, ProcessorErrorKind>;
+pub type Result<T> = std::result::Result<T, ProcessorError>;
 
 #[derive(Clone)]
 pub struct Processor {
@@ -196,6 +259,7 @@ impl Processor {
                 None | Some(_) => Ok(()),
             },
         }
+        .map_err(ProcessorError::new)
     }
 
     async fn index_collection(
@@ -204,7 +268,7 @@ impl Processor {
         project_id: String,
         created_by: String,
         payload: SolanaCollectionPayload,
-    ) -> Result<()> {
+    ) -> ProcessResult<()> {
         let SolanaCollectionPayload {
             supply,
             mint_address,
@@ -215,8 +279,6 @@ impl Processor {
             ..
         } = payload;
 
-        let metadata = metadata.context("no collection metadata found")?;
-
         let Metadata {
             name,
             description,
@@ -224,7 +286,7 @@ impl Processor {
             attributes,
             uri,
             image,
-        } = metadata;
+        } = metadata.ok_or(ProcessorErrorKind::MissingCollectionMetadata)?;
 
         let collection_am = collections::ActiveModel {
             id: Set(id.parse()?),
@@ -236,7 +298,9 @@ impl Processor {
             total_mints: Set(0),
             address: Set(Some(mint_address)),
             signature: Set(None),
-            seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
+            seller_fee_basis_points: Set(seller_fee_basis_points
+                .try_into()
+                .map_err(ProcessorErrorKind::InvalidSellerFee)?),
             created_by: Set(created_by.parse()?),
             created_at: Set(Utc::now().into()),
         };
@@ -261,7 +325,10 @@ impl Processor {
                 collection_id: Set(id.parse()?),
                 address: Set(creator.address),
                 verified: Set(creator.verified),
-                share: Set(creator.share.try_into()?),
+                share: Set(creator
+                    .share
+                    .try_into()
+                    .map_err(ProcessorErrorKind::InvalidCreatorShare)?),
             };
             collection_creator.insert(self.db.get()).await?;
         }
@@ -276,7 +343,7 @@ impl Processor {
         id: String,
         created_by: String,
         payload: SolanaMintPayload,
-    ) -> Result<()> {
+    ) -> ProcessResult<()> {
         let SolanaMintPayload {
             collection_id,
             mint_address,
@@ -289,8 +356,6 @@ impl Processor {
             ..
         } = payload;
 
-        let metadata = metadata.context("no collection metadata found")?;
-
         let Metadata {
             name,
             description,
@@ -298,7 +363,7 @@ impl Processor {
             attributes,
             uri,
             image,
-        } = metadata;
+        } = metadata.ok_or(ProcessorErrorKind::MissingCollectionMetadata)?;
 
         let mint_am = collection_mints::ActiveModel {
             id: Set(id.parse()?),
@@ -310,7 +375,9 @@ impl Processor {
             created_at: Set(Utc::now().into()),
             signature: Set(None),
             edition: Set(-1),
-            seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
+            seller_fee_basis_points: Set(seller_fee_basis_points
+                .try_into()
+                .map_err(ProcessorErrorKind::InvalidSellerFee)?),
             credits_deduction_id: Set(None),
             compressed: Set(compressed),
         };
@@ -336,7 +403,10 @@ impl Processor {
                 collection_mint_id: Set(mint_model.id),
                 address: Set(creator.address),
                 verified: Set(creator.verified),
-                share: Set(creator.share.try_into()?),
+                share: Set(creator
+                    .share
+                    .try_into()
+                    .map_err(ProcessorErrorKind::InvalidCreatorShare)?),
             };
             mint_creator_am.insert(self.db.get()).await?;
         }
@@ -358,15 +428,18 @@ impl Processor {
         Ok(())
     }
 
-    async fn update_mint_owner(&self, id: String, payload: MintOwnershipUpdate) -> Result<()> {
+    async fn update_mint_owner(
+        &self,
+        id: String,
+        payload: MintOwnershipUpdate,
+    ) -> ProcessResult<()> {
         let id = Uuid::from_str(&id)?;
         let db = self.db.get();
 
         let mint = CollectionMints::find_by_id(id)
             .one(db)
-            .await
-            .context("failed to load mint from db")?
-            .context("mint not found in db")?;
+            .await?
+            .ok_or(ProcessorErrorKind::DbMissingCollectionMint)?;
 
         let mut mint_am: collection_mints::ActiveModel = mint.into();
         mint_am.owner = Set(payload.recipient.clone());
@@ -385,7 +458,10 @@ impl Processor {
         nft_transfer.insert(db).await?;
         Ok(())
     }
-    async fn update_polygon_mints_owner(&self, payload: MintedTokensOwnershipUpdate) -> Result<()> {
+    async fn update_polygon_mints_owner(
+        &self,
+        payload: MintedTokensOwnershipUpdate,
+    ) -> ProcessResult<()> {
         let MintedTokensOwnershipUpdate {
             mint_ids,
             new_owner,
@@ -393,21 +469,22 @@ impl Processor {
             transaction_hash,
         } = payload;
 
-        let ts = timestamp.context("No timestamp found")?;
-        let created_at = DateTime::<Utc>::from_utc(
-            NaiveDateTime::from_timestamp_opt(ts.seconds, ts.nanos.try_into()?)
-                .context("failed to parse to NaiveDateTime")?,
-            Utc,
-        )
-        .into();
+        let created_at = timestamp
+            .and_then(|t| {
+                Some(DateTime::from_utc(
+                    NaiveDateTime::from_timestamp_opt(t.seconds, t.nanos.try_into().ok()?)?,
+                    Utc.fix(),
+                ))
+            })
+            .ok_or(ProcessorErrorKind::InvalidTimestamp)?;
 
         let db = self.db.get();
         let txn = db.begin().await?;
 
         let mint_ids = mint_ids
             .into_iter()
-            .map(|s| Uuid::from_str(&s))
-            .collect::<Result<Vec<Uuid>, _>>()?;
+            .map(|s| s.parse().map_err(Into::into))
+            .collect::<ProcessResult<Vec<Uuid>>>()?;
 
         let mints = CollectionMints::find()
             .filter(collection_mints::Column::Id.is_in(mint_ids))
@@ -436,13 +513,11 @@ impl Processor {
         Ok(())
     }
 
-    async fn project_wallet_created(&self, payload: ProjectWallet) -> Result<()> {
+    async fn project_wallet_created(&self, payload: ProjectWallet) -> ProcessResult<()> {
         let conn = self.db.get();
         let project_id = Uuid::from_str(&payload.project_id)?;
 
-        let blockchain = ProtoBlockchainEnum::from_i32(payload.blockchain)
-            .context("failed to get blockchain enum variant")?;
-
+        let blockchain = payload.blockchain();
         let active_model = project_wallets::ActiveModel {
             project_id: Set(project_id),
             wallet_address: Set(payload.wallet_address),
@@ -450,20 +525,15 @@ impl Processor {
             ..Default::default()
         };
 
-        active_model
-            .insert(conn)
-            .await
-            .context("failed to insert project wallet")?;
+        active_model.insert(conn).await?;
 
         Ok(())
     }
 
-    async fn customer_wallet_created(&self, payload: CustomerWallet) -> Result<()> {
+    async fn customer_wallet_created(&self, payload: CustomerWallet) -> ProcessResult<()> {
         let conn = self.db.get();
 
-        let blockchain = ProtoBlockchainEnum::from_i32(payload.blockchain)
-            .context("failed to get blockchain enum variant")?;
-
+        let blockchain = payload.blockchain();
         let active_model = customer_wallets::ActiveModel {
             customer_id: Set(payload.customer_id.parse()?),
             address: Set(payload.wallet_address),
@@ -471,15 +541,12 @@ impl Processor {
             ..Default::default()
         };
 
-        active_model
-            .insert(conn)
-            .await
-            .context("failed to insert customer wallet")?;
+        active_model.insert(conn).await?;
 
         Ok(())
     }
 
-    async fn drop_created(&self, id: String, payload: MintResult) -> Result<()> {
+    async fn drop_created(&self, id: String, payload: MintResult) -> ProcessResult<()> {
         let conn = self.db.get();
         let collection_id = Uuid::from_str(&id)?;
 
@@ -487,10 +554,9 @@ impl Processor {
             .join(JoinType::InnerJoin, collections::Relation::Drop.def())
             .select_also(drops::Entity)
             .one(conn)
-            .await
-            .context("failed to load collection from db")?
-            .context("collection not found in db")?;
-        let drop_model = drop.context("failed to get drop from db")?;
+            .await?
+            .ok_or(ProcessorErrorKind::DbMissingCollection)?;
+        let drop_model = drop.ok_or(ProcessorErrorKind::DbMissingDrop)?;
 
         let mut drops_active_model: drops::ActiveModel = drop_model.clone().into();
         let mut collection_active_model: collections::ActiveModel = collection_model.into();
@@ -504,7 +570,7 @@ impl Processor {
 
             let deduction_id = drop_model
                 .credits_deduction_id
-                .context("drop has no deduction id")?;
+                .ok_or(ProcessorErrorKind::RecordMissingDeductionId)?;
             self.credits
                 .confirm_deduction(TransactionId(deduction_id))
                 .await?;
@@ -535,15 +601,14 @@ impl Processor {
         Ok(())
     }
 
-    async fn collection_created(&self, id: String, payload: MintResult) -> Result<()> {
+    async fn collection_created(&self, id: String, payload: MintResult) -> ProcessResult<()> {
         let conn = self.db.get();
         let collection_id = Uuid::from_str(&id)?;
 
         let collection_model = collections::Entity::find_by_id(collection_id)
             .one(conn)
-            .await
-            .context("failed to load collection from db")?
-            .context("collection not found in db")?;
+            .await?
+            .ok_or(ProcessorErrorKind::DbMissingCollection)?;
 
         let mut collection_active_model: collections::ActiveModel = collection_model.clone().into();
         let mut creation_status = NftCreationStatus::Completed;
@@ -555,7 +620,7 @@ impl Processor {
 
             let deduction_id = collection_model
                 .credits_deduction_id
-                .context("drop has no deduction id")?;
+                .ok_or(ProcessorErrorKind::RecordMissingDeductionId)?;
             self.credits
                 .confirm_deduction(TransactionId(deduction_id))
                 .await?;
@@ -584,7 +649,7 @@ impl Processor {
         Ok(())
     }
 
-    async fn drop_minted(&self, id: String, payload: MintResult) -> Result<()> {
+    async fn drop_minted(&self, id: String, payload: MintResult) -> ProcessResult<()> {
         let conn = self.db.get();
         let collection_mint_id = Uuid::from_str(&id)?;
 
@@ -592,25 +657,22 @@ impl Processor {
             collection_mints::Entity::find_by_id(collection_mint_id)
                 .find_also_related(collections::Entity)
                 .one(conn)
-                .await
-                .context("failed to load collection mint from db")?
-                .context("collection mint not found in db")?;
+                .await?
+                .ok_or(ProcessorErrorKind::DbMissingCollectionMint)?;
 
         let mint_history = MintHistory::find()
             .filter(mint_histories::Column::MintId.eq(collection_mint_id))
             .one(conn)
-            .await
-            .context("failed to load mint_history from db")?
-            .context("mint_history not found in db")?;
+            .await?
+            .ok_or(ProcessorErrorKind::DbMissingMintHistory)?;
 
-        let collection = collection.context("collection not found")?;
+        let collection = collection.ok_or(ProcessorErrorKind::DbMissingCollection)?;
 
         let drop = Drops::find()
             .filter(drops::Column::CollectionId.eq(collection.id))
             .one(conn)
-            .await
-            .context("failed to load drop from db")?
-            .context("drop not found in db")?;
+            .await?
+            .ok_or(ProcessorErrorKind::DbMissingDrop)?;
 
         let mut collection_mint_active_model: collection_mints::ActiveModel =
             collection_mint.clone().into();
@@ -626,7 +688,7 @@ impl Processor {
 
             let deduction_id = collection_mint
                 .credits_deduction_id
-                .context("deduction id not found")?;
+                .ok_or(ProcessorErrorKind::RecordMissingDeductionId)?;
 
             self.credits
                 .confirm_deduction(TransactionId(deduction_id))
@@ -659,25 +721,23 @@ impl Processor {
         Ok(())
     }
 
-    async fn minted_to_collection(&self, id: String, payload: MintResult) -> Result<()> {
+    async fn minted_to_collection(&self, id: String, payload: MintResult) -> ProcessResult<()> {
         let conn = self.db.get();
         let collection_mint_id = Uuid::from_str(&id)?;
 
         let (collection_mint, collection) =
             collection_mints::Entity::find_by_id_with_collection(collection_mint_id)
                 .one(conn)
-                .await
-                .context("failed to load collection mint from db")?
-                .context("collection mint not found in db")?;
+                .await?
+                .ok_or(ProcessorErrorKind::DbMissingCollectionMint)?;
 
         let mint_history = MintHistory::find()
             .filter(mint_histories::Column::MintId.eq(collection_mint_id))
             .one(conn)
-            .await
-            .context("failed to load mint_history from db")?
-            .context("mint_history not found in db")?;
+            .await?
+            .ok_or(ProcessorErrorKind::DbMissingMintHistory)?;
 
-        let collection = collection.context("collection not found")?;
+        let collection = collection.ok_or(ProcessorErrorKind::DbMissingCollection)?;
 
         let mut collection_mint_active_model: collection_mints::ActiveModel =
             collection_mint.clone().into();
@@ -693,7 +753,7 @@ impl Processor {
 
             let deduction_id = collection_mint
                 .credits_deduction_id
-                .context("deduction id not found")?;
+                .ok_or(ProcessorErrorKind::RecordMissingDeductionId)?;
 
             self.credits
                 .confirm_deduction(TransactionId(deduction_id))
@@ -726,7 +786,7 @@ impl Processor {
         Ok(())
     }
 
-    async fn mint_transferred(&self, id: String, payload: TransferResult) -> Result<()> {
+    async fn mint_transferred(&self, id: String, payload: TransferResult) -> ProcessResult<()> {
         let conn = self.db.get();
         let transfer_id = Uuid::from_str(&id)?;
 
@@ -734,12 +794,12 @@ impl Processor {
             .filter(transfer_charges::Column::Id.eq(transfer_id))
             .one(conn)
             .await?
-            .context("failed to load transfer charge from db")?;
+            .ok_or(ProcessorErrorKind::DbMissingTransferCharge)?;
 
         if let TransferResult::Success(_) = payload {
             let deduction_id = transfer_charge
                 .credits_deduction_id
-                .context("deduction id not found")?;
+                .ok_or(ProcessorErrorKind::RecordMissingDeductionId)?;
 
             self.credits
                 .confirm_deduction(TransactionId(deduction_id))
@@ -749,11 +809,11 @@ impl Processor {
         Ok(())
     }
 
-    async fn mint_updated(&self, id: String, payload: UpdateResult) -> Result<()> {
+    async fn mint_updated(&self, id: String, payload: UpdateResult) -> ProcessResult<()> {
         let update_history = UpdateHistories::find_by_id(id.parse()?)
             .one(self.db.get())
             .await?
-            .context("Update history record not found")?;
+            .ok_or(ProcessorErrorKind::DbMissingUpdateHistory)?;
         let mut update_history_am: update_histories::ActiveModel = update_history.clone().into();
 
         if let UpdateResult::Success(signature) = payload {
@@ -774,11 +834,11 @@ impl Processor {
 }
 
 impl TryFrom<ProtoBlockchainEnum> for Blockchain {
-    type Error = Error;
+    type Error = ProcessorErrorKind;
 
-    fn try_from(v: ProtoBlockchainEnum) -> Result<Self> {
+    fn try_from(v: ProtoBlockchainEnum) -> ProcessResult<Self> {
         match v {
-            ProtoBlockchainEnum::Unspecified => Err(anyhow!("Invalid enum variant")),
+            ProtoBlockchainEnum::Unspecified => Err(ProcessorErrorKind::InvalidBlockchain),
             ProtoBlockchainEnum::Solana => Ok(Self::Solana),
             ProtoBlockchainEnum::Polygon => Ok(Self::Polygon),
             ProtoBlockchainEnum::Ethereum => Ok(Self::Ethereum),
@@ -787,11 +847,11 @@ impl TryFrom<ProtoBlockchainEnum> for Blockchain {
 }
 
 impl TryFrom<TransactionStatus> for CreationStatus {
-    type Error = Error;
+    type Error = ProcessorErrorKind;
 
-    fn try_from(i: TransactionStatus) -> Result<Self> {
+    fn try_from(i: TransactionStatus) -> ProcessResult<Self> {
         match i {
-            TransactionStatus::Unspecified => Err(anyhow!("Invalid enum variant")),
+            TransactionStatus::Unspecified => Err(ProcessorErrorKind::InvalidTransactionStatus),
             TransactionStatus::Blocked => Ok(Self::Blocked),
             TransactionStatus::Failed => Ok(Self::Failed),
             TransactionStatus::Completed => Ok(Self::Created),
@@ -836,7 +896,7 @@ async fn index_attributes(
     db: &Connection,
     json_id: Uuid,
     attributes: Vec<Attribute>,
-) -> Result<()> {
+) -> ProcessResult<()> {
     for attr in attributes {
         let attribute = metadata_json_attributes::ActiveModel {
             metadata_json_id: Set(json_id),
@@ -851,7 +911,7 @@ async fn index_attributes(
     Ok(())
 }
 
-async fn index_files(db: &Connection, json_id: Uuid, files: Vec<File>) -> Result<()> {
+async fn index_files(db: &Connection, json_id: Uuid, files: Vec<File>) -> ProcessResult<()> {
     for file in files {
         let file_am = metadata_json_files::ActiveModel {
             metadata_json_id: Set(json_id),
