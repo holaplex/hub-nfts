@@ -37,7 +37,7 @@ impl DataLoader<Uuid> for UpdateMintHistoryLoader {
                 acc.entry(history.mint_id).or_insert_with(Vec::new);
 
                 acc.entry(history.mint_id)
-                    .and_modify(|update_histories| update_histories.push(history.into()));
+                    .and_modify(|update_histories| update_histories.push(history));
 
                 acc
             }))
