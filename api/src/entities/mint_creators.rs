@@ -17,6 +17,10 @@ pub struct Model {
     pub share: i32,
 }
 
+impl ActiveModelBehavior for ActiveModel {
+    hub_core::before_save_evm_addrs!(address);
+}
+
 impl From<Model> for proto::Creator {
     fn from(
         Model {
@@ -51,8 +55,6 @@ impl Related<super::collection_mints::Entity> for Entity {
         Relation::CollectionMints.def()
     }
 }
-
-impl ActiveModelBehavior for ActiveModel {}
 
 impl Entity {
     pub fn find_by_collection_mint_id(collection_mint_id: Uuid) -> Select<Self> {

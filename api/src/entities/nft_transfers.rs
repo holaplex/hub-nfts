@@ -23,6 +23,10 @@ pub struct Model {
     pub created_at: DateTimeWithTimeZone,
 }
 
+impl ActiveModelBehavior for ActiveModel {
+    hub_core::before_save_evm_addrs!(sender, recipient);
+}
+
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
@@ -40,5 +44,3 @@ impl Related<super::collection_mints::Entity> for Entity {
         Relation::CollectionMints.def()
     }
 }
-
-impl ActiveModelBehavior for ActiveModel {}

@@ -25,6 +25,10 @@ pub struct Model {
     pub created_at: DateTimeWithTimeZone,
 }
 
+impl ActiveModelBehavior for ActiveModel {
+    hub_core::before_save_evm_addrs!(address?);
+}
+
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::collection_creators::Entity")]
@@ -60,5 +64,3 @@ impl Related<super::mint_histories::Entity> for Entity {
         Relation::MintHistories.def()
     }
 }
-
-impl ActiveModelBehavior for ActiveModel {}

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use async_graphql::{dataloader::Loader as DataLoader, FieldError, Result};
 use poem::async_trait;
@@ -116,7 +116,10 @@ impl DataLoader<String> for MinterLoader {
 
     async fn load(&self, keys: &[String]) -> Result<HashMap<String, Self::Value>, Self::Error> {
         let mint_histories = mint_histories::Entity::find()
-            .filter(mint_histories::Column::Wallet.is_in(keys.iter().map(ToOwned::to_owned)))
+            .filter(
+                mint_histories::Column::Wallet
+                    .is_in(hub_core::util::downcase_evm_addresses(keys).map(Cow::into_owned)),
+            )
             .all(self.db.get())
             .await?;
 

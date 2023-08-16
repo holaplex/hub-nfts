@@ -226,7 +226,9 @@ impl Related<super::update_histories::Entity> for Entity {
     }
 }
 
-impl ActiveModelBehavior for ActiveModel {}
+impl ActiveModelBehavior for ActiveModel {
+    hub_core::before_save_evm_addrs!(owner, address?);
+}
 
 impl Entity {
     pub fn find_by_id_with_collection(id: Uuid) -> SelectTwo<Self, collections::Entity> {
