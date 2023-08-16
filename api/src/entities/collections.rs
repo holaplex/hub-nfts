@@ -26,7 +26,7 @@ pub struct Model {
 }
 
 impl ActiveModelBehavior for ActiveModel {
-    hub_core::before_save_evm_addrs!(address?);
+    hub_core::before_save_evm_addrs!(address);
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

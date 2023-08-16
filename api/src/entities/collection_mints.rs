@@ -227,7 +227,7 @@ impl Related<super::update_histories::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {
-    hub_core::before_save_evm_addrs!(owner, address?);
+    hub_core::before_save_evm_addrs!(owner, address);
 }
 
 impl Entity {
