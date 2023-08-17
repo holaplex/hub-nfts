@@ -538,6 +538,10 @@ impl Mutation {
             return Err(Error::new("Mint not created"));
         }
 
+        if mint.edition > 0 {
+            return Err(Error::new("Mint is an edition and cannot be updated"));
+        }
+
         let collection = collection.ok_or(Error::new("Collection not found"))?;
         let blockchain = collection.blockchain;
 
