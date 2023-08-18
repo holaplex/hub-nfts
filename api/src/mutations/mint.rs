@@ -542,6 +542,10 @@ impl Mutation {
             return Err(Error::new("Mint is an edition and cannot be updated"));
         }
 
+        if mint.compressed {
+            return Err(Error::new("Mint is compressed and cannot be updated"));
+        }
+
         let collection = collection.ok_or(Error::new("Collection not found"))?;
         let blockchain = collection.blockchain;
 
