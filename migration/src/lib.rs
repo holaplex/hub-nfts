@@ -51,6 +51,7 @@ mod m20230718_111347_add_created_at_and_created_by_columns_to_collections;
 mod m20230725_135946_rename_purchases_to_mint_histories;
 mod m20230725_144506_drop_solana_collections_table;
 mod m20230807_090847_create_histories_table;
+mod m20230818_163948_downcase_polygon_addresses;
 
 pub struct Migrator;
 
@@ -109,6 +110,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20230725_135946_rename_purchases_to_mint_histories::Migration),
             Box::new(m20230725_144506_drop_solana_collections_table::Migration),
             Box::new(m20230807_090847_create_histories_table::Migration),
+            Box::new(m20230818_163948_downcase_polygon_addresses::Migration),
         ]
     }
 }
