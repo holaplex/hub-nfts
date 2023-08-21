@@ -552,8 +552,6 @@ impl Mutation {
         validate_creators(blockchain, &creators)?;
         validate_json(blockchain, &input.metadata_json)?;
 
-        let seller_fee_basis_points = input.seller_fee_basis_points.unwrap_or_default();
-
         let owner_address = fetch_owner(conn, collection.project_id, collection.blockchain).await?;
 
         if collection.blockchain == BlockchainEnum::Solana {
@@ -583,6 +581,25 @@ impl Mutation {
             )
             .await?;
 
+        let mut mint_am: collection_mints::ActiveModel = mint.clone().into();
+
+        let metadata_json = MetadataJson::new(input.metadata_json)
+            .upload(nft_storage)
+            .await?
+            .save(mint.id, db)
+            .await?;
+
+        let update_history_am = update_histories::ActiveModel {
+            mint_id: Set(mint.id),
+            txn_signature: Set(None),
+            credit_deduction_id: Set(deduction_id.0),
+            created_by: Set(user_id),
+            status: Set(CreationStatus::Pending),
+            ..Default::default()
+        };
+
+        let update_history = update_history_am.insert(db.get()).await?;
+        let sfbp = mint.seller_fee_basis_points.try_into()?;
         conn.transaction::<_, (), DbErr>(|txn| {
             Box::pin(async move {
                 mint_creators::Entity::delete_many()
@@ -602,27 +619,15 @@ impl Mutation {
 
                 metadata_json_model.delete(txn).await?;
 
+                if let Some(sfbp) = input.seller_fee_basis_points {
+                    mint_am.seller_fee_basis_points = Set(sfbp.try_into().unwrap_or_default());
+                    mint_am.update(txn).await?;
+                }
+
                 Ok(())
             })
         })
         .await?;
-
-        let metadata_json = MetadataJson::new(input.metadata_json)
-            .upload(nft_storage)
-            .await?
-            .save(mint.id, db)
-            .await?;
-
-        let update_history_am = update_histories::ActiveModel {
-            mint_id: Set(mint.id),
-            txn_signature: Set(None),
-            credit_deduction_id: Set(deduction_id.0),
-            created_by: Set(user_id),
-            status: Set(CreationStatus::Pending),
-            ..Default::default()
-        };
-
-        let update_history = update_history_am.insert(db.get()).await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
@@ -640,14 +645,17 @@ impl Mutation {
                                 name: metadata_json.name,
                                 symbol: metadata_json.symbol,
                                 metadata_uri: metadata_json.uri,
-                                seller_fee_basis_points: seller_fee_basis_points.into(),
+                                seller_fee_basis_points: input
+                                    .seller_fee_basis_points
+                                    .unwrap_or(sfbp)
+                                    .try_into()?,
                                 creators: creators
                                     .into_iter()
                                     .map(TryFrom::try_from)
                                     .collect::<Result<_>>()?,
                             }),
                             collection_id: collection.id.to_string(),
-                            mint_id: mint.id.to_string(),
+                            mint_id: update_history.mint_id.to_string(),
                         },
                     )
                     .await?;
