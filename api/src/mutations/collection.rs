@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{
+    chrono::Utc,
     credits::{CreditsClient, TransactionId},
     producer::Producer,
 };
@@ -17,7 +18,8 @@ use crate::{
         collection_creators, collection_mints, collections, metadata_jsons,
         prelude::{CollectionCreators, CollectionMints, Collections, MetadataJsons},
         project_wallets,
-        sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
+        sea_orm_active_enums::{Blockchain, Blockchain as BlockchainEnum, CreationStatus},
+        switch_collection_histories,
     },
     metadata_json::MetadataJson,
     objects::{Collection as CollectionObject, Creator, MetadataJsonInput},
@@ -459,6 +461,93 @@ impl Mutation {
             collection: collection.into(),
         })
     }
+
+    pub async fn switch_collection(
+        &self,
+        ctx: &Context<'_>,
+        input: SwitchCollectionInput,
+    ) -> Result<SwitchCollectionPayload> {
+        let SwitchCollectionInput {
+            mint,
+            collection_address,
+        } = input;
+
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
+        let solana = ctx.data::<Solana>()?;
+
+        let user_id = user_id.0.ok_or(Error::new("X-USER-ID header not found"))?;
+        let org_id = organization_id
+            .0
+            .ok_or(Error::new("X-ORG-ID header not found"))?;
+        let balance = balance.0.ok_or(Error::new("X-BALANCE header not found"))?;
+        let (mint, collection) = CollectionMints::find_by_id_with_collection(mint)
+            .one(db.get())
+            .await?
+            .ok_or(Error::new("Mint not found"))?;
+
+        let collection = collection.ok_or(Error::new("Collection not found"))?;
+
+        let new_collection = Collections::find()
+            .filter(collections::Column::Address.eq(collection_address.to_string()))
+            .one(db.get())
+            .await?
+            .ok_or(Error::new("Collection not found"))?;
+
+        let TransactionId(deduction_id) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::UpdateMint,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await?;
+
+        match collection.blockchain {
+            Blockchain::Solana => {
+                validate_solana_address(&collection_address)?;
+                let history_am = switch_collection_histories::ActiveModel {
+                    collection_mint_id: Set(mint.id),
+                    collection_id: Set(new_collection.id),
+                    credit_deduction_id: Set(deduction_id),
+                    signature: Set(None),
+                    status: Set(CreationStatus::Pending),
+                    initiated_by: Set(user_id),
+                    created_at: Set(Utc::now().naive_utc()),
+                    ..Default::default()
+                };
+
+                let history = history_am.insert(db.get()).await?;
+
+                solana
+                    .event()
+                    .switch_collection(
+                        NftEventKey {
+                            id: history.id.to_string(),
+                            project_id: collection.project_id.to_string(),
+                            user_id: user_id.to_string(),
+                        },
+                        crate::proto::SwitchCollectionPayload {
+                            mint_id: mint.id.to_string(),
+                            collection_id: new_collection.id.to_string(),
+                        },
+                    )
+                    .await?;
+
+                Ok(SwitchCollectionPayload {
+                    collection_mint: mint.into(),
+                })
+            },
+            _ => Err(Error::new("Blockchain not supported")),
+        }
+    }
 }
 
 pub async fn fetch_owner(
@@ -687,4 +776,15 @@ pub struct ImportCollectionInput {
 pub struct ImportCollectionPayload {
     /// The status of the collection import.
     status: CreationStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
+pub struct SwitchCollectionInput {
+    mint: Uuid,
+    collection_address: String,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct SwitchCollectionPayload {
+    collection_mint: collection_mints::CollectionMint,
 }
