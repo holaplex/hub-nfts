@@ -500,6 +500,10 @@ impl Mutation {
             .await?
             .ok_or(Error::new("Collection not found"))?;
 
+        if collection.id == new_collection.id {
+            return Err(Error::new("Collection already switched"));
+        }
+
         let TransactionId(deduction_id) = credits
             .submit_pending_deduction(
                 org_id,
