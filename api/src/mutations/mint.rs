@@ -583,12 +583,6 @@ impl Mutation {
 
         let mut mint_am: collection_mints::ActiveModel = mint.clone().into();
 
-        let metadata_json = MetadataJson::new(input.metadata_json)
-            .upload(nft_storage)
-            .await?
-            .save(mint.id, db)
-            .await?;
-
         let update_history_am = update_histories::ActiveModel {
             mint_id: Set(mint.id),
             txn_signature: Set(None),
@@ -611,14 +605,6 @@ impl Mutation {
                     .exec(txn)
                     .await?;
 
-                let metadata_json_model = metadata_jsons::Entity::find()
-                    .filter(metadata_jsons::Column::Id.eq(mint.id))
-                    .one(txn)
-                    .await?
-                    .ok_or(DbErr::RecordNotFound("Metadata Json not found".to_string()))?;
-
-                metadata_json_model.delete(txn).await?;
-
                 if let Some(sfbp) = input.seller_fee_basis_points {
                     mint_am.seller_fee_basis_points = Set(sfbp.try_into().unwrap_or_default());
                     mint_am.update(txn).await?;
@@ -628,6 +614,12 @@ impl Mutation {
             })
         })
         .await?;
+
+        let metadata_json = MetadataJson::new(input.metadata_json)
+            .upload(nft_storage)
+            .await?
+            .save(mint.id, db)
+            .await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
