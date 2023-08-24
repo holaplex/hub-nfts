@@ -29,6 +29,10 @@ pub struct Model {
     pub collection_id: Uuid,
 }
 
+impl ActiveModelBehavior for ActiveModel {
+    hub_core::before_save_evm_addrs!(wallet);
+}
+
 #[ComplexObject]
 impl Model {
     /// The minted NFT.
@@ -73,5 +77,3 @@ impl Related<super::collections::Entity> for Entity {
         Relation::Collections.def()
     }
 }
-
-impl ActiveModelBehavior for ActiveModel {}

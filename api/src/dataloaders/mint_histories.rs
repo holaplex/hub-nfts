@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use async_graphql::{dataloader::Loader as DataLoader, FieldError, Result};
 use poem::async_trait;
@@ -10,11 +10,11 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct CollectionMintHistoryLoader {
+pub struct CollectionMintHistoriesLoader {
     pub db: Connection,
 }
 
-impl CollectionMintHistoryLoader {
+impl CollectionMintHistoriesLoader {
     #[must_use]
     pub fn new(db: Connection) -> Self {
         Self { db }
@@ -22,7 +22,7 @@ impl CollectionMintHistoryLoader {
 }
 
 #[async_trait]
-impl DataLoader<Uuid> for CollectionMintHistoryLoader {
+impl DataLoader<Uuid> for CollectionMintHistoriesLoader {
     type Error = FieldError;
     type Value = Vec<mint_histories::Model>;
 
@@ -116,7 +116,10 @@ impl DataLoader<String> for MinterLoader {
 
     async fn load(&self, keys: &[String]) -> Result<HashMap<String, Self::Value>, Self::Error> {
         let mint_histories = mint_histories::Entity::find()
-            .filter(mint_histories::Column::Wallet.is_in(keys.iter().map(ToOwned::to_owned)))
+            .filter(
+                mint_histories::Column::Wallet
+                    .is_in(hub_core::util::downcase_evm_addresses(keys).map(Cow::into_owned)),
+            )
             .all(self.db.get())
             .await?;
 
@@ -131,5 +134,35 @@ impl DataLoader<String> for MinterLoader {
 
                 acc
             }))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CollectionMintMintHistoryLoader {
+    pub db: Connection,
+}
+
+impl CollectionMintMintHistoryLoader {
+    #[must_use]
+    pub fn new(db: Connection) -> Self {
+        Self { db }
+    }
+}
+
+#[async_trait]
+impl DataLoader<Uuid> for CollectionMintMintHistoryLoader {
+    type Error = FieldError;
+    type Value = mint_histories::Model;
+
+    async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
+        let mint_histories = mint_histories::Entity::find()
+            .filter(mint_histories::Column::MintId.is_in(keys.iter().map(ToOwned::to_owned)))
+            .all(self.db.get())
+            .await?;
+
+        Ok(mint_histories
+            .into_iter()
+            .map(|mint_history| (mint_history.mint_id, mint_history))
+            .collect())
     }
 }

@@ -4,8 +4,9 @@ use async_graphql::{ComplexObject, Context, Error, Result, SimpleObject};
 use sea_orm::{entity::prelude::*, JoinType, QuerySelect, SelectTwo};
 
 use super::{
-    collections,
+    collections, mint_creators, mint_histories, nft_transfers,
     sea_orm_active_enums::{Blockchain, CreationStatus},
+    update_histories,
 };
 use crate::{
     objects::{Collection, MetadataJson},
@@ -94,6 +95,51 @@ impl CollectionMint {
             Blockchain::Ethereum => Err(Error::new("Ethereum not supported")),
         }
     }
+
+    /// The update history of the mint.
+    async fn update_histories(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<Vec<update_histories::Model>>> {
+        let AppContext {
+            update_mint_history_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        update_mint_history_loader.load_one(self.id).await
+    }
+    /// The creators of the mint. Includes the creator addresses and their shares.
+    async fn creators(&self, ctx: &Context<'_>) -> Result<Option<Vec<mint_creators::Model>>> {
+        let AppContext {
+            mint_creators_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        mint_creators_loader.load_one(self.id).await
+    }
+
+    /// The record of the original mint.
+    async fn mint_history(&self, ctx: &Context<'_>) -> Result<Option<mint_histories::Model>> {
+        let AppContext {
+            collection_mint_mint_history_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        collection_mint_mint_history_loader.load_one(self.id).await
+    }
+
+    /// The history of transfers for the mint.
+    async fn transfer_histories(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<Vec<nft_transfers::Model>>> {
+        let AppContext {
+            collection_mint_transfers_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        collection_mint_transfers_loader.load_one(self.id).await
+    }
 }
 
 impl From<Model> for CollectionMint {
@@ -146,6 +192,8 @@ pub enum Relation {
     MintHistories,
     #[sea_orm(has_many = "super::nft_transfers::Entity")]
     NftTransfers,
+    #[sea_orm(has_many = "super::update_histories::Entity")]
+    UpdateHistories,
 }
 
 impl Related<super::collections::Entity> for Entity {
@@ -172,7 +220,15 @@ impl Related<super::nft_transfers::Entity> for Entity {
     }
 }
 
-impl ActiveModelBehavior for ActiveModel {}
+impl Related<super::update_histories::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UpdateHistories.def()
+    }
+}
+
+impl ActiveModelBehavior for ActiveModel {
+    hub_core::before_save_evm_addrs!(owner, address);
+}
 
 impl Entity {
     pub fn find_by_id_with_collection(id: Uuid) -> SelectTwo<Self, collections::Entity> {

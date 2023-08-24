@@ -42,7 +42,7 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           driver-opts: image=moby/buildkit:master
-          version: v0.10.4
+          version: v0.11.2
           endpoint: ci
       -
         uses: aws-actions/configure-aws-credentials@v1

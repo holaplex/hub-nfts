@@ -7,5 +7,5 @@ pub use super::{
     metadata_json_files::Entity as MetadataJsonFiles, metadata_jsons::Entity as MetadataJsons,
     mint_creators::Entity as MintCreators, mint_histories::Entity as MintHistory,
     nft_transfers::Entity as NftTransfers, project_wallets::Entity as ProjectWallets,
-    transfer_charges::Entity as TransferCharges,
+    transfer_charges::Entity as TransferCharges, update_histories::Entity as UpdateHistories,
 };

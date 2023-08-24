@@ -7,6 +7,7 @@ use crate::proto;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
 #[sea_orm(table_name = "mint_creators")]
+#[graphql(concrete(name = "MintCreator", params()))]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub collection_mint_id: Uuid,
@@ -14,6 +15,10 @@ pub struct Model {
     pub address: String,
     pub verified: bool,
     pub share: i32,
+}
+
+impl ActiveModelBehavior for ActiveModel {
+    hub_core::before_save_evm_addrs!(address);
 }
 
 impl From<Model> for proto::Creator {
@@ -50,8 +55,6 @@ impl Related<super::collection_mints::Entity> for Entity {
         Relation::CollectionMints.def()
     }
 }
-
-impl ActiveModelBehavior for ActiveModel {}
 
 impl Entity {
     pub fn find_by_collection_mint_id(collection_mint_id: Uuid) -> Select<Self> {

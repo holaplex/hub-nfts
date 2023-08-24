@@ -15,13 +15,19 @@ pub struct Model {
     pub blockchain: Blockchain,
 }
 
+impl ActiveModelBehavior for ActiveModel {
+    hub_core::before_save_evm_addrs!(address);
+}
+
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
 impl Entity {
     pub fn find_by_address(address: String) -> Select<Self> {
-        Self::find().filter(Column::Address.eq(address))
+        if address.starts_with("0x") {
+            Self::find().filter(Column::Address.like(&address))
+        } else {
+            Self::find().filter(Column::Address.eq(address))
+        }
     }
 }

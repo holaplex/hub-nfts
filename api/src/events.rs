@@ -6,6 +6,7 @@ use hub_core::{
     uuid::Uuid,
 };
 use sea_orm::{
+    sea_query::{Expr, SimpleExpr},
     ActiveModelTrait, ColumnTrait, EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait,
     Set, TransactionTrait,
 };
@@ -16,10 +17,10 @@ use crate::{
         collection_creators, collection_mints, collections, customer_wallets, drops,
         metadata_json_attributes, metadata_json_files, metadata_jsons, mint_creators,
         mint_histories, nft_transfers,
-        prelude::{CollectionMints, Collections, Drops, MintHistory},
+        prelude::{CollectionMints, Collections, Drops, MintHistory, UpdateHistories},
         project_wallets,
         sea_orm_active_enums::{Blockchain, CreationStatus},
-        transfer_charges,
+        transfer_charges, update_histories,
     },
     proto::{
         nft_events::Event as NftEvent,
@@ -58,6 +59,12 @@ enum MintResult {
 
 #[derive(Clone)]
 enum TransferResult {
+    Success(String),
+    Failure,
+}
+
+#[derive(Clone)]
+enum UpdateResult {
     Success(String),
     Failure,
 }
@@ -134,6 +141,13 @@ impl Processor {
                     self.minted_to_collection(id, MintResult::Success(payload.into()))
                         .await
                 },
+                Some(
+                    SolanaNftsEvent::UpdateCollectionMintSubmitted(payload)
+                    | SolanaNftsEvent::RetryUpdateMintSubmitted(payload),
+                ) => {
+                    self.mint_updated(id, UpdateResult::Success(payload.signature))
+                        .await
+                },
                 Some(SolanaNftsEvent::TransferAssetSubmitted(
                     SolanaCompletedTransferTransaction { signature },
                 )) => {
@@ -161,6 +175,10 @@ impl Processor {
                 Some(SolanaNftsEvent::RetryMintDropFailed(_)) => {
                     self.drop_minted(id, MintResult::Failure).await
                 },
+                Some(
+                    SolanaNftsEvent::UpdateCollectionMintFailed(_)
+                    | SolanaNftsEvent::RetryUpdateMintFailed(_),
+                ) => self.mint_updated(id, UpdateResult::Failure).await,
                 Some(SolanaNftsEvent::UpdateMintOwner(e)) => self.update_mint_owner(id, e).await,
                 Some(SolanaNftsEvent::ImportedExternalCollection(e)) => {
                     self.index_collection(id, project_id, user_id, e).await
@@ -168,6 +186,7 @@ impl Processor {
                 Some(SolanaNftsEvent::ImportedExternalMint(e)) => {
                     self.index_mint(id, user_id, e).await
                 },
+
                 None | Some(_) => Ok(()),
             },
             Services::Polygon(_, e) => match e.event {
@@ -324,15 +343,18 @@ impl Processor {
         index_attributes(&self.db, json_model.id, attributes).await?;
         index_files(&self.db, json_model.id, files).await?;
 
-        let collection = Collections::find_by_id(collection_id.parse()?)
-            .one(self.db.get())
-            .await
-            .context("failed to load collection from db")?
-            .context("collection not found in db")?;
-        let mut collection_am: collections::ActiveModel = collection.clone().into();
+        let collection_id = Uuid::from_str(&collection_id)?;
 
-        collection_am.total_mints = Set(collection.total_mints + 1);
-        collection_am.update(self.db.get()).await?;
+        collections::Entity::update_many()
+            .col_expr(
+                collections::Column::TotalMints,
+                <Expr as Into<SimpleExpr>>::into(Expr::col(collections::Column::TotalMints))
+                    .add(SimpleExpr::Value(1.into())),
+            )
+            .filter(collections::Column::Id.eq(collection_id))
+            .exec(self.db.get())
+            .await?;
+
         Ok(())
     }
 
@@ -723,6 +745,29 @@ impl Processor {
                 .confirm_deduction(TransactionId(deduction_id))
                 .await?;
         }
+
+        Ok(())
+    }
+
+    async fn mint_updated(&self, id: String, payload: UpdateResult) -> Result<()> {
+        let update_history = UpdateHistories::find_by_id(id.parse()?)
+            .one(self.db.get())
+            .await?
+            .context("Update history record not found")?;
+        let mut update_history_am: update_histories::ActiveModel = update_history.clone().into();
+
+        if let UpdateResult::Success(signature) = payload {
+            update_history_am.txn_signature = Set(Some(signature));
+            update_history_am.status = Set(CreationStatus::Created);
+
+            self.credits
+                .confirm_deduction(TransactionId(update_history.credit_deduction_id))
+                .await?;
+        } else {
+            update_history_am.status = Set(CreationStatus::Failed);
+        }
+
+        update_history_am.update(self.db.get()).await?;
 
         Ok(())
     }

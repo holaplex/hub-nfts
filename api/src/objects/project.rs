@@ -25,6 +25,7 @@ impl Project {
     }
 
     /// Look up a drop associated with the project by its ID.
+    #[graphql(deprecation = "Use `drop` root query field instead")]
     async fn drop(&self, ctx: &Context<'_>, id: Uuid) -> Result<Option<Drop>> {
         let AppContext { drop_loader, .. } = ctx.data::<AppContext>()?;
 
@@ -54,6 +55,8 @@ impl Project {
         project_collections_loader.load_one(self.id).await
     }
 
+    /// Look up a collection associated with the project by its ID.
+    #[graphql(deprecation = "Use `collection` root query field instead")]
     async fn collection(&self, ctx: &Context<'_>, id: Uuid) -> Result<Option<Collection>> {
         let AppContext {
             project_collection_loader,

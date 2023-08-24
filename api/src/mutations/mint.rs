@@ -1,26 +1,30 @@
 use std::ops::Add;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
-use hub_core::{chrono::Utc, credits::CreditsClient, producer::Producer};
-use sea_orm::{prelude::*, JoinType, QuerySelect, Set};
+use hub_core::{
+    chrono::Utc,
+    credits::{CreditsClient, TransactionId},
+    producer::Producer,
+};
+use sea_orm::{prelude::*, JoinType, QuerySelect, Set, TransactionTrait};
 
 use super::collection::{
     fetch_owner, validate_creators, validate_json, validate_solana_creator_verification,
 };
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, CollectionEvent, DropEvent},
-    db::Connection,
     entities::{
-        collection_mints, collections, drops, mint_creators, mint_histories,
-        prelude::{Collections, Drops},
+        collection_mints, collections, drops, metadata_jsons, mint_creators, mint_histories,
+        prelude::{CollectionMints, Collections, Drops},
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
+        update_histories,
     },
     metadata_json::MetadataJson,
     objects::{Creator, MetadataJsonInput},
     proto::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, MetaplexMetadata,
-        MintCollectionCreation, MintCreation, NftEventKey, NftEvents,
+        MintCollectionCreation, MintCreation, NftEventKey, NftEvents, RetryUpdateSolanaMintPayload,
     },
     Actions, AppContext, NftStorageClient, OrganizationId, UserID,
 };
@@ -97,6 +101,16 @@ impl Mutation {
             )))?
             .wallet_address;
 
+        let TransactionId(credits_deduction_id) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::MintEdition,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await?;
+
         // insert a collection mint record into database
         let collection_mint_active_model = collection_mints::ActiveModel {
             collection_id: Set(collection.id),
@@ -105,6 +119,7 @@ impl Mutation {
             seller_fee_basis_points: Set(collection.seller_fee_basis_points),
             created_by: Set(user_id),
             edition: Set(edition),
+            credits_deduction_id: Set(Some(credits_deduction_id)),
             ..Default::default()
         };
 
@@ -164,16 +179,6 @@ impl Mutation {
 
         purchase_am.insert(conn).await?;
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            balance,
-            user_id,
-            org_id,
-            mint: collection_mint_model.id,
-            blockchain: collection.blockchain,
-            action: Actions::MintEdition,
-        })
-        .await?;
-
         nfts_producer
             .send(
                 Some(&NftEvents {
@@ -222,7 +227,7 @@ impl Mutation {
         let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
         let balance = balance
             .0
-            .ok_or(Error::new("X-ORGANIZATION-BALANCE header not found"))?;
+            .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
 
         let (collection_mint_model, drop) = collection_mints::Entity::find()
             .join(
@@ -269,6 +274,16 @@ impl Mutation {
             )))?
             .wallet_address;
 
+        let TransactionId(_) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::RetryMint,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await?;
+
         let event_key = NftEventKey {
             id: collection_mint_model.id.to_string(),
             user_id: user_id.to_string(),
@@ -305,16 +320,6 @@ impl Mutation {
         let mut mint_am: collection_mints::ActiveModel = collection_mint_model.into();
         mint_am.creation_status = Set(CreationStatus::Pending);
         let collection_mint_model = mint_am.update(conn).await?;
-
-        submit_pending_deduction(credits, db, DeductionParams {
-            balance,
-            user_id,
-            org_id,
-            mint: collection_mint_model.id,
-            blockchain: collection.blockchain,
-            action: Actions::RetryMint,
-        })
-        .await?;
 
         Ok(RetryMintEditionPayload {
             collection_mint: collection_mint_model.into(),
@@ -374,6 +379,22 @@ impl Mutation {
             validate_solana_creator_verification(&owner_address, &creators)?;
         }
 
+        let action = if compressed {
+            Actions::MintCompressed
+        } else {
+            Actions::Mint
+        };
+
+        let TransactionId(credits_deduction_id) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                action,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await?;
+
         // insert a collection mint record into database
         let collection_mint_active_model = collection_mints::ActiveModel {
             collection_id: Set(collection.id),
@@ -382,6 +403,7 @@ impl Mutation {
             seller_fee_basis_points: Set(collection.seller_fee_basis_points),
             created_by: Set(user_id),
             compressed: Set(compressed),
+            credits_deduction_id: Set(Some(credits_deduction_id)),
             ..Default::default()
         };
 
@@ -453,20 +475,6 @@ impl Mutation {
 
         mint_history_am.insert(conn).await?;
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            balance,
-            user_id,
-            org_id,
-            mint: collection_mint_model.id,
-            blockchain: collection.blockchain,
-            action: if compressed {
-                Actions::MintCompressed
-            } else {
-                Actions::Mint
-            },
-        })
-        .await?;
-
         nfts_producer
             .send(
                 Some(&NftEvents {
@@ -485,6 +493,236 @@ impl Mutation {
 
         Ok(MintToCollectionPayload {
             collection_mint: collection_mint_model.into(),
+        })
+    }
+
+    /// This mutation updates a mint.
+    /// # Errors
+    /// If the mint cannot be saved to the database or fails to be emitted for submission to the desired blockchain, the mutation will result in an error.
+    pub async fn update_mint(
+        &self,
+        ctx: &Context<'_>,
+        input: UpdateMintInput,
+    ) -> Result<UpdateMintPayload> {
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
+        let conn = db.get();
+        let solana = ctx.data::<Solana>()?;
+        let nft_storage = ctx.data::<NftStorageClient>()?;
+
+        let UserID(id) = user_id;
+        let OrganizationId(org) = organization_id;
+
+        let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
+        let balance = balance
+            .0
+            .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
+        let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
+
+        let creators = input.creators;
+
+        let (mint, collection) = CollectionMints::find()
+            .find_also_related(Collections)
+            .filter(collection_mints::Column::Id.eq(input.id))
+            .one(conn)
+            .await?
+            .ok_or(Error::new("Mint not found"))?;
+
+        if mint.creation_status != CreationStatus::Created {
+            return Err(Error::new("Mint not created"));
+        }
+
+        if mint.edition > 0 {
+            return Err(Error::new("Mint is an edition and cannot be updated"));
+        }
+
+        if mint.compressed {
+            return Err(Error::new("Mint is compressed and cannot be updated"));
+        }
+
+        let collection = collection.ok_or(Error::new("Collection not found"))?;
+        let blockchain = collection.blockchain;
+
+        validate_creators(blockchain, &creators)?;
+        validate_json(blockchain, &input.metadata_json)?;
+
+        let owner_address = fetch_owner(conn, collection.project_id, collection.blockchain).await?;
+
+        if collection.blockchain == BlockchainEnum::Solana {
+            validate_solana_creator_verification(&owner_address, &creators)?;
+        }
+
+        let creators_am = creators
+            .clone()
+            .into_iter()
+            .map(|creator| {
+                Ok(mint_creators::ActiveModel {
+                    collection_mint_id: Set(mint.id),
+                    address: Set(creator.address),
+                    verified: Set(creator.verified.unwrap_or_default()),
+                    share: Set(creator.share.try_into()?),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let deduction_id = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::UpdateMint,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await?;
+
+        let mut mint_am: collection_mints::ActiveModel = mint.clone().into();
+
+        let update_history_am = update_histories::ActiveModel {
+            mint_id: Set(mint.id),
+            txn_signature: Set(None),
+            credit_deduction_id: Set(deduction_id.0),
+            created_by: Set(user_id),
+            status: Set(CreationStatus::Pending),
+            ..Default::default()
+        };
+
+        let update_history = update_history_am.insert(db.get()).await?;
+        let sfbp = mint.seller_fee_basis_points.try_into()?;
+        conn.transaction::<_, (), DbErr>(|txn| {
+            Box::pin(async move {
+                mint_creators::Entity::delete_many()
+                    .filter(mint_creators::Column::CollectionMintId.eq(mint.id))
+                    .exec(txn)
+                    .await?;
+
+                mint_creators::Entity::insert_many(creators_am)
+                    .exec(txn)
+                    .await?;
+
+                if let Some(sfbp) = input.seller_fee_basis_points {
+                    mint_am.seller_fee_basis_points = Set(sfbp.try_into().unwrap_or_default());
+                    mint_am.update(txn).await?;
+                }
+
+                Ok(())
+            })
+        })
+        .await?;
+
+        let metadata_json = MetadataJson::new(input.metadata_json)
+            .upload(nft_storage)
+            .await?
+            .save(mint.id, db)
+            .await?;
+
+        match collection.blockchain {
+            BlockchainEnum::Solana => {
+                solana
+                    .event()
+                    .update_collection_mint(
+                        NftEventKey {
+                            id: update_history.id.to_string(),
+                            project_id: collection.project_id.to_string(),
+                            user_id: user_id.to_string(),
+                        },
+                        proto::UpdateSolanaMintPayload {
+                            metadata: Some(MetaplexMetadata {
+                                owner_address,
+                                name: metadata_json.name,
+                                symbol: metadata_json.symbol,
+                                metadata_uri: metadata_json.uri,
+                                seller_fee_basis_points: input
+                                    .seller_fee_basis_points
+                                    .unwrap_or(sfbp)
+                                    .try_into()?,
+                                creators: creators
+                                    .into_iter()
+                                    .map(TryFrom::try_from)
+                                    .collect::<Result<_>>()?,
+                            }),
+                            collection_id: collection.id.to_string(),
+                            mint_id: update_history.mint_id.to_string(),
+                        },
+                    )
+                    .await?;
+            },
+            BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
+                return Err(Error::new("blockchain not supported as this time"));
+            },
+        };
+
+        Ok(UpdateMintPayload {
+            collection_mint: mint.into(),
+        })
+    }
+
+    /// This mutation retries updating a mint that failed by providing the ID of the `update_history`.
+    /// # Errors
+    /// If the mint cannot be saved to the database or fails to be emitted for submission to the desired blockchain, the mutation will result in an error.
+    pub async fn retry_update_mint(
+        &self,
+        ctx: &Context<'_>,
+        input: RetryUpdateMintInput,
+    ) -> Result<RetryUpdateMintPayload> {
+        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+
+        let conn = db.get();
+        let solana = ctx.data::<Solana>()?;
+
+        let UserID(id) = user_id;
+        let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
+
+        let (update_history, collection) = update_histories::Entity::find_by_id(input.revision_id)
+            .inner_join(CollectionMints)
+            .join(
+                JoinType::InnerJoin,
+                collection_mints::Relation::Collections.def(),
+            )
+            .select_also(Collections)
+            .one(conn)
+            .await?
+            .ok_or(Error::new("Update history not found"))?;
+
+        if update_history.status == CreationStatus::Created {
+            return Err(Error::new("Mint already updated"));
+        }
+
+        let mut update_history_am = update_histories::ActiveModel::from(update_history.clone());
+        update_history_am.status = Set(CreationStatus::Pending);
+        update_history_am.update(db.get()).await?;
+
+        let collection = collection.ok_or(Error::new("Collection not found"))?;
+
+        match collection.blockchain {
+            BlockchainEnum::Solana => {
+                solana
+                    .event()
+                    .retry_update_mint(
+                        NftEventKey {
+                            id: update_history.id.to_string(),
+                            project_id: collection.project_id.to_string(),
+                            user_id: user_id.to_string(),
+                        },
+                        RetryUpdateSolanaMintPayload {
+                            mint_id: update_history.mint_id.to_string(),
+                            collection_id: collection.id.to_string(),
+                        },
+                    )
+                    .await?;
+            },
+            BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
+                return Err(Error::new("blockchain not supported as this time"));
+            },
+        };
+
+        Ok(RetryUpdateMintPayload {
+            status: CreationStatus::Pending,
         })
     }
 
@@ -512,7 +750,7 @@ impl Mutation {
         let org_id = org.ok_or(Error::new("X-ORGANIZATION-ID header not found"))?;
         let balance = balance
             .0
-            .ok_or(Error::new("X-ORGANIZATION-BALANCE header not found"))?;
+            .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
 
         let (collection_mint_model, collection) =
             collection_mints::Entity::find_by_id_with_collection(input.id)
@@ -546,6 +784,16 @@ impl Mutation {
             .all(conn)
             .await?;
 
+        let TransactionId(_) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::RetryMint,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await?;
+
         match collection.blockchain {
             BlockchainEnum::Solana => {
                 solana
@@ -572,71 +820,10 @@ impl Mutation {
             },
         };
 
-        submit_pending_deduction(credits, db, DeductionParams {
-            balance,
-            user_id,
-            org_id,
-            mint: collection_mint_model.id,
-            blockchain: collection.blockchain,
-            action: Actions::RetryMint,
-        })
-        .await?;
-
         Ok(RetryMintEditionPayload {
             collection_mint: collection_mint_model.into(),
         })
     }
-}
-
-struct DeductionParams {
-    balance: u64,
-    user_id: Uuid,
-    org_id: Uuid,
-    mint: Uuid,
-    blockchain: BlockchainEnum,
-    action: Actions,
-}
-async fn submit_pending_deduction(
-    credits: &CreditsClient<Actions>,
-    db: &Connection,
-    params: DeductionParams,
-) -> Result<()> {
-    let DeductionParams {
-        balance,
-        user_id,
-        org_id,
-        mint,
-        blockchain,
-        action,
-    } = params;
-
-    let mint_model = collection_mints::Entity::find_by_id(mint)
-        .one(db.get())
-        .await?
-        .ok_or(Error::new("drop not found"))?;
-
-    if mint_model.credits_deduction_id.is_some() {
-        return Ok(());
-    }
-
-    let id = match blockchain {
-        BlockchainEnum::Solana | BlockchainEnum::Polygon => {
-            credits
-                .submit_pending_deduction(org_id, user_id, action, blockchain.into(), balance)
-                .await?
-        },
-        BlockchainEnum::Ethereum => {
-            return Err(Error::new("blockchain not supported yet"));
-        },
-    };
-
-    let deduction_id = id.ok_or(Error::new("Organization does not have enough credits"))?;
-
-    let mut mint: collection_mints::ActiveModel = mint_model.into();
-    mint.credits_deduction_id = Set(Some(deduction_id.0));
-    mint.update(db.get()).await?;
-
-    Ok(())
 }
 
 fn validate_compress(blockchain: BlockchainEnum, compressed: bool) -> Result<(), Error> {
@@ -736,10 +923,29 @@ pub struct MintToCollectionInput {
     compressed: Option<bool>,
 }
 
+#[derive(Debug, Clone, InputObject)]
+pub struct UpdateMintInput {
+    /// The ID of the mint to be updated
+    id: Uuid,
+    /// The metadata of the mint
+    metadata_json: MetadataJsonInput,
+    /// The optional seller fee basis points
+    seller_fee_basis_points: Option<u16>,
+    /// The creators to be assigned to the NFT.
+    /// For Solana, this can be up to five creators. If the project treasury wallet is set as a creator and verified set to true the creator will be verified on chain.
+    /// For Polygon, this can be only 1 creator.
+    creators: Vec<Creator>,
+}
+
 /// Represents payload data for `mint_to_collection` mutation
 #[derive(Debug, Clone, SimpleObject)]
 pub struct MintToCollectionPayload {
     /// The minted NFT
+    collection_mint: collection_mints::CollectionMint,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct UpdateMintPayload {
     collection_mint: collection_mints::CollectionMint,
 }
 
@@ -755,4 +961,15 @@ pub struct RetryMintToCollectionInput {
 pub struct RetryMintToCollectionPayload {
     /// The retried minted NFT
     collection_mint: collection_mints::CollectionMint,
+}
+
+#[derive(Debug, Clone, InputObject)]
+pub struct RetryUpdateMintInput {
+    /// Update History ID
+    revision_id: Uuid,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct RetryUpdateMintPayload {
+    status: CreationStatus,
 }

@@ -5,12 +5,13 @@ use crate::proto::{
     nft_events::Event::{
         SolanaCreateCollection, SolanaCreateDrop, SolanaMintDrop, SolanaMintToCollection,
         SolanaRetryCreateCollection, SolanaRetryDrop, SolanaRetryMintDrop,
-        SolanaRetryMintToCollection, SolanaTransferAsset, SolanaUpdateCollection, SolanaUpdateDrop,
+        SolanaRetryMintToCollection, SolanaRetryUpdatedCollectionMint, SolanaTransferAsset,
+        SolanaUpdateCollection, SolanaUpdateDrop, SolanaUpdatedCollectionMint,
     },
     MetaplexMasterEditionTransaction, MintMetaplexEditionTransaction,
-    MintMetaplexMetadataTransaction, NftEventKey, NftEvents, TransferMetaplexAssetTransaction,
+    MintMetaplexMetadataTransaction, NftEventKey, NftEvents, RetryUpdateSolanaMintPayload,
+    TransferMetaplexAssetTransaction, UpdateSolanaMintPayload,
 };
-
 #[derive(Clone)]
 pub struct Solana {
     producer: Producer<NftEvents>,
@@ -210,6 +211,33 @@ impl
 
         self.producer.send(Some(&event), Some(&key)).await?;
 
+        Ok(())
+    }
+
+    async fn update_collection_mint(
+        &self,
+        key: NftEventKey,
+        payload: UpdateSolanaMintPayload,
+    ) -> Result<()> {
+        let event = NftEvents {
+            event: Some(SolanaUpdatedCollectionMint(payload)),
+        };
+
+        self.producer.send(Some(&event), Some(&key)).await?;
+
+        Ok(())
+    }
+
+    async fn retry_update_mint(
+        &self,
+        key: NftEventKey,
+        payload: RetryUpdateSolanaMintPayload,
+    ) -> Result<()> {
+        let event = NftEvents {
+            event: Some(SolanaRetryUpdatedCollectionMint(payload)),
+        };
+
+        self.producer.send(Some(&event), Some(&key)).await?;
         Ok(())
     }
 }

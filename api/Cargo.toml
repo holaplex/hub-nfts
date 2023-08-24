@@ -42,10 +42,10 @@ strum = { version = "0.24.1", features = ["derive"] }
 
 [dependencies.hub-core]
 package = "holaplex-hub-core"
-version = "0.3.1"
+version = "0.5.1"
 git = "https://github.com/holaplex/hub-core"
-branch = "stable"
-features = ["kafka", "credits", "asset_proxy"]
+branch = "master"
+features = ["kafka", "credits", "asset_proxy", "sea-orm"]
 
 [build-dependencies.hub-core-build]
 package = "holaplex-hub-core-build"
