@@ -14,7 +14,7 @@ use super::collection::{
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, CollectionEvent, DropEvent},
     entities::{
-        collection_mints, collections, drops, metadata_jsons, mint_creators, mint_histories,
+        collection_mints, collections, drops, mint_creators, mint_histories,
         prelude::{CollectionMints, Collections, Drops},
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
