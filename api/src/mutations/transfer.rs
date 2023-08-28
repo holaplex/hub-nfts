@@ -7,11 +7,12 @@ use super::collection::{validate_evm_address, validate_solana_address};
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, TransferEvent},
     entities::{
-        collection_mints::{self, CollectionMint},
+        collection_mints,
         prelude::CustomerWallets,
         sea_orm_active_enums::{Blockchain, CreationStatus},
         transfer_charges,
     },
+    objects::CollectionMint,
     proto::{self, NftEventKey, TransferPolygonAsset},
     Actions, AppContext, OrganizationId, UserID,
 };

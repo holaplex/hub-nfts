@@ -18,10 +18,13 @@ use crate::{
         collection_creators, collection_mints, collections, customer_wallets, drops,
         metadata_json_attributes, metadata_json_files, metadata_jsons, mint_creators,
         mint_histories, nft_transfers,
-        prelude::{CollectionMints, Collections, Drops, MintHistory, UpdateHistories},
+        prelude::{
+            CollectionMints, Collections, Drops, MintHistory, SwitchCollectionHistories,
+            UpdateHistories,
+        },
         project_wallets,
         sea_orm_active_enums::{Blockchain, CreationStatus},
-        transfer_charges, update_histories,
+        switch_collection_histories, transfer_charges, update_histories,
     },
     proto::{
         nft_events::Event as NftEvent,
@@ -63,6 +66,8 @@ pub enum ProcessorErrorKind {
     DbMissingTransferCharge,
     #[error("No associated update history found in database")]
     DbMissingUpdateHistory,
+    #[error("No associated switch collection history found in database")]
+    DbMissingSwitchCollectionHistory,
 
     #[error("Database record contains no deduction ID")]
     RecordMissingDeductionId,
@@ -128,6 +133,12 @@ enum TransferResult {
 
 #[derive(Clone)]
 enum UpdateResult {
+    Success(String),
+    Failure,
+}
+
+#[derive(Clone)]
+enum SwitchCollectionResult {
     Success(String),
     Failure,
 }
@@ -242,6 +253,10 @@ impl Processor {
                     SolanaNftsEvent::UpdateCollectionMintFailed(_)
                     | SolanaNftsEvent::RetryUpdateMintFailed(_),
                 ) => self.mint_updated(id, UpdateResult::Failure).await,
+                Some(SolanaNftsEvent::SwitchMintCollectionFailed(_)) => {
+                    self.switch_collection_submitted(id, SwitchCollectionResult::Failure)
+                        .await
+                },
                 Some(SolanaNftsEvent::UpdateMintOwner(e)) => self.update_mint_owner(id, e).await,
                 Some(SolanaNftsEvent::ImportedExternalCollection(e)) => {
                     self.index_collection(id, project_id, user_id, e).await
@@ -249,7 +264,13 @@ impl Processor {
                 Some(SolanaNftsEvent::ImportedExternalMint(e)) => {
                     self.index_mint(id, user_id, e).await
                 },
-
+                Some(SolanaNftsEvent::SwitchMintCollectionSubmitted(payload)) => {
+                    self.switch_collection_submitted(
+                        id,
+                        SwitchCollectionResult::Success(payload.signature),
+                    )
+                    .await
+                },
                 None | Some(_) => Ok(()),
             },
             Services::Polygon(_, e) => match e.event {
@@ -289,10 +310,10 @@ impl Processor {
         } = metadata.ok_or(ProcessorErrorKind::MissingCollectionMetadata)?;
 
         let collection_am = collections::ActiveModel {
-            id: Set(id.parse()?),
+            id: Set(Uuid::from_str(&id)?),
             blockchain: Set(Blockchain::Solana),
             supply: Set(supply.map(Into::into)),
-            project_id: Set(project_id.parse()?),
+            project_id: Set(Uuid::from_str(&project_id)?),
             credits_deduction_id: Set(None),
             creation_status: Set(CreationStatus::Created),
             total_mints: Set(0),
@@ -829,6 +850,43 @@ impl Processor {
 
         update_history_am.update(self.db.get()).await?;
 
+        Ok(())
+    }
+
+    async fn switch_collection_submitted(
+        &self,
+        id: String,
+        payload: SwitchCollectionResult,
+    ) -> ProcessResult<()> {
+        let history_id = Uuid::from_str(&id)?;
+        let history = SwitchCollectionHistories::find_by_id(history_id)
+            .one(self.db.get())
+            .await?
+            .ok_or(ProcessorErrorKind::DbMissingSwitchCollectionHistory)?;
+
+        let mint = CollectionMints::find_by_id(history.collection_mint_id)
+            .one(self.db.get())
+            .await?
+            .ok_or(ProcessorErrorKind::DbMissingCollectionMint)?;
+
+        let mut history_am: switch_collection_histories::ActiveModel = history.clone().into();
+
+        if let SwitchCollectionResult::Success(signature) = payload {
+            let deduction_id = history.credit_deduction_id;
+            history_am.signature = Set(Some(signature));
+
+            let mut mint_am: collection_mints::ActiveModel = mint.into();
+            mint_am.collection_id = Set(history.collection_id);
+            mint_am.update(self.db.get()).await?;
+
+            self.credits
+                .confirm_deduction(TransactionId(deduction_id))
+                .await?;
+        } else {
+            history_am.status = Set(CreationStatus::Failed);
+        }
+
+        history_am.update(self.db.get()).await?;
         Ok(())
     }
 }

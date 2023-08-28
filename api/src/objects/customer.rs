@@ -1,10 +1,8 @@
 use async_graphql::{ComplexObject, Context, Result, SimpleObject};
 use hub_core::uuid::Uuid;
 
-use crate::{
-    entities::{collection_mints, mint_histories},
-    AppContext,
-};
+use super::CollectionMint;
+use crate::{entities::mint_histories, AppContext};
 
 /// A project customer.
 #[derive(SimpleObject, Debug, Clone)]
@@ -21,10 +19,7 @@ pub struct Customer {
 impl Customer {
     /// The NFTs owned by any of the customers' wallets.
     #[graphql(requires = "addresses")]
-    async fn mints(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<Vec<collection_mints::CollectionMint>>> {
+    async fn mints(&self, ctx: &Context<'_>) -> Result<Option<Vec<CollectionMint>>> {
         let AppContext {
             collection_mints_owner_loader,
             ..

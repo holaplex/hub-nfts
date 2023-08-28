@@ -1,10 +1,10 @@
 use async_graphql::{Context, Object, Result};
 use sea_orm::entity::prelude::*;
 
-use super::{metadata_json::MetadataJson, Drop, Holder};
+use super::{metadata_json::MetadataJson, CollectionMint, Drop, Holder};
 use crate::{
     entities::{
-        collection_creators, collection_mints,
+        collection_creators,
         collections::Model,
         mint_histories,
         sea_orm_active_enums::{Blockchain, CreationStatus},
@@ -119,10 +119,7 @@ impl Collection {
     }
 
     /// The list of minted NFTs from the collection including the NFTs address and current owner's wallet address.
-    async fn mints(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<Vec<collection_mints::CollectionMint>>> {
+    async fn mints(&self, ctx: &Context<'_>) -> Result<Option<Vec<CollectionMint>>> {
         let AppContext {
             collection_mints_loader,
             ..
