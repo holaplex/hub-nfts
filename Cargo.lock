@@ -1734,8 +1734,8 @@ dependencies = [
 
 [[package]]
 name = "holaplex-hub-core"
-version = "0.5.1"
-source = "git+https://github.com/holaplex/hub-core?branch=master#f436cb38795adec5963f8e6b2eb3b5b1ebbca2cd"
+version = "0.5.3"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#40a8dfab0dbf2d01b0eda61ff1ce831e1ea4a10b"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1773,7 +1773,7 @@ dependencies = [
 [[package]]
 name = "holaplex-hub-core-build"
 version = "0.2.1"
-source = "git+https://github.com/holaplex/hub-core?branch=master#f436cb38795adec5963f8e6b2eb3b5b1ebbca2cd"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#40a8dfab0dbf2d01b0eda61ff1ce831e1ea4a10b"
 dependencies = [
  "anyhow",
  "dotenv",
@@ -1792,7 +1792,7 @@ dependencies = [
 [[package]]
 name = "holaplex-hub-core-macros"
 version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=master#f436cb38795adec5963f8e6b2eb3b5b1ebbca2cd"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#40a8dfab0dbf2d01b0eda61ff1ce831e1ea4a10b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1802,8 +1802,8 @@ dependencies = [
 
 [[package]]
 name = "holaplex-hub-core-schemas"
-version = "0.3.1"
-source = "git+https://github.com/holaplex/hub-core?branch=master#f436cb38795adec5963f8e6b2eb3b5b1ebbca2cd"
+version = "0.3.2"
+source = "git+https://github.com/holaplex/hub-core?branch=stable#40a8dfab0dbf2d01b0eda61ff1ce831e1ea4a10b"
 dependencies = [
  "holaplex-hub-core-build",
  "prost",
