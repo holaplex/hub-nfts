@@ -3,8 +3,8 @@
 use async_graphql::{ComplexObject, Context, Result, SimpleObject};
 use sea_orm::entity::prelude::*;
 
-use super::{collection_mints::CollectionMint, sea_orm_active_enums::CreationStatus};
-use crate::AppContext;
+use super::sea_orm_active_enums::CreationStatus;
+use crate::{objects::CollectionMint, AppContext};
 
 /// A record of a minted NFT.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]

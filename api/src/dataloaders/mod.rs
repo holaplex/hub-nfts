@@ -11,6 +11,7 @@ mod mint_histories;
 mod nft_transfers;
 mod project_collection;
 mod project_collections;
+mod switch_collection_histories;
 mod update_histories;
 
 pub use collection::Loader as CollectionLoader;
@@ -34,4 +35,5 @@ pub use mint_histories::{
 pub use nft_transfers::CollectionMintTransfersLoader;
 pub use project_collection::ProjectCollectionLoader;
 pub use project_collections::ProjectCollectionsLoader;
+pub use switch_collection_histories::SwitchCollectionHistoryLoader;
 pub use update_histories::UpdateMintHistoryLoader;

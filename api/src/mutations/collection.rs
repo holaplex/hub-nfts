@@ -22,7 +22,7 @@ use crate::{
         switch_collection_histories,
     },
     metadata_json::MetadataJson,
-    objects::{Collection as CollectionObject, Creator, MetadataJsonInput},
+    objects::{Collection as CollectionObject, CollectionMint, Creator, MetadataJsonInput},
     proto::{
         nft_events::Event as NftEvent, CollectionCreation, CollectionImport,
         CreationStatus as NftCreationStatus, Creator as ProtoCreator, MasterEdition,
@@ -462,6 +462,10 @@ impl Mutation {
         })
     }
 
+    /// This mutation allows you to change the collection to which a mint belongs.
+    /// For Solana, the mint specified by `input` must already belong to a Metaplex Certified Collection.
+    /// The collection you are aiming to switch to must also be Metaplex Certified Collection.
+
     pub async fn switch_collection(
         &self,
         ctx: &Context<'_>,
@@ -576,11 +580,13 @@ pub async fn fetch_owner(
     Ok(owner)
 }
 
+/// Result of a successful create collection mutation.
 #[derive(Debug, Clone, SimpleObject)]
 pub struct CreateCollectionPayload {
     collection: CollectionObject,
 }
 
+/// Input object for creating a collection.
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct CreateCollectionInput {
     pub project: Uuid,
@@ -782,13 +788,15 @@ pub struct ImportCollectionPayload {
     status: CreationStatus,
 }
 
+/// Input object for switching a mint's collection.
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct SwitchCollectionInput {
     mint: Uuid,
     collection_address: String,
 }
 
+/// Represents the result of a successful switch collection mutation.
 #[derive(Debug, Clone, SimpleObject)]
 pub struct SwitchCollectionPayload {
-    collection_mint: collection_mints::CollectionMint,
+    collection_mint: CollectionMint,
 }

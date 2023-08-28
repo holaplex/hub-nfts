@@ -66,6 +66,8 @@ pub enum ProcessorErrorKind {
     DbMissingTransferCharge,
     #[error("No associated update history found in database")]
     DbMissingUpdateHistory,
+    #[error("No associated switch collection history found in database")]
+    DbMissingSwitchCollectionHistory,
 
     #[error("Database record contains no deduction ID")]
     RecordMissingDeductionId,
@@ -251,6 +253,10 @@ impl Processor {
                     SolanaNftsEvent::UpdateCollectionMintFailed(_)
                     | SolanaNftsEvent::RetryUpdateMintFailed(_),
                 ) => self.mint_updated(id, UpdateResult::Failure).await,
+                Some(SolanaNftsEvent::SwitchMintCollectionFailed(_)) => {
+                    self.switch_collection_submitted(id, SwitchCollectionResult::Failure)
+                        .await
+                },
                 Some(SolanaNftsEvent::UpdateMintOwner(e)) => self.update_mint_owner(id, e).await,
                 Some(SolanaNftsEvent::ImportedExternalCollection(e)) => {
                     self.index_collection(id, project_id, user_id, e).await
@@ -304,10 +310,10 @@ impl Processor {
         } = metadata.ok_or(ProcessorErrorKind::MissingCollectionMetadata)?;
 
         let collection_am = collections::ActiveModel {
-            id: Set(id.parse()?),
+            id: Set(Uuid::from_str(&id)?),
             blockchain: Set(Blockchain::Solana),
             supply: Set(supply.map(Into::into)),
-            project_id: Set(project_id.parse()?),
+            project_id: Set(Uuid::from_str(&project_id)?),
             credits_deduction_id: Set(None),
             creation_status: Set(CreationStatus::Created),
             total_mints: Set(0),
@@ -851,17 +857,17 @@ impl Processor {
         &self,
         id: String,
         payload: SwitchCollectionResult,
-    ) -> Result<()> {
+    ) -> ProcessResult<()> {
         let history_id = Uuid::from_str(&id)?;
         let history = SwitchCollectionHistories::find_by_id(history_id)
             .one(self.db.get())
             .await?
-            .context("Switch collection history record not found")?;
+            .ok_or(ProcessorErrorKind::DbMissingSwitchCollectionHistory)?;
 
         let mint = CollectionMints::find_by_id(history.collection_mint_id)
             .one(self.db.get())
             .await?
-            .context("Mint record not found")?;
+            .ok_or(ProcessorErrorKind::DbMissingCollectionMint)?;
 
         let mut history_am: switch_collection_histories::ActiveModel = history.clone().into();
 
