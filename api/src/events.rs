@@ -874,6 +874,7 @@ impl Processor {
         if let SwitchCollectionResult::Success(signature) = payload {
             let deduction_id = history.credit_deduction_id;
             history_am.signature = Set(Some(signature));
+            history_am.status = Set(CreationStatus::Created);
 
             let mut mint_am: collection_mints::ActiveModel = mint.into();
             mint_am.collection_id = Set(history.collection_id);
