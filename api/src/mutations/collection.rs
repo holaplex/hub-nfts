@@ -16,7 +16,7 @@ use crate::{
     collection::Collection,
     entities::{
         collection_creators, collection_mints, collections, metadata_jsons,
-        prelude::{CollectionCreators, CollectionMints, Collections, MetadataJsons},
+        prelude::{CollectionCreators, CollectionMints, Collections, Drops, MetadataJsons},
         project_wallets,
         sea_orm_active_enums::{Blockchain, Blockchain as BlockchainEnum, CreationStatus},
         switch_collection_histories,
@@ -506,6 +506,25 @@ impl Mutation {
 
         if collection.id == new_collection.id {
             return Err(Error::new("Collection already switched"));
+        }
+
+        if collection.project_id != new_collection.project_id {
+            return Err(Error::new("New collection must belong to the same project"));
+        }
+
+        if new_collection
+            .find_related(Drops)
+            .one(db.get())
+            .await?
+            .is_some()
+        {
+            return Err(Error::new("New collection must be Metaplex Certified"));
+        }
+
+        if mint.compressed == true {
+            return Err(Error::new(
+                "Switching collection is only supported for uncompressed mint",
+            ));
         }
 
         let TransactionId(deduction_id) = credits
