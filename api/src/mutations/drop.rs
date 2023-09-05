@@ -17,7 +17,7 @@ use crate::{
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
     },
-    metadata_json::MetadataJson,
+    metadata_json::{MetadataJson, self},
     objects::{Creator, Drop, MetadataJsonInput},
     proto::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, EditionInfo,
@@ -59,7 +59,7 @@ impl Mutation {
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let solana = ctx.data::<Solana>()?;
         let polygon = ctx.data::<Polygon>()?;
-        let nft_storage = ctx.data::<NftStorageClient>()?;
+        let job_runner = ctx.data::<metadata_json::JobRunner>()?;
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
         let owner_address = fetch_owner(conn, input.project, input.blockchain).await?;
@@ -99,10 +99,10 @@ impl Mutation {
             .await?;
 
         let metadata_json = MetadataJson::new(input.metadata_json)
-            .upload(nft_storage)
-            .await?
             .save(collection.id, db)
             .await?;
+
+        job_runner.refresh().await?;
 
         let drop = drops::ActiveModel {
             project_id: Set(input.project),
@@ -439,7 +439,7 @@ impl Mutation {
 
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
         let conn = db.get();
-        let nft_storage = ctx.data::<NftStorageClient>()?;
+        let job_runner = ctx.data::<metadata_json::JobRunner>()?;
         let solana = ctx.data::<Solana>()?;
         let polygon = ctx.data::<Polygon>()?;
 
@@ -541,11 +541,13 @@ impl Mutation {
         let metadata_json_model = if let Some(metadata_json) = metadata_json {
             metadata_json_model.clone().delete(conn).await?;
 
-            MetadataJson::new(metadata_json.clone())
-                .upload(nft_storage)
-                .await?
+            let model = MetadataJson::new(metadata_json.clone())
                 .save(collection.id, db)
-                .await?
+                .await?;
+
+            job_runner.refresh().await?;
+
+            model
         } else {
             metadata_json_model
         };

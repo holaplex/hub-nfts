@@ -44,3 +44,15 @@ pub enum CreationStatus {
     #[sea_orm(string_value = "rejected")]
     Rejected,
 }
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "metadata_json_job_type"
+)]
+pub enum MetadataJsonJobType {
+    #[sea_orm(string_value = "download")]
+    Download,
+    #[sea_orm(string_value = "upload")]
+    Upload,
+}

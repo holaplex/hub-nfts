@@ -53,6 +53,7 @@ mod m20230725_144506_drop_solana_collections_table;
 mod m20230807_090847_create_histories_table;
 mod m20230818_163948_downcase_polygon_addresses;
 mod m20230821_131630_create_switch_collection_histories_table;
+mod m20230828_132722_create_metadata_json_jobs_table;
 
 pub struct Migrator;
 
@@ -113,6 +114,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20230807_090847_create_histories_table::Migration),
             Box::new(m20230818_163948_downcase_polygon_addresses::Migration),
             Box::new(m20230821_131630_create_switch_collection_histories_table::Migration),
+            Box::new(m20230828_132722_create_metadata_json_jobs_table::Migration),
         ]
     }
 }

@@ -233,7 +233,7 @@ pub struct AppState {
     pub credits: CreditsClient<Actions>,
     pub solana: Solana,
     pub polygon: Polygon,
-    pub nft_storage: NftStorageClient,
+    pub mj_job_runner: metadata_json::JobRunner,
     pub asset_proxy: AssetProxy,
 }
 
@@ -246,7 +246,7 @@ impl AppState {
         credits: CreditsClient<Actions>,
         solana: Solana,
         polygon: Polygon,
-        nft_storage: NftStorageClient,
+        mj_job_runner: metadata_json::JobRunner,
         asset_proxy: AssetProxy,
     ) -> Self {
         Self {
@@ -256,7 +256,7 @@ impl AppState {
             credits,
             solana,
             polygon,
-            nft_storage,
+            mj_job_runner,
             asset_proxy,
         }
     }

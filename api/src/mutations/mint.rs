@@ -20,7 +20,7 @@ use crate::{
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
         update_histories,
     },
-    metadata_json::MetadataJson,
+    metadata_json::{MetadataJson, self},
     objects::{CollectionMint, Creator, MetadataJsonInput},
     proto::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, MetaplexMetadata,
@@ -344,7 +344,7 @@ impl Mutation {
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
-        let nft_storage = ctx.data::<NftStorageClient>()?;
+        let job_runner = ctx.data::<metadata_json::JobRunner>()?;
 
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
@@ -410,10 +410,10 @@ impl Mutation {
         let collection_mint_model = collection_mint_active_model.insert(conn).await?;
 
         let metadata_json = MetadataJson::new(input.metadata_json)
-            .upload(nft_storage)
-            .await?
             .save(collection_mint_model.id, db)
             .await?;
+
+        job_runner.refresh().await?;
 
         for creator in creators.clone() {
             let am = mint_creators::ActiveModel {
@@ -514,7 +514,7 @@ impl Mutation {
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
-        let nft_storage = ctx.data::<NftStorageClient>()?;
+        let job_runner = ctx.data::<metadata_json::JobRunner>()?;
 
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
@@ -616,10 +616,10 @@ impl Mutation {
         .await?;
 
         let metadata_json = MetadataJson::new(input.metadata_json)
-            .upload(nft_storage)
-            .await?
             .save(mint.id, db)
             .await?;
+
+        job_runner.refresh().await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {

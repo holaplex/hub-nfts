@@ -1,16 +1,124 @@
-use hub_core::{anyhow::Result, prelude::anyhow, uuid::Uuid};
+use std::{collections::HashSet, time::Duration};
+
+use hub_core::{
+    anyhow::Result,
+    backon,
+    backon::Retryable,
+    futures_util::stream::FuturesUnordered,
+    prelude::*,
+    thiserror,
+    tokio::{self, sync::mpsc},
+    uuid::Uuid,
+};
 use metadata_jsons::Column as MetadataJsonColumn;
-use sea_orm::{prelude::*, sea_query::OnConflict, Set, TransactionTrait};
+use sea_orm::{prelude::*, sea_query::OnConflict, QuerySelect, Set, TransactionTrait};
 
 use crate::{
     db::Connection,
     entities::{
-        metadata_json_attributes, metadata_json_files, metadata_jsons,
+        metadata_json_attributes, metadata_json_files, metadata_json_jobs, metadata_jsons,
         prelude::{MetadataJsonAttributes, MetadataJsonFiles, MetadataJsons},
+        sea_orm_active_enums::MetadataJsonJobType,
     },
     nft_storage::NftStorageClient,
     objects::MetadataJsonInput,
 };
+
+#[derive(Debug, thiserror::Error, Triage)]
+#[fatal]
+#[error("Unable to send message to metadata JSON job runner - the task has probably crashed!")]
+pub struct JobRunnerError(mpsc::error::SendError<()>);
+
+#[derive(Debug, Clone)]
+pub struct JobRunner(mpsc::Sender<()>);
+
+impl JobRunner {
+    #[must_use]
+    pub fn new(db: Connection, client: NftStorageClient) -> (Self, tokio::task::JoinHandle<()>) {
+        let (tx, rx) = mpsc::channel(1);
+
+        (
+            JobRunner(tx),
+            tokio::task::spawn(job_runner(rx, db, client)),
+        )
+    }
+
+    /// Refresh the list of running metadata JSON jobs
+    ///
+    /// # Errors
+    /// Returns a fatal error if the job runner task cannot be reached
+    pub async fn refresh(&self) -> Result<(), JobRunnerError> {
+        self.0.send(()).await.map_err(JobRunnerError)
+    }
+}
+
+async fn job_runner(mut refresh: mpsc::Receiver<()>, db: Connection, client: NftStorageClient) {
+    let mut started_jobs = HashSet::new();
+    let tasks = FuturesUnordered::new();
+    let backoff = backon::ExponentialBuilder::default()
+        .with_jitter()
+        .with_min_delay(Duration::from_millis(500))
+        .with_max_times(5);
+
+    loop {
+        let jobs = (|| async {
+            let res = metadata_json_jobs::Entity::find()
+                .limit(16)
+                .all(db.get())
+                .await
+                .context("Error getting metadata JSON jobs from DB");
+
+            if let Err(e) = &res {
+                error!("{e:?}");
+            }
+
+            res
+        })
+        .retry(&backoff)
+        .await
+        .unwrap_or_default();
+
+        for job in jobs {
+            let true = started_jobs.insert(job.id) else { continue };
+
+            let db = db.clone();
+            let client = client.clone();
+            let backoff = backoff.clone();
+            tasks.push(tokio::task::spawn(async move {
+                (|| async { run_job(&db, &client, &job).await })
+                    .retry(&backoff)
+                    .await
+            }));
+        }
+
+        let Some(()) = refresh.recv().await else { break };
+    }
+}
+
+async fn run_job(
+    db: &Connection,
+    client: &NftStorageClient,
+    job: &metadata_json_jobs::Model,
+) -> Result<()> {
+    match job.r#type {
+        MetadataJsonJobType::Download => todo!(),
+        MetadataJsonJobType::Upload => {
+            MetadataJson::fetch(
+                job.metadata_json_id
+                    .context("Missing metadata JSON ID from upload job")?,
+                db,
+            )
+            .await
+            .context("Error fetching metadata JSON")?
+            .upload(client)
+            .await
+            .context("Error uploading metadata JSON")?;
+        },
+    }
+
+    Ok(())
+}
+
 #[derive(Clone, Debug)]
 pub struct MetadataJson {
     pub metadata_json: MetadataJsonInput,
