@@ -4,7 +4,7 @@ use async_graphql::{dataloader::Loader as DataLoader, FieldError, Result};
 use poem::async_trait;
 use sea_orm::prelude::*;
 
-use crate::{db::Connection, entities::collection_mints};
+use crate::{db::Connection, entities::collection_mints, objects::CollectionMint};
 
 #[derive(Debug, Clone)]
 pub struct Loader {
@@ -21,7 +21,7 @@ impl Loader {
 #[async_trait]
 impl DataLoader<Uuid> for Loader {
     type Error = FieldError;
-    type Value = Vec<collection_mints::CollectionMint>;
+    type Value = Vec<CollectionMint>;
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let collection_mints = collection_mints::Entity::find()
@@ -60,7 +60,7 @@ impl OwnerLoader {
 #[async_trait]
 impl DataLoader<String> for OwnerLoader {
     type Error = FieldError;
-    type Value = Vec<collection_mints::CollectionMint>;
+    type Value = Vec<CollectionMint>;
 
     async fn load(&self, keys: &[String]) -> Result<HashMap<String, Self::Value>, Self::Error> {
         let collection_mints = collection_mints::Entity::find()
@@ -100,7 +100,7 @@ impl CollectionMintLoader {
 #[async_trait]
 impl DataLoader<Uuid> for CollectionMintLoader {
     type Error = FieldError;
-    type Value = collection_mints::CollectionMint;
+    type Value = CollectionMint;
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let collection_mints = collection_mints::Entity::find()

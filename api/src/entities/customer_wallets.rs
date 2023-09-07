@@ -25,7 +25,7 @@ pub enum Relation {}
 impl Entity {
     pub fn find_by_address(address: String) -> Select<Self> {
         if address.starts_with("0x") {
-            Self::find().filter(Column::Address.like(&address))
+            Self::find().filter(Column::Address.eq(address.to_lowercase()))
         } else {
             Self::find().filter(Column::Address.eq(address))
         }

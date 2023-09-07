@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{
+    chrono::Utc,
     credits::{CreditsClient, TransactionId},
     producer::Producer,
 };
@@ -15,12 +16,13 @@ use crate::{
     collection::Collection,
     entities::{
         collection_creators, collection_mints, collections, metadata_jsons,
-        prelude::{CollectionCreators, CollectionMints, Collections, MetadataJsons},
+        prelude::{CollectionCreators, CollectionMints, Collections, Drops, MetadataJsons},
         project_wallets,
-        sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
+        sea_orm_active_enums::{Blockchain, Blockchain as BlockchainEnum, CreationStatus},
+        switch_collection_histories,
     },
     metadata_json::MetadataJson,
-    objects::{Collection as CollectionObject, Creator, MetadataJsonInput},
+    objects::{Collection as CollectionObject, CollectionMint, Creator, MetadataJsonInput},
     proto::{
         nft_events::Event as NftEvent, CollectionCreation, CollectionImport,
         CreationStatus as NftCreationStatus, Creator as ProtoCreator, MasterEdition,
@@ -459,6 +461,120 @@ impl Mutation {
             collection: collection.into(),
         })
     }
+
+    /// This mutation allows you to change the collection to which a mint belongs.
+    /// For Solana, the mint specified by `input` must already belong to a Metaplex Certified Collection.
+    /// The collection you are aiming to switch to must also be Metaplex Certified Collection.
+
+    pub async fn switch_collection(
+        &self,
+        ctx: &Context<'_>,
+        input: SwitchCollectionInput,
+    ) -> Result<SwitchCollectionPayload> {
+        let SwitchCollectionInput {
+            mint,
+            collection_address,
+        } = input;
+
+        let AppContext {
+            db,
+            user_id,
+            organization_id,
+            balance,
+            ..
+        } = ctx.data::<AppContext>()?;
+        let credits = ctx.data::<CreditsClient<Actions>>()?;
+        let solana = ctx.data::<Solana>()?;
+
+        let user_id = user_id.0.ok_or(Error::new("X-USER-ID header not found"))?;
+        let org_id = organization_id
+            .0
+            .ok_or(Error::new("X-ORG-ID header not found"))?;
+        let balance = balance.0.ok_or(Error::new("X-BALANCE header not found"))?;
+        let (mint, collection) = CollectionMints::find_by_id_with_collection(mint)
+            .one(db.get())
+            .await?
+            .ok_or(Error::new("Mint not found"))?;
+
+        let collection = collection.ok_or(Error::new("Collection not found"))?;
+
+        let new_collection = Collections::find()
+            .filter(collections::Column::Address.eq(collection_address.to_string()))
+            .one(db.get())
+            .await?
+            .ok_or(Error::new("Collection not found"))?;
+
+        if collection.id == new_collection.id {
+            return Err(Error::new("Collection already switched"));
+        }
+
+        if collection.project_id != new_collection.project_id {
+            return Err(Error::new("New collection must belong to the same project"));
+        }
+
+        if new_collection
+            .find_related(Drops)
+            .one(db.get())
+            .await?
+            .is_some()
+        {
+            return Err(Error::new("New collection must be Metaplex Certified"));
+        }
+
+        if mint.compressed == true {
+            return Err(Error::new(
+                "Switching collection is only supported for uncompressed mint",
+            ));
+        }
+
+        let TransactionId(deduction_id) = credits
+            .submit_pending_deduction(
+                org_id,
+                user_id,
+                Actions::UpdateMint,
+                collection.blockchain.into(),
+                balance,
+            )
+            .await?;
+
+        match collection.blockchain {
+            Blockchain::Solana => {
+                validate_solana_address(&collection_address)?;
+                let history_am = switch_collection_histories::ActiveModel {
+                    collection_mint_id: Set(mint.id),
+                    collection_id: Set(new_collection.id),
+                    credit_deduction_id: Set(deduction_id),
+                    signature: Set(None),
+                    status: Set(CreationStatus::Pending),
+                    initiated_by: Set(user_id),
+                    created_at: Set(Utc::now().naive_utc()),
+                    ..Default::default()
+                };
+
+                let history = history_am.insert(db.get()).await?;
+
+                solana
+                    .event()
+                    .switch_collection(
+                        NftEventKey {
+                            id: history.id.to_string(),
+                            project_id: collection.project_id.to_string(),
+                            user_id: user_id.to_string(),
+                        },
+                        crate::proto::SwitchCollectionPayload {
+                            mint_id: mint.id.to_string(),
+                            collection_id: new_collection.id.to_string(),
+                        },
+                    )
+                    .await?;
+
+                Ok(SwitchCollectionPayload {
+                    collection_mint: mint.into(),
+                })
+            },
+            _ => Err(Error::new("Blockchain not supported")),
+        }
+    }
 }
 
 pub async fn fetch_owner(
@@ -483,11 +599,13 @@ pub async fn fetch_owner(
     Ok(owner)
 }
 
+/// Result of a successful create collection mutation.
 #[derive(Debug, Clone, SimpleObject)]
 pub struct CreateCollectionPayload {
     collection: CollectionObject,
 }
 
+/// Input object for creating a collection.
 #[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
 pub struct CreateCollectionInput {
     pub project: Uuid,
@@ -687,4 +805,17 @@ pub struct ImportCollectionInput {
 pub struct ImportCollectionPayload {
     /// The status of the collection import.
     status: CreationStatus,
+}
+
+/// Input object for switching a mint's collection.
+#[derive(Debug, Clone, Serialize, Deserialize, InputObject)]
+pub struct SwitchCollectionInput {
+    mint: Uuid,
+    collection_address: String,
+}
+
+/// Represents the result of a successful switch collection mutation.
+#[derive(Debug, Clone, SimpleObject)]
+pub struct SwitchCollectionPayload {
+    collection_mint: CollectionMint,
 }

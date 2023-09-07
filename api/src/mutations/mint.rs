@@ -14,14 +14,14 @@ use super::collection::{
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, CollectionEvent, DropEvent},
     entities::{
-        collection_mints, collections, drops, metadata_jsons, mint_creators, mint_histories,
+        collection_mints, collections, drops, mint_creators, mint_histories,
         prelude::{CollectionMints, Collections, Drops},
         project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
         update_histories,
     },
     metadata_json::MetadataJson,
-    objects::{Creator, MetadataJsonInput},
+    objects::{CollectionMint, Creator, MetadataJsonInput},
     proto::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, MetaplexMetadata,
         MintCollectionCreation, MintCreation, NftEventKey, NftEvents, RetryUpdateSolanaMintPayload,
@@ -890,7 +890,7 @@ pub struct MintDropInput {
 /// Represents payload data for the `mint_edition` mutation
 #[derive(Debug, Clone, SimpleObject)]
 pub struct MintEditionPayload {
-    collection_mint: collection_mints::CollectionMint,
+    collection_mint: CollectionMint,
 }
 
 /// Represents input data for `retry_mint` mutation with an ID as a field of type UUID
@@ -902,7 +902,7 @@ pub struct RetryMintEditionInput {
 /// Represents payload data for `retry_mint` mutation
 #[derive(Debug, Clone, SimpleObject)]
 pub struct RetryMintEditionPayload {
-    collection_mint: collection_mints::CollectionMint,
+    collection_mint: CollectionMint,
 }
 
 /// Represents input data for `mint_to_collection` mutation with a collection ID, recipient, metadata, and optional seller fee basis points as fields
@@ -941,12 +941,12 @@ pub struct UpdateMintInput {
 #[derive(Debug, Clone, SimpleObject)]
 pub struct MintToCollectionPayload {
     /// The minted NFT
-    collection_mint: collection_mints::CollectionMint,
+    collection_mint: CollectionMint,
 }
 
 #[derive(Debug, Clone, SimpleObject)]
 pub struct UpdateMintPayload {
-    collection_mint: collection_mints::CollectionMint,
+    collection_mint: CollectionMint,
 }
 
 /// Represents input data for `retry_mint_to_collection` mutation with an ID as a field of type UUID
@@ -960,7 +960,7 @@ pub struct RetryMintToCollectionInput {
 #[derive(Debug, Clone, SimpleObject)]
 pub struct RetryMintToCollectionPayload {
     /// The retried minted NFT
-    collection_mint: collection_mints::CollectionMint,
+    collection_mint: CollectionMint,
 }
 
 #[derive(Debug, Clone, InputObject)]

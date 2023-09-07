@@ -1,6 +1,7 @@
 use async_graphql::{ComplexObject, Context, Result, SimpleObject};
 
-use crate::{entities::collection_mints, AppContext};
+use super::CollectionMint;
+use crate::AppContext;
 
 /// A blockchain wallet is a digital wallet that allows users to securely store, manage, and transfer their cryptocurrencies or other digital assets on a blockchain network.
 #[derive(SimpleObject, Debug, Clone)]
@@ -14,10 +15,7 @@ pub struct Wallet {
 #[ComplexObject]
 impl Wallet {
     /// The NFTs that were minted from Holaplex and are owned by the wallet's address.
-    async fn mints(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<Vec<collection_mints::CollectionMint>>> {
+    async fn mints(&self, ctx: &Context<'_>) -> Result<Option<Vec<CollectionMint>>> {
         let AppContext {
             collection_mints_owner_loader,
             ..

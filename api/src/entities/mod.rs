@@ -16,5 +16,6 @@ pub mod mint_histories;
 pub mod nft_transfers;
 pub mod project_wallets;
 pub mod sea_orm_active_enums;
+pub mod switch_collection_histories;
 pub mod transfer_charges;
 pub mod update_histories;

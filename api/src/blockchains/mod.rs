@@ -3,7 +3,9 @@ pub mod solana;
 
 use hub_core::anyhow::Result;
 
-use crate::proto::{NftEventKey, RetryUpdateSolanaMintPayload, UpdateSolanaMintPayload};
+use crate::proto::{
+    NftEventKey, RetryUpdateSolanaMintPayload, SwitchCollectionPayload, UpdateSolanaMintPayload,
+};
 
 /// Represents a response from a transaction on the blockchain. This struct
 /// provides the serialized message and the signatures of the signed message.
@@ -40,6 +42,11 @@ pub trait CollectionEvent<A, B, C> {
         &self,
         key: NftEventKey,
         payload: RetryUpdateSolanaMintPayload,
+    ) -> Result<()>;
+    async fn switch_collection(
+        &self,
+        key: NftEventKey,
+        payload: SwitchCollectionPayload,
     ) -> Result<()>;
 }
 
