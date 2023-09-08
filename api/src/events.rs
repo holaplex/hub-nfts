@@ -580,7 +580,7 @@ impl Processor {
         let drop_model = drop.ok_or(ProcessorErrorKind::DbMissingDrop)?;
 
         let mut drops_active_model: drops::ActiveModel = drop_model.clone().into();
-        let mut collection_active_model: collections::ActiveModel = collection_model.into();
+        let mut collection_active_model: collections::ActiveModel = collection_model.clone().into();
         let mut creation_status = NftCreationStatus::Completed;
 
         if let MintResult::Success(MintTransaction { signature, address }) = payload {
@@ -606,6 +606,7 @@ impl Processor {
                 Some(&NftEvents {
                     event: Some(NftEvent::DropCreated(DropCreation {
                         status: creation_status as i32,
+                        collection_id: collection_model.id.to_string(),
                     })),
                 }),
                 Some(&NftEventKey {
@@ -655,6 +656,7 @@ impl Processor {
                 Some(&NftEvents {
                     event: Some(NftEvent::DropCreated(DropCreation {
                         status: creation_status as i32,
+                        collection_id: collection_model.id.to_string(),
                     })),
                 }),
                 Some(&NftEventKey {
