@@ -177,6 +177,7 @@ impl Mutation {
                 Some(&NftEvents {
                     event: Some(NftEvent::DropCreated(proto::DropCreation {
                         status: NftCreationStatus::InProgress as i32,
+                        collection_id: collection.id.to_string(),
                     })),
                 }),
                 Some(&NftEventKey {
