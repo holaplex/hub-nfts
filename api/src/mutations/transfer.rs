@@ -64,7 +64,10 @@ impl Mutation {
         let collection = collection.ok_or(Error::new("collection not found"))?;
         input.validate_recipient_address(collection.blockchain)?;
 
-        let owner_address = collection_mint_model.owner.clone();
+        let owner_address = collection_mint_model
+            .owner
+            .clone()
+            .ok_or(Error::new("NFT is not owned by any wallet"))?;
 
         CustomerWallets::find_by_address(owner_address.clone())
             .one(conn)
@@ -102,23 +105,29 @@ impl Mutation {
 
                 solana
                     .event()
-                    .transfer_asset(event_key, proto::TransferMetaplexAssetTransaction {
-                        recipient_address,
-                        owner_address,
-                        collection_mint_id,
-                    })
+                    .transfer_asset(
+                        event_key,
+                        proto::TransferMetaplexAssetTransaction {
+                            recipient_address,
+                            owner_address,
+                            collection_mint_id,
+                        },
+                    )
                     .await?;
             },
             Blockchain::Polygon => {
                 let polygon = ctx.data::<Polygon>()?;
                 polygon
                     .event()
-                    .transfer_asset(event_key, TransferPolygonAsset {
-                        collection_mint_id,
-                        owner_address,
-                        recipient_address,
-                        amount: 1,
-                    })
+                    .transfer_asset(
+                        event_key,
+                        TransferPolygonAsset {
+                            collection_mint_id,
+                            owner_address,
+                            recipient_address,
+                            amount: 1,
+                        },
+                    )
                     .await?;
             },
             Blockchain::Ethereum => {

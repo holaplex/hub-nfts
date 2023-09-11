@@ -25,7 +25,7 @@ pub struct CollectionMint {
     /// On EVM chains it is the concatenation of the contract address and the token id `{contractAddress}:{tokenId}`.
     pub address: Option<String>,
     /// The wallet address of the owner of the NFT.
-    pub owner: String,
+    pub owner: Option<String>,
     /// The status of the NFT creation.
     pub creation_status: CreationStatus,
     /// The unique ID of the creator of the NFT.

@@ -13,8 +13,8 @@ pub struct Model {
     pub collection_id: Uuid,
     #[sea_orm(column_type = "Text", nullable)]
     pub address: Option<String>,
-    #[sea_orm(column_type = "Text")]
-    pub owner: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub owner: Option<String>,
     pub creation_status: CreationStatus,
     pub created_by: Uuid,
     pub created_at: DateTimeWithTimeZone,

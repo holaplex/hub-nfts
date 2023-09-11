@@ -2,7 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
-use super::sea_orm_active_enums::CreationStatus;
+use super::sea_orm_active_enums::{CreationStatus, DropType};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "drops")]
@@ -20,6 +20,7 @@ pub struct Model {
     pub paused_at: Option<DateTimeWithTimeZone>,
     pub shutdown_at: Option<DateTimeWithTimeZone>,
     pub credits_deduction_id: Option<Uuid>,
+    pub drop_type: DropType,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

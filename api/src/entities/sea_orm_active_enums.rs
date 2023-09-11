@@ -43,4 +43,15 @@ pub enum CreationStatus {
     Pending,
     #[sea_orm(string_value = "rejected")]
     Rejected,
+    #[sea_orm(string_value = "queued")]
+    Queued,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Enum, Copy)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "drop_type")]
+pub enum DropType {
+    #[sea_orm(string_value = "edition")]
+    Edition,
+    #[sea_orm(string_value = "open")]
+    Open,
 }
