@@ -3,7 +3,7 @@ endpoint = "http://localhost:8081"
 
 [schemas]
 organization = 1
-nfts = 2
+nfts = 3
 customer = 1
 treasury = 1
 solana_nfts = 1

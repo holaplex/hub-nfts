@@ -53,8 +53,12 @@ impl Solana {
 }
 
 #[async_trait::async_trait]
-impl DropEvent<MetaplexMasterEditionTransaction, MintDropTransaction, MetaplexMasterEditionTransaction>
-    for Solana
+impl
+    DropEvent<
+        MetaplexMasterEditionTransaction,
+        MintDropTransaction,
+        MetaplexMasterEditionTransaction,
+    > for Solana
 {
     async fn create_drop(
         &self,
@@ -110,11 +114,7 @@ impl DropEvent<MetaplexMasterEditionTransaction, MintDropTransaction, MetaplexMa
         Ok(())
     }
 
-    async fn mint_drop(
-        &self,
-        key: NftEventKey,
-        payload: MintDropTransaction,
-    ) -> Result<()> {
+    async fn mint_drop(&self, key: NftEventKey, payload: MintDropTransaction) -> Result<()> {
         let event = match payload {
             MintDropTransaction::Edition(p) => Some(SolanaMintEditionDrop(p)),
             MintDropTransaction::Open(p) => Some(SolanaMintOpenDrop(p)),
@@ -127,11 +127,7 @@ impl DropEvent<MetaplexMasterEditionTransaction, MintDropTransaction, MetaplexMa
         Ok(())
     }
 
-    async fn retry_mint_drop(
-        &self,
-        key: NftEventKey,
-        payload: MintDropTransaction,
-    ) -> Result<()> {
+    async fn retry_mint_drop(&self, key: NftEventKey, payload: MintDropTransaction) -> Result<()> {
         let event = match payload {
             MintDropTransaction::Edition(tx) => Some(SolanaRetryMintEditionDrop(tx)),
             MintDropTransaction::Open(tx) => Some(SolanaRetryMintOpenDrop(tx)),

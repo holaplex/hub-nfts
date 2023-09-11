@@ -1,4 +1,4 @@
-use async_graphql::{Context, Enum, Object, Result, Error};
+use async_graphql::{Context, Enum, Error, Object, Result};
 use hub_core::chrono::Utc;
 use sea_orm::entity::prelude::*;
 

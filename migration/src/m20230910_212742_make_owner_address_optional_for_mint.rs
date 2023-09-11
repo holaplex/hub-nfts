@@ -21,13 +21,17 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(CollectionMints::Table)
-                    .modify_column(ColumnDef::new(CollectionMints::OwnerAddress).text().not_null())
+                    .modify_column(
+                        ColumnDef::new(CollectionMints::OwnerAddress)
+                            .text()
+                            .not_null(),
+                    )
                     .to_owned(),
             )
             .await
     }
 }
- 
+
 #[derive(Iden)]
 enum CollectionMints {
     Table,

@@ -132,8 +132,6 @@ impl Mutation {
             project_id: input.project.to_string(),
         };
 
-         
-
         let payload = proto::MetaplexMasterEditionTransaction {
             master_edition: Some(proto::MasterEdition {
                 owner_address: owner_address.clone(),
@@ -317,16 +315,12 @@ impl Mutation {
 
                 polygon
                     .event()
-                    .retry_create_drop(
-                        drop.drop_type,
-                        event_key,
-                        proto::CreateEditionTransaction {
-                            edition_info: None,
-                            amount,
-                            fee_receiver: owner_address,
-                            fee_numerator: collection.seller_fee_basis_points.into(),
-                        },
-                    )
+                    .retry_create_drop(drop.drop_type, event_key, proto::CreateEditionTransaction {
+                        edition_info: None,
+                        amount,
+                        fee_receiver: owner_address,
+                        fee_numerator: collection.seller_fee_basis_points.into(),
+                    })
                     .await?;
             },
             BlockchainEnum::Ethereum => {
