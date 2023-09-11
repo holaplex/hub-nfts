@@ -23,7 +23,8 @@ pub struct Model {
     pub edition: i64,
     pub seller_fee_basis_points: i16,
     pub credits_deduction_id: Option<Uuid>,
-    pub compressed: bool,
+    #[sea_orm(nullable)]
+    pub compressed: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -521,7 +521,7 @@ impl Mutation {
             return Err(Error::new("New collection must be Metaplex Certified"));
         }
 
-        if mint.compressed == true {
+        if let Some(true) = mint.compressed {
             return Err(Error::new(
                 "Switching collection is only supported for uncompressed mint",
             ));

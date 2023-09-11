@@ -41,7 +41,7 @@ pub struct CollectionMint {
     /// credits deduction id
     pub credits_deduction_id: Option<Uuid>,
     /// Indicates if the NFT is compressed. Compression is only supported on Solana.
-    pub compressed: bool,
+    pub compressed: Option<bool>,
 }
 
 #[ComplexObject]

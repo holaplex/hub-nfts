@@ -402,7 +402,7 @@ impl Processor {
                 .try_into()
                 .map_err(ProcessorErrorKind::InvalidSellerFee)?),
             credits_deduction_id: Set(None),
-            compressed: Set(compressed),
+            compressed: Set(Some(compressed)),
         };
 
         let mint_model = mint_am.insert(self.db.get()).await?;

@@ -416,7 +416,7 @@ impl Mutation {
             creation_status: Set(CreationStatus::Pending),
             seller_fee_basis_points: Set(collection.seller_fee_basis_points),
             created_by: Set(user_id),
-            compressed: Set(compressed),
+            compressed: Set(Some(compressed)),
             credits_deduction_id: Set(Some(credits_deduction_id)),
             ..Default::default()
         };
@@ -556,7 +556,7 @@ impl Mutation {
             return Err(Error::new("Mint is an edition and cannot be updated"));
         }
 
-        if mint.compressed {
+        if let Some(true) = mint.compressed {
             return Err(Error::new("Mint is compressed and cannot be updated"));
         }
 
@@ -785,6 +785,9 @@ impl Mutation {
 
         let project_id = collection.project_id;
         let blockchain = collection.blockchain;
+        let compressed = collection_mint_model.compressed.ok_or(Error::new(
+            "collection mint does not have a compressed value",
+        ))?;
 
         let owner_address = fetch_owner(conn, project_id, blockchain).await?;
 
@@ -828,7 +831,7 @@ impl Mutation {
                             creators: creators.into_iter().map(Into::into).collect(),
                         }),
                         recipient_address: recipient.to_string(),
-                        compressed: collection_mint_model.compressed,
+                        compressed,
                         collection_id: collection_mint_model.collection_id.to_string(),
                     })
                     .await?;
@@ -870,7 +873,7 @@ impl Mutation {
             creation_status: Set(CreationStatus::Queued),
             seller_fee_basis_points: Set(collection_model.seller_fee_basis_points),
             created_by: Set(user_id),
-            compressed: Set(false),
+            compressed: Set(None),
             ..Default::default()
         };
 
