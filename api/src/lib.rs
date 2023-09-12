@@ -1,6 +1,6 @@
 #![deny(clippy::disallowed_methods, clippy::suspicious, clippy::style)]
 #![warn(clippy::pedantic, clippy::cargo)]
-#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::module_name_repetitions, clippy::missing_errors_doc)]
 
 pub mod blockchains;
 pub mod collection;
@@ -269,7 +269,7 @@ pub struct AppContext {
     balance: Balance,
     project_drops_loader: DataLoader<ProjectDropsLoader>,
     project_collections_loader: DataLoader<ProjectCollectionsLoader>,
-    project_collection_loader: DataLoader<ProjectCollectionLoader>,
+    single_project_collection_loader: DataLoader<ProjectCollectionLoader>,
     collection_loader: DataLoader<CollectionLoader>,
     metadata_json_loader: DataLoader<MetadataJsonLoader>,
     metadata_json_attributes_loader: DataLoader<MetadataJsonAttributesLoader>,
@@ -303,7 +303,7 @@ impl AppContext {
         let collection_loader = DataLoader::new(CollectionLoader::new(db.clone()), tokio::spawn);
         let project_collections_loader =
             DataLoader::new(ProjectCollectionsLoader::new(db.clone()), tokio::spawn);
-        let project_collection_loader =
+        let single_project_collection_loader =
             DataLoader::new(ProjectCollectionLoader::new(db.clone()), tokio::spawn);
         let metadata_json_loader =
             DataLoader::new(MetadataJsonLoader::new(db.clone()), tokio::spawn);
@@ -345,7 +345,7 @@ impl AppContext {
             balance,
             project_drops_loader,
             project_collections_loader,
-            project_collection_loader,
+            single_project_collection_loader,
             collection_loader,
             metadata_json_loader,
             metadata_json_attributes_loader,

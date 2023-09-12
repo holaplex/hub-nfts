@@ -16,15 +16,15 @@ use crate::{
     db::Connection,
     entities::{
         collection_creators, collection_mints, collections, customer_wallets, drops,
-        metadata_json_attributes, metadata_json_files, metadata_jsons, mint_creators,
-        mint_histories, nft_transfers,
+        metadata_json_attributes, metadata_json_files, metadata_json_uploads, metadata_jsons,
+        mint_creators, mint_histories, nft_transfers,
         prelude::{
             CollectionMints, Collections, Drops, MintHistory, SwitchCollectionHistories,
             UpdateHistories,
         },
         project_wallets,
         sea_orm_active_enums::{Blockchain, CreationStatus},
-        switch_collection_histories, transfer_charges, update_histories, metadata_json_uploads,
+        switch_collection_histories, transfer_charges, update_histories,
     },
     proto::{
         nft_events::Event as NftEvent,
@@ -489,6 +489,7 @@ impl Processor {
         nft_transfer.insert(db).await?;
         Ok(())
     }
+
     async fn update_polygon_mints_owner(
         &self,
         payload: MintedTokensOwnershipUpdate,

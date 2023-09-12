@@ -70,6 +70,7 @@ impl MigrationTrait for Migration {
             )
             .await
     }
+
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
             .drop_table(Table::drop().table(Collections::Table).to_owned())
@@ -111,11 +112,15 @@ pub enum Blockchain {
 
 impl Iden for Blockchain {
     fn unquoted(&self, s: &mut dyn std::fmt::Write) {
-        write!(s, "{}", match self {
-            Self::Type => "blockchain",
-            Self::Solana => "solana",
-            Self::Polygon => "polygon",
-        })
+        write!(
+            s,
+            "{}",
+            match self {
+                Self::Type => "blockchain",
+                Self::Solana => "solana",
+                Self::Polygon => "polygon",
+            }
+        )
         .unwrap();
     }
 }
@@ -128,11 +133,15 @@ pub enum CreationStatus {
 
 impl Iden for CreationStatus {
     fn unquoted(&self, s: &mut dyn std::fmt::Write) {
-        write!(s, "{}", match self {
-            Self::Type => "creation_status",
-            Self::Pending => "pending",
-            Self::Created => "created",
-        })
+        write!(
+            s,
+            "{}",
+            match self {
+                Self::Type => "creation_status",
+                Self::Pending => "pending",
+                Self::Created => "created",
+            }
+        )
         .unwrap();
     }
 }

@@ -491,7 +491,7 @@ impl Mutation {
             return Err(Error::new("New collection must be Metaplex Certified"));
         }
 
-        if mint.compressed == true {
+        if mint.compressed {
             return Err(Error::new(
                 "Switching collection is only supported for uncompressed mint",
             ));
@@ -748,7 +748,9 @@ pub fn validate_solana_creator_verification(
             && creator.address != project_treasury_wallet_address
         {
             return Err(Error::new(format!(
-                "Only the project treasury wallet of {project_treasury_wallet_address} can be verified in the mutation. Other creators must be verified independently. See the Metaplex documentation for more details."
+                "Only the project treasury wallet of {project_treasury_wallet_address} can be \
+                 verified in the mutation. Other creators must be verified independently. See the \
+                 Metaplex documentation for more details."
             )));
         }
     }

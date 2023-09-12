@@ -86,6 +86,7 @@ impl CollectionMint {
 
         update_mint_history_loader.load_one(self.id).await
     }
+
     /// The creators of the mint. Includes the creator addresses and their shares.
     async fn creators(&self, ctx: &Context<'_>) -> Result<Option<Vec<mint_creators::Model>>> {
         let AppContext {

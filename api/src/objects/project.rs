@@ -59,11 +59,11 @@ impl Project {
     #[graphql(deprecation = "Use `collection` root query field instead")]
     async fn collection(&self, ctx: &Context<'_>, id: Uuid) -> Result<Option<Collection>> {
         let AppContext {
-            project_collection_loader,
+            single_project_collection_loader,
             ..
         } = ctx.data::<AppContext>()?;
 
-        let collection = project_collection_loader.load_one(id).await?;
+        let collection = single_project_collection_loader.load_one(id).await?;
 
         if let Some(collection) = collection {
             if collection.project_id == self.id {

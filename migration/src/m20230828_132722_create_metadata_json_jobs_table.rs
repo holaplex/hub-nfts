@@ -34,10 +34,23 @@ impl MigrationTrait for Migration {
                             .custom(MetadataJsonJobType::Type)
                             .not_null(),
                     )
-                    .col(ColumnDef::new(MetadataJsonJobs::Continuation).binary().null())
-                    .col(ColumnDef::new(MetadataJsonJobs::Failed).boolean().not_null().default(false))
+                    .col(
+                        ColumnDef::new(MetadataJsonJobs::Continuation)
+                            .binary()
+                            .null(),
+                    )
+                    .col(
+                        ColumnDef::new(MetadataJsonJobs::Failed)
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
                     .col(ColumnDef::new(MetadataJsonJobs::Url).string().null())
-                    .col(ColumnDef::new(MetadataJsonJobs::MetadataJsonId).uuid().null())
+                    .col(
+                        ColumnDef::new(MetadataJsonJobs::MetadataJsonId)
+                            .uuid()
+                            .null(),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk-metadata_json_jobs_metadata_json_id")

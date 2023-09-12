@@ -1,8 +1,12 @@
-use sea_orm_migration::prelude::*;
-use sea_orm_migration::sea_orm::{ConnectionTrait, Statement};
+use sea_orm_migration::{
+    prelude::*,
+    sea_orm::{ConnectionTrait, Statement},
+};
 
-use crate::m20230303_155836_add_metadata_json_tables::MetadataJsons;
-use crate::m20230304_121614_move_collections_columns_to_metadata_jsons::MetadataJsons as MetadataJsons2;
+use crate::{
+    m20230303_155836_add_metadata_json_tables::MetadataJsons,
+    m20230304_121614_move_collections_columns_to_metadata_jsons::MetadataJsons as MetadataJsons2,
+};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -41,8 +45,8 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute(Statement::from_string(
                 manager.get_database_backend(),
-                "insert into metadata_json_uploads (id, uri, identifier) \
-                    select id, uri, identifier from metadata_jsons"
+                "insert into metadata_json_uploads (id, uri, identifier) select id, uri, \
+                 identifier from metadata_jsons"
                     .into(),
             ))
             .await?;
@@ -75,11 +79,9 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute(Statement::from_string(
                 manager.get_database_backend(),
-                "update metadata_jsons \
-                    set uri = rows.uri, \
-                        identifier = rows.identifier \
-                    from (select id, uri, identifier from metadata_json_uploads) as rows \
-                    where rows.id = metadata_jsons.id"
+                "update metadata_jsons set uri = rows.uri, identifier = rows.identifier from \
+                 (select id, uri, identifier from metadata_json_uploads) as rows where rows.id = \
+                 metadata_jsons.id"
                     .into(),
             ))
             .await?;

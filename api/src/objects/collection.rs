@@ -56,6 +56,7 @@ impl Collection {
     async fn blockchain(&self) -> Blockchain {
         self.blockchain
     }
+
     /// The total supply of the collection. Setting to `null` implies unlimited minting.
     async fn supply(&self) -> Option<i64> {
         self.supply

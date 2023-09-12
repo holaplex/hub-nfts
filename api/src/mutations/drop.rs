@@ -278,6 +278,7 @@ impl Mutation {
             drop: Drop::new(drop, collection),
         })
     }
+
     /// This mutation allows for the temporary blocking of the minting of editions and can be resumed by calling the resumeDrop mutation.
     pub async fn pause_drop(
         &self,

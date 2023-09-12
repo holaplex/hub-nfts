@@ -32,7 +32,7 @@ impl Solana {
         MintMetaplexEditionTransaction,
         MetaplexMasterEditionTransaction,
     > + TransferEvent<TransferMetaplexAssetTransaction>
-    + CollectionEvent<
+           + CollectionEvent<
         MetaplexMasterEditionTransaction,
         MetaplexMasterEditionTransaction,
         MintMetaplexMetadataTransaction,

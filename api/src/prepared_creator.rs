@@ -1,4 +1,4 @@
-use crate::proto::{Creator, SolanaCreator};
+use crate::proto::Creator;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PreparedCreator {

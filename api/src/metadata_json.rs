@@ -28,7 +28,11 @@ use crate::{
             finish_create_collection, finish_patch_collection, FinishCreateCollectionArgs,
             FinishPatchCollectionArgs,
         },
-        drop::{finish_create_drop, FinishCreateDropArgs, FinishPatchDropArgs, finish_patch_drop}, mint::{FinishUpdateMintArgs, finish_update_mint, FinishMintToCollectionArgs, finish_mint_to_collection},
+        drop::{finish_create_drop, finish_patch_drop, FinishCreateDropArgs, FinishPatchDropArgs},
+        mint::{
+            finish_mint_to_collection, finish_update_mint, FinishMintToCollectionArgs,
+            FinishUpdateMintArgs,
+        },
     },
     nft_storage::NftStorageClient,
     objects::MetadataJsonInput,
@@ -58,7 +62,10 @@ pub struct JobRunner(mpsc::Sender<JobRunnerMessage>);
 
 impl JobRunner {
     #[must_use]
-    pub fn new(ctx: JobRunnerContext, client: NftStorageClient) -> (Self, tokio::task::JoinHandle<()>) {
+    pub fn new(
+        ctx: JobRunnerContext,
+        client: NftStorageClient,
+    ) -> (Self, tokio::task::JoinHandle<()>) {
         let (tx, rx) = mpsc::channel(1);
 
         (
@@ -141,7 +148,9 @@ async fn job_runner(
 
         for job in jobs {
             let id = job.id;
-            let true = started_jobs.insert(id) else { continue };
+            let true = started_jobs.insert(id) else {
+                continue;
+            };
 
             let ctx = ctx.clone();
             let client = client.clone();
