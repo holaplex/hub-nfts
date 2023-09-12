@@ -10,6 +10,7 @@ pub mod entities;
 pub mod events;
 pub mod handlers;
 pub mod metadata_json;
+pub mod metrics;
 pub mod mutations;
 pub mod nft_storage;
 pub mod objects;
@@ -41,6 +42,7 @@ use hub_core::{
     tokio,
     uuid::Uuid,
 };
+use metrics::Metrics;
 use mutations::Mutation;
 use nft_storage::NftStorageClient;
 use poem::{async_trait, FromRequest, Request, RequestBody};
@@ -338,6 +340,7 @@ impl AppContext {
             DataLoader::new(CollectionMintTransfersLoader::new(db.clone()), tokio::spawn);
         let switch_collection_history_loader =
             DataLoader::new(SwitchCollectionHistoryLoader::new(db.clone()), tokio::spawn);
+
         Self {
             db,
             user_id,

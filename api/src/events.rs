@@ -26,6 +26,7 @@ use crate::{
         sea_orm_active_enums::{Blockchain, CreationStatus},
         switch_collection_histories, transfer_charges, update_histories,
     },
+    metrics::Metrics,
     proto::{
         nft_events::Event as NftEvent,
         polygon_nft_events::Event as PolygonNftEvents,
@@ -111,6 +112,7 @@ pub struct Processor {
     pub db: Connection,
     pub credits: CreditsClient<Actions>,
     pub producer: Producer<NftEvents>,
+    pub metrics: Metrics,
 }
 
 #[derive(Clone)]
@@ -149,11 +151,13 @@ impl Processor {
         db: Connection,
         credits: CreditsClient<Actions>,
         producer: Producer<NftEvents>,
+        metrics: Metrics,
     ) -> Self {
         Self {
             db,
             credits,
             producer,
+            metrics,
         }
     }
 
@@ -768,6 +772,15 @@ impl Processor {
         let mut creation_status = NftCreationStatus::Completed;
 
         if let MintResult::Success(MintTransaction { signature, address }) = payload {
+            let now = Utc::now();
+            let elapsed_millis = now
+                .signed_duration_since(collection_mint.created_at)
+                .num_milliseconds();
+
+            self.metrics
+                .mint_duration_ms_bucket
+                .record(elapsed_millis, &[]);
+
             mint_history_am.status = Set(CreationStatus::Created);
             mint_history_am.tx_signature = Set(Some(signature.clone()));
             collection_mint_active_model.creation_status = Set(CreationStatus::Created);
