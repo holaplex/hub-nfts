@@ -6,6 +6,7 @@ use hub_core::{
     backon::Retryable,
     futures_util::stream::FuturesUnordered,
     prelude::*,
+    producer::Producer,
     thiserror,
     tokio::{self, sync::mpsc},
     uuid::Uuid,
@@ -14,57 +15,117 @@ use metadata_jsons::Column as MetadataJsonColumn;
 use sea_orm::{prelude::*, sea_query::OnConflict, QuerySelect, Set, TransactionTrait};
 
 use crate::{
+    blockchains::{polygon::Polygon, solana::Solana},
     db::Connection,
     entities::{
-        metadata_json_attributes, metadata_json_files, metadata_json_jobs, metadata_jsons,
+        metadata_json_attributes, metadata_json_files, metadata_json_jobs, metadata_json_uploads,
+        metadata_jsons,
         prelude::{MetadataJsonAttributes, MetadataJsonFiles, MetadataJsons},
         sea_orm_active_enums::MetadataJsonJobType,
     },
+    mutations::{
+        collection::{
+            finish_create_collection, finish_patch_collection, FinishCreateCollectionArgs,
+            FinishPatchCollectionArgs,
+        },
+        drop::{finish_create_drop, FinishCreateDropArgs, FinishPatchDropArgs, finish_patch_drop}, mint::{FinishUpdateMintArgs, finish_update_mint, FinishMintToCollectionArgs, finish_mint_to_collection},
+    },
     nft_storage::NftStorageClient,
     objects::MetadataJsonInput,
+    proto::NftEvents,
 };
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum Continuation {
+    CreateCollection(FinishCreateCollectionArgs),
+    PatchCollection(FinishPatchCollectionArgs),
+    CreateDrop(FinishCreateDropArgs),
+    PatchDrop(FinishPatchDropArgs),
+    MintToCollection(FinishMintToCollectionArgs),
+    UpdateMint(FinishUpdateMintArgs),
+}
+
+type JobRunnerMessage = metadata_json_jobs::ActiveModel;
+pub type JobResult = Result<()>;
 
 #[derive(Debug, thiserror::Error, Triage)]
 #[fatal]
 #[error("Unable to send message to metadata JSON job runner - the task has probably crashed!")]
-pub struct JobRunnerError(mpsc::error::SendError<()>);
+pub struct JobRunnerError(mpsc::error::SendError<JobRunnerMessage>);
 
 #[derive(Debug, Clone)]
-pub struct JobRunner(mpsc::Sender<()>);
+pub struct JobRunner(mpsc::Sender<JobRunnerMessage>);
 
 impl JobRunner {
     #[must_use]
-    pub fn new(db: Connection, client: NftStorageClient) -> (Self, tokio::task::JoinHandle<()>) {
+    pub fn new(ctx: JobRunnerContext, client: NftStorageClient) -> (Self, tokio::task::JoinHandle<()>) {
         let (tx, rx) = mpsc::channel(1);
 
         (
             JobRunner(tx),
-            tokio::task::spawn(job_runner(rx, db, client)),
+            tokio::task::spawn(job_runner(rx, ctx, client)),
         )
     }
 
-    /// Refresh the list of running metadata JSON jobs
+    /// Submit a new metadata JSON job
     ///
     /// # Errors
     /// Returns a fatal error if the job runner task cannot be reached
-    pub async fn refresh(&self) -> Result<(), JobRunnerError> {
-        self.0.send(()).await.map_err(JobRunnerError)
+    pub async fn submit(&self, job: JobRunnerMessage) -> Result<(), JobRunnerError> {
+        self.0.send(job).await.map_err(JobRunnerError)
     }
 }
 
-async fn job_runner(mut refresh: mpsc::Receiver<()>, db: Connection, client: NftStorageClient) {
+#[derive(Clone)]
+pub struct JobRunnerContext {
+    pub db: Connection,
+    pub solana: Solana,
+    pub polygon: Polygon,
+    pub nfts_producer: Producer<NftEvents>,
+}
+
+pub struct JobContext<'a> {
+    runner_ctx: &'a JobRunnerContext,
+    pub metadata_json: metadata_jsons::Model,
+    pub upload: metadata_json_uploads::Model,
+}
+
+impl std::ops::Deref for JobContext<'_> {
+    type Target = JobRunnerContext;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.runner_ctx
+    }
+}
+
+async fn job_runner(
+    mut rx: mpsc::Receiver<JobRunnerMessage>,
+    ctx: JobRunnerContext,
+    client: NftStorageClient,
+) {
     let mut started_jobs = HashSet::new();
-    let tasks = FuturesUnordered::new();
+    let mut tasks = FuturesUnordered::new();
     let backoff = backon::ExponentialBuilder::default()
         .with_jitter()
         .with_min_delay(Duration::from_millis(500))
         .with_max_times(5);
+    let failed = metadata_json_jobs::ActiveModel {
+        failed: Set(true),
+        ..Default::default()
+    };
 
     loop {
+        enum Event {
+            TaskFinished(Uuid, Result<Result<(), Error>, tokio::task::JoinError>),
+            Message(Option<JobRunnerMessage>),
+        }
+
         let jobs = (|| async {
             let res = metadata_json_jobs::Entity::find()
+                .filter(metadata_json_jobs::Column::Failed.eq(false))
                 .limit(16)
-                .all(db.get())
+                .all(ctx.db.get())
                 .await
                 .context("Error getting metadata JSON jobs from DB");
 
@@ -79,51 +140,150 @@ async fn job_runner(mut refresh: mpsc::Receiver<()>, db: Connection, client: Nft
         .unwrap_or_default();
 
         for job in jobs {
-            let true = started_jobs.insert(job.id) else { continue };
+            let id = job.id;
+            let true = started_jobs.insert(id) else { continue };
 
-            let db = db.clone();
+            let ctx = ctx.clone();
             let client = client.clone();
             let backoff = backoff.clone();
-            tasks.push(tokio::task::spawn(async move {
-                (|| async { run_job(&db, &client, &job).await })
-                    .retry(&backoff)
-                    .await
-            }));
+            tasks.push(
+                tokio::task::spawn(async move {
+                    (|| async { run_job(&ctx, &client, &job).await })
+                        .retry(&backoff)
+                        .await
+                })
+                .map(move |r| (r, id)),
+            );
         }
 
-        let Some(()) = refresh.recv().await else { break };
+        let evt = tokio::select! {
+            Some((t, i)) = tasks.next() => Event::TaskFinished(i, t),
+            m = rx.recv() => Event::Message(m),
+        };
+
+        match evt {
+            Event::TaskFinished(id, Err(e)) => {
+                error!("{:?}", Error::new(e).context("Metadata JSON job panicked"));
+                metadata_json_jobs::Entity::update(failed.clone())
+                    .filter(metadata_json_jobs::Column::Id.eq(id))
+                    .exec(ctx.db.get())
+                    .await
+                    .map(|_| ())
+                    .with_context(|| {
+                        format!("Error marking panicked metadata JSON job {id:?} as failed")
+                    })
+            },
+            Event::TaskFinished(id, Ok(Err(e))) => {
+                error!("{:?}", e.context("Error processing metadata JSON job"));
+                metadata_json_jobs::Entity::update(failed.clone())
+                    .filter(metadata_json_jobs::Column::Id.eq(id))
+                    .exec(ctx.db.get())
+                    .await
+                    .map(|_| ())
+                    .with_context(|| format!("Error marking metadata JSON job {id:?} as failed"))
+            },
+            Event::TaskFinished(id, Ok(Ok(()))) => metadata_json_jobs::Entity::delete_by_id(id)
+                .exec(ctx.db.get())
+                .await
+                .map(|_| ())
+                .with_context(|| format!("Error dequeuing finished metadata JSON job {id:?}")),
+            Event::Message(None) => break,
+            Event::Message(Some(m)) => metadata_json_jobs::Entity::insert(m.clone())
+                .exec(ctx.db.get())
+                .await
+                .map(|_| ())
+                .with_context(|| format!("Error queuing metadata JSON job {m:?}")),
+        }
+        .unwrap_or_else(|e| panic!("{e:?}"));
     }
 }
 
 async fn run_job(
-    db: &Connection,
+    ctx: &JobRunnerContext,
     client: &NftStorageClient,
     job: &metadata_json_jobs::Model,
 ) -> Result<()> {
-    match job.r#type {
-        MetadataJsonJobType::Download => todo!(),
+    let metadata_json_jobs::Model {
+        id: _,
+        r#type: ty,
+        continuation,
+        failed,
+        url,
+        metadata_json_id,
+    } = job;
+
+    assert!(!failed);
+
+    let (metadata_json, upload) = match ty {
+        MetadataJsonJobType::Download => todo!("download {url:?}"),
         MetadataJsonJobType::Upload => {
-            MetadataJson::fetch(
-                job.metadata_json_id
-                    .context("Missing metadata JSON ID from upload job")?,
-                db,
+            let metadata_json_id =
+                metadata_json_id.context("Missing metadata JSON ID from upload job")?;
+
+            let mut metadata_json = MetadataJson::fetch(metadata_json_id, &ctx.db)
+                .await
+                .context("Error fetching metadata JSON")?;
+            let upload = metadata_json
+                .upload_internal(metadata_json_id, &ctx.db, client)
+                .await
+                .context("Error uploading metadata JSON")?;
+
+            (
+                upload
+                    .find_related(metadata_jsons::Entity)
+                    .one(ctx.db.get())
+                    .await?
+                    .context("Missing metadata JSON associated with upload")?,
+                upload.clone(),
             )
-            .await
-            .context("Error fetching metadata JSON")?
-            .upload(client)
-            .await
-            .context("Error uploading metadata JSON")?;
         },
+    };
+
+    if let Some(cont) = continuation {
+        let ctx = JobContext {
+            runner_ctx: ctx,
+            metadata_json,
+            upload,
+        };
+
+        let res: JobResult = match ciborium::from_reader(&mut cont.as_slice())
+            .context("Error deserializing metadata JSON job continuation")?
+        {
+            Continuation::CreateCollection(args) => finish_create_collection(&ctx, args).await,
+            Continuation::PatchCollection(args) => finish_patch_collection(&ctx, args).await,
+            Continuation::CreateDrop(args) => finish_create_drop(&ctx, args).await,
+            Continuation::PatchDrop(args) => finish_patch_drop(&ctx, args).await,
+            Continuation::MintToCollection(args) => finish_mint_to_collection(&ctx, args).await,
+            Continuation::UpdateMint(args) => finish_update_mint(&ctx, args).await,
+        };
+
+        res?;
     }
 
     Ok(())
 }
 
+pub trait MetadataJsonUploadInfo<'a> {
+    fn into_info(self) -> Option<(&'a JobRunner, Option<Continuation>)>;
+}
+
+impl<'a> MetadataJsonUploadInfo<'a> for Option<&'a JobRunner> {
+    fn into_info(self) -> Option<(&'a JobRunner, Option<Continuation>)> {
+        self.map(|r| (r, None))
+    }
+}
+
+impl<'a> MetadataJsonUploadInfo<'a> for (&'a JobRunner, Continuation) {
+    fn into_info(self) -> Option<(&'a JobRunner, Option<Continuation>)> {
+        let (r, c) = self;
+        Some((r, Some(c)))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct MetadataJson {
     pub metadata_json: MetadataJsonInput,
-    pub uri: Option<String>,
-    pub identifier: Option<String>,
+    pub upload: Option<metadata_json_uploads::Model>,
 }
 
 impl MetadataJson {
@@ -131,8 +291,7 @@ impl MetadataJson {
     pub fn new(metadata_json: MetadataJsonInput) -> Self {
         Self {
             metadata_json,
-            uri: None,
-            identifier: None,
+            upload: None,
         }
     }
 
@@ -163,10 +322,14 @@ impl MetadataJson {
 
         let metadata_json = (metadata_json_model.clone(), attributes, Some(files)).into();
 
+        let upload = metadata_json_uploads::Entity::find()
+            .filter(metadata_json_uploads::Column::Id.eq(id))
+            .one(db.get())
+            .await?;
+
         Ok(Self {
             metadata_json,
-            uri: Some(metadata_json_model.uri.clone()),
-            identifier: Some(metadata_json_model.identifier),
+            upload,
         })
     }
 
@@ -174,38 +337,49 @@ impl MetadataJson {
     ///
     /// # Errors
     /// This function fails if unable to upload `metadata_json` to nft.storage
-    pub async fn upload(&mut self, nft_storage: &NftStorageClient) -> Result<&Self> {
+    async fn upload_internal(
+        &mut self,
+        id: Uuid,
+        db: &Connection,
+        nft_storage: &NftStorageClient,
+    ) -> Result<&metadata_json_uploads::Model> {
+        if self.upload.is_some() {
+            bail!("Error uploading already-uploaded metadata JSON");
+        }
+
         let response = nft_storage.upload(self.metadata_json.clone()).await?;
         let cid = response.value.cid;
 
         let uri = nft_storage.ipfs_endpoint.join(&cid)?.to_string();
 
-        self.uri = Some(uri);
-        self.identifier = Some(cid);
+        let upload = metadata_json_uploads::ActiveModel {
+            id: Set(id),
+            uri: Set(uri.clone()),
+            identifier: Set(cid.clone()),
+        }
+        .insert(db.get())
+        .await?;
 
-        Ok(self)
+        self.upload = Some(upload);
+
+        Ok(self.upload.as_ref().unwrap_or_else(|| unreachable!()))
     }
 
     /// Res
     ///
     /// # Errors
     /// This function fails if unable to save `metadata_json` to the db
-    pub async fn save(&self, id: Uuid, db: &Connection) -> Result<metadata_jsons::Model> {
+    pub async fn save<'a, I: MetadataJsonUploadInfo<'a> + 'a>(
+        &'a self,
+        id: Uuid,
+        db: &'a Connection,
+        upload_with: I,
+    ) -> Result<metadata_jsons::Model> {
         let payload = self.metadata_json.clone();
-        let identifier = self
-            .identifier
-            .clone()
-            .ok_or_else(|| anyhow!("no identifier. call #upload before #save"))?;
-        let uri = self
-            .uri
-            .clone()
-            .ok_or_else(|| anyhow!("no uri. call #upload before #save"))?;
 
         let metadata_json_active_model = metadata_jsons::ActiveModel {
             id: Set(id),
-            identifier: Set(identifier),
             name: Set(payload.name),
-            uri: Set(uri),
             symbol: Set(payload.symbol),
             description: Set(payload.description),
             image: Set(payload.image),
@@ -217,9 +391,7 @@ impl MetadataJson {
             .on_conflict(
                 OnConflict::column(MetadataJsonColumn::Id)
                     .update_columns([
-                        MetadataJsonColumn::Identifier,
                         MetadataJsonColumn::Name,
-                        MetadataJsonColumn::Uri,
                         MetadataJsonColumn::Symbol,
                         MetadataJsonColumn::Description,
                         MetadataJsonColumn::Image,
@@ -271,6 +443,26 @@ impl MetadataJson {
             }
 
             tx.commit().await?;
+        }
+
+        if let Some((runner, cont)) = upload_with.into_info() {
+            let continuation = cont
+                .map(|c| {
+                    let mut vec = vec![];
+                    ciborium::into_writer(&c, &mut vec)
+                        .context("Error serializing metadata JSON job continuation")?;
+                    Result::<_>::Ok(vec)
+                })
+                .transpose()?;
+
+            runner
+                .submit(metadata_json_jobs::ActiveModel {
+                    r#type: Set(MetadataJsonJobType::Upload),
+                    continuation: Set(continuation),
+                    metadata_json_id: Set(Some(id)),
+                    ..Default::default()
+                })
+                .await?;
         }
 
         Ok(metadata_json)

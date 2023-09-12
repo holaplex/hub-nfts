@@ -13,6 +13,7 @@ pub mod metadata_json;
 pub mod mutations;
 pub mod nft_storage;
 pub mod objects;
+mod prepared_creator;
 pub mod queries;
 
 use async_graphql::{
@@ -42,7 +43,6 @@ use hub_core::{
     uuid::Uuid,
 };
 use mutations::Mutation;
-use nft_storage::NftStorageClient;
 use poem::{async_trait, FromRequest, Request, RequestBody};
 use queries::Query;
 

@@ -4,6 +4,7 @@ use async_graphql::{Context, Error, InputObject, Object, Result, SimpleObject};
 use hub_core::{
     chrono::Utc,
     credits::{CreditsClient, TransactionId},
+    prelude::*,
     producer::Producer,
 };
 use reqwest::Url;
@@ -15,20 +16,21 @@ use crate::{
     blockchains::{polygon::Polygon, solana::Solana, CollectionEvent},
     collection::Collection,
     entities::{
-        collection_creators, collection_mints, collections, metadata_jsons,
+        collection_creators, collection_mints, collections, metadata_json_uploads, metadata_jsons,
         prelude::{CollectionCreators, CollectionMints, Collections, Drops, MetadataJsons},
         project_wallets,
         sea_orm_active_enums::{Blockchain, Blockchain as BlockchainEnum, CreationStatus},
         switch_collection_histories,
     },
-    metadata_json::{MetadataJson, self},
+    metadata_json::{self, MetadataJson},
     objects::{Collection as CollectionObject, CollectionMint, Creator, MetadataJsonInput},
+    prepared_creator::PreparedCreator,
     proto::{
         nft_events::Event as NftEvent, CollectionCreation, CollectionImport,
         CreationStatus as NftCreationStatus, Creator as ProtoCreator, MasterEdition,
         MetaplexMasterEditionTransaction, NftEventKey, NftEvents,
     },
-    Actions, AppContext, NftStorageClient,
+    Actions, AppContext,
 };
 
 #[derive(Default)]
@@ -61,9 +63,7 @@ impl Mutation {
 
         let conn = db.get();
         let credits = ctx.data::<CreditsClient<Actions>>()?;
-        let solana = ctx.data::<Solana>()?;
         let job_runner = ctx.data::<metadata_json::JobRunner>()?;
-        let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
         let owner_address = fetch_owner(conn, input.project, input.blockchain).await?;
 
@@ -99,56 +99,26 @@ impl Mutation {
             .save(db)
             .await?;
 
-        let metadata_json = MetadataJson::new(input.metadata_json)
-            .save(collection.id, db)
-            .await?;
-
-        job_runner.refresh().await?;
-
-        let event_key = NftEventKey {
-            id: collection.id.to_string(),
-            user_id: user_id.to_string(),
-            project_id: input.project.to_string(),
-        };
-
-        match input.blockchain {
-            BlockchainEnum::Solana => {
-                solana
-                    .event()
-                    .create_collection(event_key, MetaplexMasterEditionTransaction {
-                        master_edition: Some(MasterEdition {
-                            owner_address,
-                            supply: Some(0),
-                            name: metadata_json.name,
-                            symbol: metadata_json.symbol,
-                            metadata_uri: metadata_json.uri,
-                            seller_fee_basis_points: 0,
-                            creators: input
-                                .creators
-                                .into_iter()
-                                .map(TryFrom::try_from)
-                                .collect::<Result<_>>()?,
-                        }),
-                    })
-                    .await?;
-            },
-            BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
-                return Err(Error::new("blockchain not supported as this time"));
-            },
-        };
-
-        nfts_producer
-            .send(
-                Some(&NftEvents {
-                    event: Some(NftEvent::CollectionCreated(CollectionCreation {
-                        status: NftCreationStatus::InProgress as i32,
-                    })),
-                }),
-                Some(&NftEventKey {
-                    id: collection.id.to_string(),
-                    project_id: collection.project_id.to_string(),
-                    user_id: user_id.to_string(),
-                }),
+        MetadataJson::new(input.metadata_json)
+            .save(
+                collection.id,
+                db,
+                (
+                    job_runner,
+                    metadata_json::Continuation::CreateCollection(FinishCreateCollectionArgs {
+                        user_id,
+                        project_id: input.project,
+                        collection_id: collection.id,
+                        blockchain: input.blockchain,
+                        owner_address,
+                        creators: input
+                            .creators
+                            .into_iter()
+                            .map(ProtoCreator::try_from)
+                            .map(|r| r.map(Into::into))
+                            .collect::<Result<_>>()?,
+                    }),
+                ),
             )
             .await?;
 
@@ -201,6 +171,10 @@ impl Mutation {
             .filter(collection_creators::Column::CollectionId.eq(collection.id))
             .all(conn)
             .await?;
+        let upload = metadata_json_uploads::Entity::find_by_id(collection.id)
+            .one(conn)
+            .await?
+            .context("Metadata JSON upload not found")?;
 
         let owner_address = fetch_owner(conn, collection.project_id, collection.blockchain).await?;
 
@@ -224,24 +198,27 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .retry_create_collection(event_key, MetaplexMasterEditionTransaction {
-                        master_edition: Some(MasterEdition {
-                            owner_address,
-                            name: metadata_json.name,
-                            symbol: metadata_json.symbol,
-                            metadata_uri: metadata_json.uri,
-                            seller_fee_basis_points: 0,
-                            supply: Some(0),
-                            creators: creators
-                                .into_iter()
-                                .map(|c| ProtoCreator {
-                                    address: c.address,
-                                    verified: c.verified,
-                                    share: c.share,
-                                })
-                                .collect(),
-                        }),
-                    })
+                    .retry_create_collection(
+                        event_key,
+                        MetaplexMasterEditionTransaction {
+                            master_edition: Some(MasterEdition {
+                                owner_address,
+                                name: metadata_json.name,
+                                symbol: metadata_json.symbol,
+                                metadata_uri: upload.uri,
+                                seller_fee_basis_points: 0,
+                                supply: Some(0),
+                                creators: creators
+                                    .into_iter()
+                                    .map(|c| ProtoCreator {
+                                        address: c.address,
+                                        verified: c.verified,
+                                        share: c.share,
+                                    })
+                                    .collect(),
+                            }),
+                        },
+                    )
                     .await?;
             },
             BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
@@ -365,7 +342,6 @@ impl Mutation {
         if let Some(metadata_json) = &metadata_json {
             validate_json(collection.blockchain, metadata_json)?;
         }
-
         let current_creators = collection_creators::Entity::find()
             .filter(collection_creators::Column::CollectionId.eq(collection.id))
             .all(conn)
@@ -402,62 +378,54 @@ impl Mutation {
             .await?;
         }
 
-        let metadata_json_model = metadata_jsons::Entity::find()
-            .filter(metadata_jsons::Column::Id.eq(collection.id))
-            .one(conn)
-            .await?
-            .ok_or(Error::new("metadata json not found"))?;
-
-        let metadata_json_model = if let Some(metadata_json) = metadata_json {
-            metadata_json_model.clone().delete(conn).await?;
-
-            let model = MetadataJson::new(metadata_json.clone())
-                .save(collection.id, db)
-                .await?;
-
-            job_runner.refresh().await?;
-
-            model
+        let creators = if let Some(creators) = creators.clone() {
+            creators
+                .into_iter()
+                .map(ProtoCreator::try_from)
+                .map(|r| r.map(Into::into))
+                .collect::<Result<_>>()?
         } else {
-            metadata_json_model
+            current_creators
+                .into_iter()
+                .map(ProtoCreator::from)
+                .map(Into::into)
+                .collect()
         };
 
-        let event_key = NftEventKey {
-            id: collection.id.to_string(),
-            user_id: user_id.to_string(),
-            project_id: collection.project_id.to_string(),
+        let finish_args = FinishPatchCollectionArgs {
+            user_id,
+            project_id: collection.project_id,
+            collection_id: collection.id,
+            blockchain: collection.blockchain,
+            owner_address,
+            creators,
         };
 
-        match collection.blockchain {
-            BlockchainEnum::Solana => {
-                let creators = if let Some(creators) = creators.clone() {
-                    creators
-                        .into_iter()
-                        .map(TryFrom::try_from)
-                        .collect::<Result<_>>()?
-                } else {
-                    current_creators.into_iter().map(Into::into).collect()
-                };
+        if let Some(metadata_json) = metadata_json {
+            MetadataJson::new(metadata_json.clone())
+                .save(
+                    collection.id,
+                    db,
+                    (
+                        job_runner,
+                        metadata_json::Continuation::PatchCollection(finish_args),
+                    ),
+                )
+                .await?;
+        } else {
+            let metadata_json_model = metadata_jsons::Entity::find()
+                .filter(metadata_jsons::Column::Id.eq(collection.id))
+                .one(conn)
+                .await?
+                .ok_or(Error::new("metadata json not found"))?;
+            let upload = metadata_json_uploads::Entity::find_by_id(metadata_json_model.id)
+                .one(db.get())
+                .await?
+                .context("Metadata JSON upload not found")?;
 
-                solana
-                    .event()
-                    .update_collection(event_key, MetaplexMasterEditionTransaction {
-                        master_edition: Some(MasterEdition {
-                            owner_address,
-                            supply: Some(0),
-                            name: metadata_json_model.name,
-                            symbol: metadata_json_model.symbol,
-                            metadata_uri: metadata_json_model.uri,
-                            seller_fee_basis_points: 0,
-                            creators,
-                        }),
-                    })
-                    .await?;
-            },
-            BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
-                return Err(Error::new("blockchain not supported yet"));
-            },
-        };
+            finish_patch_collection_internal(solana, &metadata_json_model, &upload, finish_args)
+                .await?;
+        }
 
         Ok(PatchCollectionPayload {
             collection: collection.into(),
@@ -577,6 +545,141 @@ impl Mutation {
             _ => Err(Error::new("Blockchain not supported")),
         }
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FinishCreateCollectionArgs {
+    user_id: Uuid,
+    project_id: Uuid,
+    collection_id: Uuid,
+    blockchain: BlockchainEnum,
+    owner_address: String,
+    creators: Vec<PreparedCreator>,
+}
+
+pub async fn finish_create_collection(
+    ctx: &metadata_json::JobContext<'_>,
+    args: FinishCreateCollectionArgs,
+) -> metadata_json::JobResult {
+    let FinishCreateCollectionArgs {
+        user_id,
+        project_id,
+        collection_id,
+        blockchain,
+        owner_address,
+        creators,
+    } = args;
+
+    let event_key = NftEventKey {
+        id: collection_id.to_string(),
+        user_id: user_id.to_string(),
+        project_id: project_id.to_string(),
+    };
+
+    match blockchain {
+        BlockchainEnum::Solana => {
+            ctx.solana
+                .event()
+                .create_collection(
+                    event_key.clone(),
+                    MetaplexMasterEditionTransaction {
+                        master_edition: Some(MasterEdition {
+                            owner_address,
+                            supply: Some(0),
+                            name: ctx.metadata_json.name.clone(),
+                            symbol: ctx.metadata_json.symbol.clone(),
+                            metadata_uri: ctx.upload.uri.clone(),
+                            seller_fee_basis_points: 0,
+                            creators: creators.into_iter().map(Into::into).collect(),
+                        }),
+                    },
+                )
+                .await?;
+        },
+        BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
+            bail!("Blockchain not supported currently");
+        },
+    };
+
+    ctx.nfts_producer
+        .send(
+            Some(&NftEvents {
+                event: Some(NftEvent::CollectionCreated(CollectionCreation {
+                    status: NftCreationStatus::InProgress as i32,
+                })),
+            }),
+            Some(&event_key),
+        )
+        .await?;
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FinishPatchCollectionArgs {
+    user_id: Uuid,
+    project_id: Uuid,
+    collection_id: Uuid,
+    blockchain: BlockchainEnum,
+    owner_address: String,
+    creators: Vec<PreparedCreator>,
+}
+
+#[inline]
+pub async fn finish_patch_collection(
+    ctx: &metadata_json::JobContext<'_>,
+    args: FinishPatchCollectionArgs,
+) -> metadata_json::JobResult {
+    finish_patch_collection_internal(&ctx.solana, &ctx.metadata_json, &ctx.upload, args).await
+}
+
+async fn finish_patch_collection_internal(
+    solana: &Solana,
+    metadata_json: &metadata_jsons::Model,
+    upload: &metadata_json_uploads::Model,
+    args: FinishPatchCollectionArgs,
+) -> metadata_json::JobResult {
+    let FinishPatchCollectionArgs {
+        user_id,
+        project_id,
+        collection_id,
+        blockchain,
+        owner_address,
+        creators,
+    } = args;
+
+    let event_key = NftEventKey {
+        id: collection_id.to_string(),
+        user_id: user_id.to_string(),
+        project_id: project_id.to_string(),
+    };
+
+    match blockchain {
+        BlockchainEnum::Solana => {
+            solana
+                .event()
+                .update_collection(
+                    event_key,
+                    MetaplexMasterEditionTransaction {
+                        master_edition: Some(MasterEdition {
+                            owner_address,
+                            supply: Some(0),
+                            name: metadata_json.name.clone(),
+                            symbol: metadata_json.symbol.clone(),
+                            metadata_uri: upload.uri.clone(),
+                            seller_fee_basis_points: 0,
+                            creators: creators.into_iter().map(Into::into).collect(),
+                        }),
+                    },
+                )
+                .await?;
+        },
+        BlockchainEnum::Polygon | BlockchainEnum::Ethereum => {
+            bail!("Blockchain not supported currently");
+        },
+    }
+
+    Ok(())
 }
 
 pub async fn fetch_owner(

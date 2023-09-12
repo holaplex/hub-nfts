@@ -24,7 +24,7 @@ use crate::{
         },
         project_wallets,
         sea_orm_active_enums::{Blockchain, CreationStatus},
-        switch_collection_histories, transfer_charges, update_histories,
+        switch_collection_histories, transfer_charges, update_histories, metadata_json_uploads,
     },
     proto::{
         nft_events::Event as NftEvent,
@@ -328,22 +328,27 @@ impl Processor {
 
         collection_am.insert(self.db.get()).await?;
 
+        let id = id.parse()?;
         let metadata_json = metadata_jsons::ActiveModel {
-            id: Set(id.parse()?),
+            id: Set(id),
             name: Set(name),
-            uri: Set(uri),
             symbol: Set(symbol),
             description: Set(description.unwrap_or_default()),
             image: Set(image),
             animation_url: Set(None),
             external_url: Set(None),
+        };
+        let upload = metadata_json_uploads::ActiveModel {
+            id: Set(id),
+            uri: Set(uri),
             identifier: Set(String::new()),
         };
 
         let json_model = metadata_json.insert(self.db.get()).await?;
+        let _upload_model = upload.insert(self.db.get()).await?;
         for creator in creators {
             let collection_creator = collection_creators::ActiveModel {
-                collection_id: Set(id.parse()?),
+                collection_id: Set(id),
                 address: Set(creator.address),
                 verified: Set(creator.verified),
                 share: Set(creator
@@ -386,8 +391,9 @@ impl Processor {
             image,
         } = metadata.ok_or(ProcessorErrorKind::MissingCollectionMetadata)?;
 
+        let id = id.parse()?;
         let mint_am = collection_mints::ActiveModel {
-            id: Set(id.parse()?),
+            id: Set(id),
             collection_id: Set(collection_id.parse()?),
             address: Set(Some(mint_address)),
             owner: Set(owner),
@@ -406,18 +412,22 @@ impl Processor {
         let mint_model = mint_am.insert(self.db.get()).await?;
 
         let metadata_json = metadata_jsons::ActiveModel {
-            id: Set(id.parse()?),
+            id: Set(id),
             name: Set(name),
-            uri: Set(uri),
             symbol: Set(symbol),
             description: Set(description.unwrap_or_default()),
             image: Set(image),
             animation_url: Set(None),
             external_url: Set(None),
+        };
+        let upload = metadata_json_uploads::ActiveModel {
+            id: Set(id),
+            uri: Set(uri),
             identifier: Set(String::new()),
         };
 
         let json_model = metadata_json.insert(self.db.get()).await?;
+        let _upload_model = upload.insert(self.db.get()).await?;
 
         for creator in creators {
             let mint_creator_am = mint_creators::ActiveModel {

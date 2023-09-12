@@ -66,7 +66,7 @@ impl MigrationTrait for Migration {
 
 /// Learn more at https://docs.rs/sea-query#iden
 #[derive(Iden)]
-enum MetadataJsons {
+pub enum MetadataJsons {
     Table,
     Uri,
 }

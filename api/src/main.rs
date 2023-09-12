@@ -6,8 +6,9 @@ use holaplex_hub_nfts::{
     db::Connection,
     events,
     handlers::{graphql_handler, health, playground},
+    metadata_json,
     nft_storage::NftStorageClient,
-    proto, Actions, AppState, Args, Services, metadata_json,
+    proto, Actions, AppState, Args, Services,
 };
 use hub_core::{prelude::*, tokio};
 use poem::{get, listener::TcpListener, middleware::AddData, post, EndpointExt, Route, Server};
@@ -38,12 +39,21 @@ pub fn main() {
                 .await?;
             let credits = common.credits_cfg.build::<Actions>().await?;
             let nft_storage = NftStorageClient::new(nft_storage)?;
-            let (mj_job_runner, _mj_job_task) = metadata_json::JobRunner::new(connection.clone(), nft_storage);
             let event_processor =
                 events::Processor::new(connection.clone(), credits.clone(), producer.clone());
 
             let solana = Solana::new(producer.clone());
             let polygon = Polygon::new(producer.clone());
+
+            let (mj_job_runner, _mj_job_task) = metadata_json::JobRunner::new(
+                metadata_json::JobRunnerContext {
+                    db: connection.clone(),
+                    solana: solana.clone(),
+                    polygon: polygon.clone(),
+                    nfts_producer: producer.clone(),
+                },
+                nft_storage,
+            );
 
             let state = AppState::new(
                 schema,

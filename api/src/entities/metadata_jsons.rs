@@ -11,11 +11,8 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    pub identifier: String,
     /// The assigned name of the NFT.
     pub name: String,
-    /// The URI for the complete metadata JSON.
-    pub uri: String,
     /// The symbol of the NFT.
     pub symbol: String,
     /// The description of the NFT.

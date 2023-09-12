@@ -11,6 +11,7 @@ pub mod drops;
 pub mod metadata_json_attributes;
 pub mod metadata_json_files;
 pub mod metadata_json_jobs;
+pub mod metadata_json_uploads;
 pub mod metadata_jsons;
 pub mod mint_creators;
 pub mod mint_histories;

@@ -19,11 +19,8 @@ use crate::{
 #[graphql(complex, concrete(name = "MetadataJson", params()))]
 pub struct MetadataJson {
     pub id: Uuid,
-    pub identifier: String,
     /// The assigned name of the NFT.
     pub name: String,
-    /// The URI for the complete metadata JSON.
-    pub uri: String,
     /// The symbol of the NFT.
     pub symbol: String,
     /// The description of the NFT.
@@ -66,9 +63,7 @@ impl From<metadata_jsons::Model> for MetadataJson {
     fn from(
         metadata_jsons::Model {
             id,
-            identifier,
             name,
-            uri,
             symbol,
             description,
             image,
@@ -78,9 +73,7 @@ impl From<metadata_jsons::Model> for MetadataJson {
     ) -> Self {
         Self {
             id,
-            identifier,
             name,
-            uri,
             symbol,
             description,
             image_original: image,
