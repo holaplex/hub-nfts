@@ -159,6 +159,13 @@ impl Processor {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
+
+    /// Processes incoming messages related to different services like Treasury and Solana.
+    /// Routes each message to the corresponding handler based on the type of service and the specific event.
+
+    /// # Errors
+    /// - Returns an error wrapped in `ProcessorError` if any of the operations inside the function fail.
     pub async fn process(&self, msg: Services) -> Result<()> {
         match msg {
             Services::Treasury(TreasuryEventKey { id, .. }, e) => match e.event {

@@ -37,11 +37,11 @@ impl DataLoader<Uuid> for SwitchCollectionHistoryLoader {
         Ok(switch_histories.into_iter().fold(
             HashMap::new(),
             |mut acc: HashMap<Uuid, Vec<switch_collection_histories::Model>>, switch_history| {
-                acc.entry(switch_history.collection_mint_id.clone())
+                acc.entry(switch_history.collection_mint_id)
                     .or_insert_with(Vec::new);
 
-                acc.entry(switch_history.collection_mint_id.clone())
-                    .and_modify(|switch_histories| switch_histories.push(switch_history.into()));
+                acc.entry(switch_history.collection_mint_id)
+                    .and_modify(|switch_histories| switch_histories.push(switch_history));
 
                 acc
             },

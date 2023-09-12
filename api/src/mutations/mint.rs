@@ -1287,17 +1287,20 @@ pub struct RetryUpdateMintPayload {
     status: CreationStatus,
 }
 
+/// Represents input data for `queue_mint_to_drop` mutation
 #[derive(Debug, Clone, InputObject)]
 pub struct QueueMintToDropInput {
     drop: Uuid,
     metadata_json: MetadataJsonInput,
 }
 
+/// Represents payload data for `queue_mint_to_drop` mutation
 #[derive(Debug, Clone, SimpleObject)]
 pub struct QueueMintToDropPayload {
     collection_mint: CollectionMint,
 }
 
+/// Represents input data for `mint_queued` mutation
 #[derive(Debug, Clone, InputObject)]
 pub struct MintQueuedInput {
     mint: Uuid,
@@ -1305,11 +1308,13 @@ pub struct MintQueuedInput {
     compressed: bool,
 }
 
+/// Represents payload data for `mint_queued` mutation
 #[derive(Debug, Clone, SimpleObject)]
 pub struct MintQueuedPayload {
     collection_mint: CollectionMint,
 }
 
+/// Represents input data for `mint_random_queued` mutation
 #[derive(Debug, Clone, InputObject)]
 pub struct MintRandomQueuedInput {
     drop: Uuid,
