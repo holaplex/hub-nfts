@@ -63,7 +63,11 @@ impl Mutation {
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
         let owner_address = fetch_owner(conn, input.project, input.blockchain).await?;
-
+        let supply = if input.drop_type == DropType::Open {
+            Some(0)
+        } else {
+            input.supply.map(TryInto::try_into).transpose()?
+        };
         input.validate()?;
 
         if input.blockchain == BlockchainEnum::Solana {
@@ -84,7 +88,7 @@ impl Mutation {
 
         let collection_am = collections::ActiveModel {
             blockchain: Set(input.blockchain),
-            supply: Set(input.supply.map(TryFrom::try_from).transpose()?),
+            supply: Set(supply),
             creation_status: Set(CreationStatus::Pending),
             seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
             created_by: Set(user_id),
@@ -135,7 +139,7 @@ impl Mutation {
         let payload = proto::MetaplexMasterEditionTransaction {
             master_edition: Some(proto::MasterEdition {
                 owner_address: owner_address.clone(),
-                supply: input.supply.map(TryInto::try_into).transpose()?,
+                supply,
                 name: name.clone(),
                 symbol,
                 metadata_uri: uri.clone(),

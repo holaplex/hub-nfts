@@ -273,6 +273,27 @@ impl Processor {
                     )
                     .await
                 },
+                Some(
+                    SolanaNftsEvent::CreateOpenDropSubmitted(payload)
+                    | SolanaNftsEvent::RetryCreateOpenDropSubmitted(payload),
+                ) => {
+                    self.drop_created(id, MintResult::Success(payload.into()))
+                        .await
+                },
+                Some(
+                    SolanaNftsEvent::MintOpenDropSubmitted(payload)
+                    | SolanaNftsEvent::RetryMintOpenDropSubmitted(payload),
+                ) => {
+                    self.drop_minted(id, MintResult::Success(payload.into()))
+                        .await
+                },
+                Some(
+                    SolanaNftsEvent::CreateOpenDropFailed(_)
+                    | SolanaNftsEvent::RetryCreateOpenDropFailed(_),
+                ) => self.drop_created(id, MintResult::Failure).await,
+                Some(SolanaNftsEvent::MintOpenDropFailed(_)) => {
+                    self.drop_minted(id, MintResult::Failure).await
+                },
                 None | Some(_) => Ok(()),
             },
             Services::Polygon(_, e) => match e.event {

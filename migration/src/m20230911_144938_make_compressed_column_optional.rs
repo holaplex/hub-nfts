@@ -10,7 +10,7 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(CollectionMints::Table)
-                    .modify_column(ColumnDef::new(CollectionMints::Compressed).text().null())
+                    .modify_column(ColumnDef::new(CollectionMints::Compressed).boolean().null())
                     .to_owned(),
             )
             .await
@@ -23,7 +23,7 @@ impl MigrationTrait for Migration {
                     .table(CollectionMints::Table)
                     .modify_column(
                         ColumnDef::new(CollectionMints::Compressed)
-                            .text()
+                            .boolean()
                             .not_null(),
                     )
                     .to_owned(),

@@ -556,7 +556,7 @@ impl Mutation {
             return Err(Error::new("Mint is an edition and cannot be updated"));
         }
 
-        if let Some(true) = mint.compressed {
+        if Some(true) == mint.compressed {
             return Err(Error::new("Mint is compressed and cannot be updated"));
         }
 
@@ -964,11 +964,17 @@ impl Mutation {
             .all(conn)
             .await?;
 
+        let action = if input.compressed {
+            Actions::MintCompressed
+        } else {
+            Actions::Mint
+        };
+
         let TransactionId(_) = credits
             .submit_pending_deduction(
                 org_id,
                 user_id,
-                Actions::Mint,
+                action,
                 collection.blockchain.into(),
                 balance,
             )
@@ -1004,6 +1010,18 @@ impl Mutation {
         let mut mint_am: collection_mints::ActiveModel = mint.into();
         mint_am.creation_status = Set(CreationStatus::Pending);
         let mint = mint_am.update(conn).await?;
+
+        let mint_history_am = mint_histories::ActiveModel {
+            mint_id: Set(mint.id),
+            wallet: Set(input.recipient),
+            collection_id: Set(collection.id),
+            tx_signature: Set(None),
+            status: Set(CreationStatus::Pending),
+            created_at: Set(Utc::now().into()),
+            ..Default::default()
+        };
+
+        mint_history_am.insert(conn).await?;
 
         Ok(MintQueuedPayload {
             collection_mint: mint.into(),

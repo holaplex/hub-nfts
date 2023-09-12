@@ -6,6 +6,6 @@ organization = 1
 nfts = 3
 customer = 1
 treasury = 1
-solana_nfts = 1
+solana_nfts = 4
 polygon_nfts = 1
 timestamp = 1

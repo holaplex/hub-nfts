@@ -20,8 +20,8 @@ sha512 = "c5ddf43d2958ec690ee2261d0ff9808b67ce810d2fc4b6077f96f561929a920f03509f
 
 [[schemas]]
 subject = "solana_nfts"
-version = 1
-sha512 = "37fd0e45d12271323d8abfe7343c08e475ca4737014d6181dcdcbcd683ebc33ab7cea1f4da00673e7ad2f0e1ae5ae917f16175b0650df357f649545928685a50"
+version = 4
+sha512 = "967fefde938a0f6ce05194e4fca15673e681caac54d8aeec114c5d38418632b9696dbaf5362345a15114e5abb49de55d0af8b9edcc0f2c91f9ef1ccc4ff55d68"
 
 [[schemas]]
 subject = "timestamp"
