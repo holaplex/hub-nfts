@@ -1,6 +1,7 @@
 use hub_core::{
     chrono::{DateTime, NaiveDateTime, Offset, Utc},
     credits::{CreditsClient, TransactionId},
+    metrics::KeyValue,
     prelude::*,
     producer::Producer,
     thiserror,
@@ -775,15 +776,6 @@ impl Processor {
         let mut creation_status = NftCreationStatus::Completed;
 
         if let MintResult::Success(MintTransaction { signature, address }) = payload {
-            let now = Utc::now();
-            let elapsed_millis = now
-                .signed_duration_since(collection_mint.created_at)
-                .num_milliseconds();
-
-            self.metrics
-                .mint_duration_ms_bucket
-                .record(elapsed_millis, &[]);
-
             mint_history_am.status = Set(CreationStatus::Created);
             mint_history_am.tx_signature = Set(Some(signature.clone()));
             collection_mint_active_model.creation_status = Set(CreationStatus::Created);
@@ -802,6 +794,15 @@ impl Processor {
             collection_mint_active_model.creation_status = Set(CreationStatus::Failed);
             creation_status = NftCreationStatus::Failed;
         }
+
+        let now = Utc::now();
+        let elapsed = now
+            .signed_duration_since(collection_mint.created_at)
+            .num_milliseconds();
+        self.metrics.mint_duration_ms_bucket.record(
+            elapsed,
+            &[KeyValue::new("status", creation_status.as_str_name())],
+        );
 
         self.producer
             .send(
