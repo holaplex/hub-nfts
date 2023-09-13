@@ -38,8 +38,6 @@ jobs:
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
-            toolchain: nightly-2022-12-11
-            override: true
             components: rustfmt, clippy
 
       - uses: tespkg/actions-cache@v1
