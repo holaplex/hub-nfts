@@ -1,3 +1,4 @@
+#[allow(clippy::wildcard_imports)]
 use hub_core::{
     anyhow::{anyhow, Result},
     metrics::*,
@@ -11,6 +12,8 @@ pub struct Metrics {
 }
 
 impl Metrics {
+    /// Res
+    /// # Errors
     pub fn new() -> Result<Self> {
         let registry = Registry::new();
         let exporter = hub_core::metrics::exporter()

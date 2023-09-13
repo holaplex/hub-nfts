@@ -161,6 +161,9 @@ impl Processor {
         }
     }
 
+    /// Res
+    /// # Errors
+    #[allow(clippy::too_many_lines)]
     pub async fn process(&self, msg: Services) -> Result<()> {
         match msg {
             Services::Treasury(TreasuryEventKey { id, .. }, e) => match e.event {
@@ -496,7 +499,7 @@ impl Processor {
 
         let created_at = timestamp
             .and_then(|t| {
-                Some(DateTime::from_utc(
+                Some(DateTime::from_naive_utc_and_offset(
                     NaiveDateTime::from_timestamp_opt(t.seconds, t.nanos.try_into().ok()?)?,
                     Utc.fix(),
                 ))
@@ -846,7 +849,8 @@ impl Processor {
     }
 
     async fn mint_updated(&self, id: String, payload: UpdateResult) -> ProcessResult<()> {
-        let update_history = UpdateHistories::find_by_id(id.parse()?)
+        let id: Uuid = id.parse()?;
+        let update_history = UpdateHistories::find_by_id(id)
             .one(self.db.get())
             .await?
             .ok_or(ProcessorErrorKind::DbMissingUpdateHistory)?;

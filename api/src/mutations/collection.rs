@@ -521,7 +521,7 @@ impl Mutation {
             return Err(Error::new("New collection must be Metaplex Certified"));
         }
 
-        if mint.compressed == true {
+        if mint.compressed {
             return Err(Error::new(
                 "Switching collection is only supported for uncompressed mint",
             ));
@@ -577,6 +577,8 @@ impl Mutation {
     }
 }
 
+/// Res
+/// # Errors
 pub async fn fetch_owner(
     conn: &DatabaseConnection,
     project: Uuid,
@@ -634,6 +636,8 @@ impl CreateCollectionInput {
     }
 }
 
+/// Res
+/// # Errors
 pub fn validate_solana_creator_verification(
     project_treasury_wallet_address: &str,
     creators: &Vec<Creator>,
@@ -695,6 +699,8 @@ pub fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<Creator>) ->
     Ok(())
 }
 
+/// Res
+/// # Errors
 pub fn validate_solana_address(address: &str) -> Result<()> {
     if Pubkey::from_str(address).is_err() {
         return Err(Error::new(format!(
@@ -705,6 +711,8 @@ pub fn validate_solana_address(address: &str) -> Result<()> {
     Ok(())
 }
 
+/// Res
+/// # Errors
 pub fn validate_evm_address(address: &str) -> Result<()> {
     let err = Err(Error::new(format!("{address} is not a valid EVM address")));
 

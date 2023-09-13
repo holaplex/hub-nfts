@@ -1,6 +1,9 @@
 use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
 use async_graphql_poem::{GraphQLRequest, GraphQLResponse};
-use hub_core::{anyhow::Result, metrics::*};
+use hub_core::{
+    anyhow::Result,
+    metrics::{Encoder, TextEncoder},
+};
 use poem::{
     handler,
     http::StatusCode,
@@ -47,7 +50,7 @@ pub async fn graphql_handler(
 }
 
 #[handler]
-pub async fn metrics_handler(Data(metrics): Data<&Metrics>) -> Result<String> {
+pub fn metrics_handler(Data(metrics): Data<&Metrics>) -> Result<String> {
     let mut buffer = vec![];
     let encoder = TextEncoder::new();
     encoder.encode(&metrics.registry.gather(), &mut buffer)?;

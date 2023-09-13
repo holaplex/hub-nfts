@@ -241,6 +241,7 @@ pub struct AppState {
 
 impl AppState {
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         schema: AppSchema,
         connection: Connection,
@@ -294,6 +295,7 @@ pub struct AppContext {
 
 impl AppContext {
     #[must_use]
+    #[allow(clippy::similar_names)]
     pub fn new(
         db: Connection,
         user_id: UserID,
