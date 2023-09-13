@@ -799,10 +799,12 @@ impl Processor {
         let elapsed = now
             .signed_duration_since(collection_mint.created_at)
             .num_milliseconds();
-        self.metrics.mint_duration_ms_bucket.record(
-            elapsed,
-            &[KeyValue::new("status", creation_status.as_str_name())],
-        );
+        self.metrics
+            .mint_duration_ms_bucket
+            .record(elapsed, &[KeyValue::new(
+                "status",
+                creation_status.as_str_name(),
+            )]);
 
         self.producer
             .send(
