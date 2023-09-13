@@ -2,9 +2,6 @@ use hub_core::{
     anyhow::{anyhow, Result},
     metrics::*,
 };
-use once_cell::sync::Lazy;
-
-pub static HANDLER_ALL: Lazy<[KeyValue; 1]> = Lazy::new(|| [KeyValue::new("handler", "all")]);
 
 #[derive(Clone)]
 pub struct Metrics {
