@@ -6,7 +6,11 @@ use hub_core::{
     credits::{CreditsClient, TransactionId},
     producer::Producer,
 };
-use sea_orm::{prelude::*, JoinType, Order, QueryOrder, QuerySelect, Set, TransactionTrait};
+use sea_orm::{
+    prelude::*,
+    sea_query::{Func, SimpleExpr},
+    JoinType, Order, QueryOrder, QuerySelect, Set, TransactionTrait,
+};
 
 use super::collection::{
     fetch_owner, validate_creators, validate_json, validate_solana_creator_verification,
@@ -100,7 +104,7 @@ impl Mutation {
 
         let owner_address = wallet
             .ok_or(Error::new(format!(
-                "no project wallet found for {} blockchain",
+                "no project wallet found for {:?} blockchain",
                 collection.blockchain
             )))?
             .wallet_address;
@@ -280,7 +284,7 @@ impl Mutation {
 
         let owner_address = wallet
             .ok_or(Error::new(format!(
-                "no project wallet found for {} blockchain",
+                "no project wallet found for {:?} blockchain",
                 collection.blockchain
             )))?
             .wallet_address;
@@ -1096,7 +1100,7 @@ impl Mutation {
             .select_also(collections::Entity)
             .filter(collection_mints::Column::CollectionId.eq(drop.collection_id))
             .filter(collection_mints::Column::CreationStatus.eq(CreationStatus::Queued))
-            .order_by(sea_orm::sea_query::Func::random(), Order::Asc)
+            .order_by(SimpleExpr::FunctionCall(Func::random()), Order::Asc)
             .one(conn)
             .await?
             .ok_or(Error::new("No Queued mint found for the drop"))?;

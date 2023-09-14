@@ -17,7 +17,7 @@ categories = ["cryptography::cryptocurrencies", "web-programming"]
 [lib]
 
 [dependencies]
-sea-orm = { version = "^0.11.3", features = [
+sea-orm = { version = "0.12.2", features = [
   "debug-print",
   "runtime-tokio-rustls",
   "sqlx-postgres",

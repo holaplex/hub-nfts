@@ -598,7 +598,7 @@ pub async fn fetch_owner(
 
     let owner = wallet
         .ok_or(Error::new(format!(
-            "no project wallet found for {blockchain} blockchain"
+            "no project wallet found for {blockchain:?} blockchain"
         )))?
         .wallet_address;
     Ok(owner)
