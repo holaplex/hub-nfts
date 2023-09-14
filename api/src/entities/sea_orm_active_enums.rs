@@ -55,3 +55,9 @@ pub enum DropType {
     #[sea_orm(string_value = "open")]
     Open,
 }
+
+impl Default for DropType {
+    fn default() -> Self {
+        DropType::Edition
+    }
+}

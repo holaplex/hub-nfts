@@ -846,6 +846,9 @@ impl Mutation {
         })
     }
 
+    // Add a mint to the queue for a drop.
+    // The queued mint can be minted by calling `mint_queued` mutation for specific mint
+    // or `mint_random_queued_to_drop` for random mint.
     async fn queue_mint_to_drop(
         &self,
         ctx: &Context<'_>,
@@ -909,6 +912,7 @@ impl Mutation {
         })
     }
 
+    /// This mutation mints a specific queued drop mint.
     async fn mint_queued(
         &self,
         ctx: &Context<'_>,
@@ -924,6 +928,7 @@ impl Mutation {
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
+        let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
@@ -1011,6 +1016,28 @@ impl Mutation {
         mint_am.creation_status = Set(CreationStatus::Pending);
         let mint = mint_am.update(conn).await?;
 
+        let drop = drops::Entity::find()
+            .filter(drops::Column::CollectionId.eq(collection.id))
+            .one(conn)
+            .await?
+            .ok_or(Error::new("drop not found"))?;
+
+        nfts_producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::DropMinted(MintCreation {
+                        drop_id: drop.id.to_string(),
+                        status: NftCreationStatus::InProgress as i32,
+                    })),
+                }),
+                Some(&NftEventKey {
+                    id: mint.id.to_string(),
+                    project_id: drop.project_id.to_string(),
+                    user_id: user_id.to_string(),
+                }),
+            )
+            .await?;
+
         let mint_history_am = mint_histories::ActiveModel {
             mint_id: Set(mint.id),
             wallet: Set(input.recipient),
@@ -1028,7 +1055,8 @@ impl Mutation {
         })
     }
 
-    async fn mint_random_queued(
+    /// This mutation mints a random queued drop mint.
+    async fn mint_random_queued_to_drop(
         &self,
         ctx: &Context<'_>,
         input: MintRandomQueuedInput,
@@ -1043,6 +1071,7 @@ impl Mutation {
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
         let solana = ctx.data::<Solana>()?;
+        let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
@@ -1132,6 +1161,34 @@ impl Mutation {
         let mut mint_am: collection_mints::ActiveModel = mint.into();
         mint_am.creation_status = Set(CreationStatus::Pending);
         let mint = mint_am.update(conn).await?;
+
+        let mint_history_am = mint_histories::ActiveModel {
+            mint_id: Set(mint.id),
+            wallet: Set(input.recipient),
+            collection_id: Set(collection.id),
+            tx_signature: Set(None),
+            status: Set(CreationStatus::Pending),
+            created_at: Set(Utc::now().into()),
+            ..Default::default()
+        };
+
+        mint_history_am.insert(conn).await?;
+
+        nfts_producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::DropMinted(MintCreation {
+                        drop_id: drop.id.to_string(),
+                        status: NftCreationStatus::InProgress as i32,
+                    })),
+                }),
+                Some(&NftEventKey {
+                    id: mint.id.to_string(),
+                    project_id: drop.project_id.to_string(),
+                    user_id: user_id.to_string(),
+                }),
+            )
+            .await?;
 
         Ok(MintQueuedPayload {
             collection_mint: mint.into(),

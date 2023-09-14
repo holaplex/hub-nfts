@@ -686,7 +686,7 @@ pub struct CreateDropInput {
     pub blockchain: BlockchainEnum,
     pub creators: Vec<Creator>,
     pub metadata_json: MetadataJsonInput,
-    #[graphql(name = "type")]
+    #[graphql(name = "type", default)]
     pub drop_type: DropType,
 }
 
