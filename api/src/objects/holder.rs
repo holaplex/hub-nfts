@@ -31,7 +31,7 @@ impl Holder {
             .unwrap_or_default();
 
         Ok(mints.into_iter().fold(Vec::new(), |mut acc, mint| {
-            if mint.owner == self.address {
+            if mint.owner == Some(self.address.clone()) {
                 acc.push(mint.id);
             }
 

@@ -3,8 +3,11 @@ pub mod solana;
 
 use hub_core::anyhow::Result;
 
-use crate::proto::{
-    NftEventKey, RetryUpdateSolanaMintPayload, SwitchCollectionPayload, UpdateSolanaMintPayload,
+use crate::{
+    entities::sea_orm_active_enums::DropType,
+    proto::{
+        NftEventKey, RetryUpdateSolanaMintPayload, SwitchCollectionPayload, UpdateSolanaMintPayload,
+    },
 };
 
 /// Represents a response from a transaction on the blockchain. This struct
@@ -19,9 +22,14 @@ pub struct TransactionResponse {
 
 #[async_trait::async_trait]
 pub trait DropEvent<A, B, C> {
-    async fn create_drop(&self, key: NftEventKey, payload: A) -> Result<()>;
-    async fn retry_create_drop(&self, key: NftEventKey, payload: A) -> Result<()>;
-    async fn update_drop(&self, key: NftEventKey, payload: C) -> Result<()>;
+    async fn create_drop(&self, drop_type: DropType, key: NftEventKey, payload: A) -> Result<()>;
+    async fn retry_create_drop(
+        &self,
+        drop_type: DropType,
+        key: NftEventKey,
+        payload: A,
+    ) -> Result<()>;
+    async fn update_drop(&self, drop_type: DropType, key: NftEventKey, payload: C) -> Result<()>;
     async fn mint_drop(&self, key: NftEventKey, payload: B) -> Result<()>;
     async fn retry_mint_drop(&self, key: NftEventKey, payload: B) -> Result<()>;
 }

@@ -71,6 +71,8 @@ pub enum ProcessorErrorKind {
 
     #[error("Database record contains no deduction ID")]
     RecordMissingDeductionId,
+    #[error("Database record contains no owner address")]
+    RecordMissingOwner,
 
     #[error("Invalid basis point value for seller fee")]
     #[permanent]
@@ -157,6 +159,13 @@ impl Processor {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
+
+    /// Processes incoming messages related to different services like Treasury and Solana.
+    /// Routes each message to the corresponding handler based on the type of service and the specific event.
+
+    /// # Errors
+    /// - Returns an error wrapped in `ProcessorError` if any of the operations inside the function fail.
     pub async fn process(&self, msg: Services) -> Result<()> {
         match msg {
             Services::Treasury(TreasuryEventKey { id, .. }, e) => match e.event {
@@ -188,8 +197,8 @@ impl Processor {
                 e,
             ) => match e.event {
                 Some(
-                    SolanaNftsEvent::CreateDropSubmitted(payload)
-                    | SolanaNftsEvent::RetryCreateDropSubmitted(payload),
+                    SolanaNftsEvent::CreateEditionDropSubmitted(payload)
+                    | SolanaNftsEvent::RetryCreateEditionDropSubmitted(payload),
                 ) => {
                     self.drop_created(id, MintResult::Success(payload.into()))
                         .await
@@ -202,8 +211,8 @@ impl Processor {
                         .await
                 },
                 Some(
-                    SolanaNftsEvent::MintDropSubmitted(payload)
-                    | SolanaNftsEvent::RetryMintDropSubmitted(payload),
+                    SolanaNftsEvent::MintEditionDropSubmitted(payload)
+                    | SolanaNftsEvent::RetryMintEditionDropSubmitted(payload),
                 ) => {
                     self.drop_minted(id, MintResult::Success(payload.into()))
                         .await
@@ -229,14 +238,14 @@ impl Processor {
                         .await
                 },
                 Some(
-                    SolanaNftsEvent::CreateDropFailed(_)
-                    | SolanaNftsEvent::RetryCreateDropFailed(_),
+                    SolanaNftsEvent::CreateEditionDropFailed(_)
+                    | SolanaNftsEvent::RetryCreateEditionDropFailed(_),
                 ) => self.drop_created(id, MintResult::Failure).await,
                 Some(
                     SolanaNftsEvent::CreateCollectionFailed(_)
                     | SolanaNftsEvent::RetryCreateCollectionFailed(_),
                 ) => self.collection_created(id, MintResult::Failure).await,
-                Some(SolanaNftsEvent::MintDropFailed(_)) => {
+                Some(SolanaNftsEvent::MintEditionDropFailed(_)) => {
                     self.drop_minted(id, MintResult::Failure).await
                 },
                 Some(
@@ -246,7 +255,7 @@ impl Processor {
                 Some(SolanaNftsEvent::TransferAssetFailed(_)) => {
                     self.mint_transferred(id, TransferResult::Failure).await
                 },
-                Some(SolanaNftsEvent::RetryMintDropFailed(_)) => {
+                Some(SolanaNftsEvent::RetryMintEditionDropFailed(_)) => {
                     self.drop_minted(id, MintResult::Failure).await
                 },
                 Some(
@@ -270,6 +279,27 @@ impl Processor {
                         SwitchCollectionResult::Success(payload.signature),
                     )
                     .await
+                },
+                Some(
+                    SolanaNftsEvent::CreateOpenDropSubmitted(payload)
+                    | SolanaNftsEvent::RetryCreateOpenDropSubmitted(payload),
+                ) => {
+                    self.drop_created(id, MintResult::Success(payload.into()))
+                        .await
+                },
+                Some(
+                    SolanaNftsEvent::MintOpenDropSubmitted(payload)
+                    | SolanaNftsEvent::RetryMintOpenDropSubmitted(payload),
+                ) => {
+                    self.drop_minted(id, MintResult::Success(payload.into()))
+                        .await
+                },
+                Some(
+                    SolanaNftsEvent::CreateOpenDropFailed(_)
+                    | SolanaNftsEvent::RetryCreateOpenDropFailed(_),
+                ) => self.drop_created(id, MintResult::Failure).await,
+                Some(SolanaNftsEvent::MintOpenDropFailed(_)) => {
+                    self.drop_minted(id, MintResult::Failure).await
                 },
                 None | Some(_) => Ok(()),
             },
@@ -390,7 +420,7 @@ impl Processor {
             id: Set(id.parse()?),
             collection_id: Set(collection_id.parse()?),
             address: Set(Some(mint_address)),
-            owner: Set(owner),
+            owner: Set(Some(owner)),
             creation_status: Set(CreationStatus::Created),
             created_by: Set(created_by.parse()?),
             created_at: Set(Utc::now().into()),
@@ -400,7 +430,7 @@ impl Processor {
                 .try_into()
                 .map_err(ProcessorErrorKind::InvalidSellerFee)?),
             credits_deduction_id: Set(None),
-            compressed: Set(compressed),
+            compressed: Set(Some(compressed)),
         };
 
         let mint_model = mint_am.insert(self.db.get()).await?;
@@ -463,7 +493,7 @@ impl Processor {
             .ok_or(ProcessorErrorKind::DbMissingCollectionMint)?;
 
         let mut mint_am: collection_mints::ActiveModel = mint.into();
-        mint_am.owner = Set(payload.recipient.clone());
+        mint_am.owner = Set(Some(payload.recipient.clone()));
 
         mint_am.update(self.db.get()).await?;
 
@@ -514,13 +544,13 @@ impl Processor {
 
         for mint in mints {
             let mut mint_am: collection_mints::ActiveModel = mint.clone().into();
-            mint_am.owner = Set(new_owner.clone());
+            mint_am.owner = Set(Some(new_owner.clone()));
             mint_am.update(&txn).await?;
 
             let nft_transfers = nft_transfers::ActiveModel {
                 tx_signature: Set(Some(transaction_hash.clone())),
                 collection_mint_id: Set(mint.id),
-                sender: Set(mint.owner),
+                sender: Set(mint.owner.ok_or(ProcessorErrorKind::RecordMissingOwner)?),
                 recipient: Set(new_owner.clone()),
                 created_at: Set(created_at),
                 ..Default::default()
