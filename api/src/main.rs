@@ -5,7 +5,8 @@ use holaplex_hub_nfts::{
     build_schema,
     db::Connection,
     events,
-    handlers::{graphql_handler, health, playground},
+    handlers::{graphql_handler, health, metrics_handler, playground},
+    metrics::Metrics,
     nft_storage::NftStorageClient,
     proto, Actions, AppState, Args, Services,
 };
@@ -38,8 +39,15 @@ pub fn main() {
                 .await?;
             let credits = common.credits_cfg.build::<Actions>().await?;
             let nft_storage = NftStorageClient::new(nft_storage)?;
-            let event_processor =
-                events::Processor::new(connection.clone(), credits.clone(), producer.clone());
+
+            let metrics = Metrics::new()?;
+
+            let event_processor = events::Processor::new(
+                connection.clone(),
+                credits.clone(),
+                producer.clone(),
+                metrics.clone(),
+            );
 
             let solana = Solana::new(producer.clone());
             let polygon = Polygon::new(producer.clone());
@@ -72,9 +80,13 @@ pub fn main() {
             Server::new(TcpListener::bind(format!("0.0.0.0:{port}")))
                 .run(
                     Route::new()
-                        .at("/graphql", post(graphql_handler).with(AddData::new(state)))
+                        .at(
+                            "/graphql",
+                            post(graphql_handler).with(AddData::new(state.clone())),
+                        )
                         .at("/playground", get(playground))
-                        .at("/health", get(health)),
+                        .at("/health", get(health))
+                        .at("/metrics", get(metrics_handler).with(AddData::new(metrics))),
                 )
                 .await
                 .context("failed to build graphql server")

@@ -744,7 +744,8 @@ impl Mutation {
         })
     }
 
-    // Retries a mint which failed by passing its ID.
+    /// Retries a mint which failed by passing its ID.
+    /// # Errors
     pub async fn retry_mint_to_collection(
         &self,
         ctx: &Context<'_>,

@@ -815,6 +815,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9cace84e55f07e7301bae1c519df89cdad8cc3cd868413d3fdbdeca9ff3db484"
 
 [[package]]
+name = "crossbeam-channel"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a33c2bf77f2df06183c3aa30d1e96c0695a313d4f9c453cc3762a6db39f99200"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-queue"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1529,8 +1539,8 @@ dependencies = [
 
 [[package]]
 name = "holaplex-hub-core"
-version = "0.5.4"
-source = "git+https://github.com/holaplex/hub-core?branch=stable#1122dc679042e397360da0f85b20babff4c7ea12"
+version = "0.5.5"
+source = "git+https://github.com/holaplex/hub-core#be11206ecb91d819d5ebf34c00eb8a1294f54026"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1545,7 +1555,11 @@ dependencies = [
  "holaplex-hub-core-schemas",
  "hostname",
  "num_cpus",
+ "opentelemetry",
+ "opentelemetry-prometheus",
+ "opentelemetry_sdk",
  "pin-project-lite",
+ "prometheus",
  "prost",
  "prost-types",
  "rand 0.8.5",
@@ -1585,9 +1599,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "holaplex-hub-core-build"
+version = "0.2.1"
+source = "git+https://github.com/holaplex/hub-core#be11206ecb91d819d5ebf34c00eb8a1294f54026"
+dependencies = [
+ "anyhow",
+ "dotenv",
+ "futures-util",
+ "hex",
+ "prost-build",
+ "reqwest",
+ "serde",
+ "sha2 0.10.7",
+ "tempfile",
+ "tokio",
+ "toml 0.5.11",
+ "url",
+]
+
+[[package]]
 name = "holaplex-hub-core-macros"
 version = "0.1.0"
-source = "git+https://github.com/holaplex/hub-core?branch=stable#1122dc679042e397360da0f85b20babff4c7ea12"
+source = "git+https://github.com/holaplex/hub-core#be11206ecb91d819d5ebf34c00eb8a1294f54026"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1598,9 +1631,9 @@ dependencies = [
 [[package]]
 name = "holaplex-hub-core-schemas"
 version = "0.3.2"
-source = "git+https://github.com/holaplex/hub-core?branch=stable#1122dc679042e397360da0f85b20babff4c7ea12"
+source = "git+https://github.com/holaplex/hub-core#be11206ecb91d819d5ebf34c00eb8a1294f54026"
 dependencies = [
- "holaplex-hub-core-build",
+ "holaplex-hub-core-build 0.2.1 (git+https://github.com/holaplex/hub-core)",
  "prost",
 ]
 
@@ -1612,7 +1645,7 @@ dependencies = [
  "async-graphql-poem",
  "async-trait",
  "holaplex-hub-core",
- "holaplex-hub-core-build",
+ "holaplex-hub-core-build 0.2.1 (git+https://github.com/holaplex/hub-core?branch=stable)",
  "poem",
  "prost",
  "prost-types",
@@ -2335,6 +2368,67 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentelemetry"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9591d937bc0e6d2feb6f71a559540ab300ea49955229c347a517a28d27784c54"
+dependencies = [
+ "opentelemetry_api",
+ "opentelemetry_sdk",
+]
+
+[[package]]
+name = "opentelemetry-prometheus"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7d81bc254e2d572120363a2b16cdb0d715d301b5789be0cfc26ad87e4e10e53"
+dependencies = [
+ "once_cell",
+ "opentelemetry_api",
+ "opentelemetry_sdk",
+ "prometheus",
+ "protobuf",
+]
+
+[[package]]
+name = "opentelemetry_api"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a81f725323db1b1206ca3da8bb19874bbd3f57c3bcd59471bfb04525b265b9b"
+dependencies = [
+ "futures-channel",
+ "futures-util",
+ "indexmap 1.9.3",
+ "js-sys",
+ "once_cell",
+ "pin-project-lite",
+ "thiserror",
+ "urlencoding",
+]
+
+[[package]]
+name = "opentelemetry_sdk"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa8e705a0612d48139799fcbaba0d4a90f06277153e43dd2bdc16c6f0edd8026"
+dependencies = [
+ "async-trait",
+ "crossbeam-channel",
+ "futures-channel",
+ "futures-executor",
+ "futures-util",
+ "once_cell",
+ "opentelemetry_api",
+ "ordered-float",
+ "percent-encoding",
+ "rand 0.8.5",
+ "regex",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "ordered-float"
 version = "3.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2676,6 +2770,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "prometheus"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "449811d15fbdf5ceb5c1144416066429cf82316e2ec8ce0c1f6f8a02e7bbcf8c"
+dependencies = [
+ "cfg-if",
+ "fnv",
+ "lazy_static",
+ "memchr",
+ "parking_lot",
+ "protobuf",
+ "thiserror",
+]
+
+[[package]]
 name = "prost"
 version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2728,6 +2837,12 @@ checksum = "213622a1460818959ac1181aaeb2dc9c7f63df720db7d788b3e24eacd1983e13"
 dependencies = [
  "prost",
 ]
+
+[[package]]
+name = "protobuf"
+version = "2.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 
 [[package]]
 name = "ptr_meta"
@@ -4433,6 +4548,12 @@ dependencies = [
  "percent-encoding",
  "serde",
 ]
+
+[[package]]
+name = "urlencoding"
+version = "2.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "utf-8"

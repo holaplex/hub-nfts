@@ -1,6 +1,7 @@
 use hub_core::{
     chrono::{DateTime, NaiveDateTime, Offset, Utc},
     credits::{CreditsClient, TransactionId},
+    metrics::KeyValue,
     prelude::*,
     producer::Producer,
     thiserror,
@@ -26,6 +27,7 @@ use crate::{
         sea_orm_active_enums::{Blockchain, CreationStatus},
         switch_collection_histories, transfer_charges, update_histories,
     },
+    metrics::Metrics,
     proto::{
         nft_events::Event as NftEvent,
         polygon_nft_events::Event as PolygonNftEvents,
@@ -113,6 +115,7 @@ pub struct Processor {
     pub db: Connection,
     pub credits: CreditsClient<Actions>,
     pub producer: Producer<NftEvents>,
+    pub metrics: Metrics,
 }
 
 #[derive(Clone)]
@@ -151,16 +154,17 @@ impl Processor {
         db: Connection,
         credits: CreditsClient<Actions>,
         producer: Producer<NftEvents>,
+        metrics: Metrics,
     ) -> Self {
         Self {
             db,
             credits,
             producer,
+            metrics,
         }
     }
 
     #[allow(clippy::too_many_lines)]
-
     /// Processes incoming messages related to different services like Treasury and Solana.
     /// Routes each message to the corresponding handler based on the type of service and the specific event.
 
@@ -817,6 +821,17 @@ impl Processor {
             creation_status = NftCreationStatus::Failed;
         }
 
+        let now = Utc::now();
+        let elapsed = now
+            .signed_duration_since(collection_mint.created_at)
+            .num_milliseconds();
+        self.metrics
+            .mint_duration_ms_bucket
+            .record(elapsed, &[KeyValue::new(
+                "status",
+                creation_status.as_str_name(),
+            )]);
+
         self.producer
             .send(
                 Some(&NftEvents {
@@ -863,7 +878,8 @@ impl Processor {
     }
 
     async fn mint_updated(&self, id: String, payload: UpdateResult) -> ProcessResult<()> {
-        let update_history = UpdateHistories::find_by_id(Uuid::from_str(&id)?)
+        let id: Uuid = id.parse()?;
+        let update_history = UpdateHistories::find_by_id(id)
             .one(self.db.get())
             .await?
             .ok_or(ProcessorErrorKind::DbMissingUpdateHistory)?;
