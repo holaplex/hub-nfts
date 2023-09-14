@@ -1,13 +1,16 @@
-use hub_core::{anyhow::Result, producer::Producer};
+use hub_core::{anyhow::Result, prelude::bail, producer::Producer};
 
 use super::{DropEvent, TransferEvent};
-use crate::proto::{
-    nft_events::Event::{
-        PolygonCreateDrop, PolygonMintDrop, PolygonRetryDrop, PolygonRetryMintDrop,
-        PolygonTransferAsset, PolygonUpdateDrop,
+use crate::{
+    entities::sea_orm_active_enums::DropType,
+    proto::{
+        nft_events::Event::{
+            PolygonCreateDrop, PolygonMintDrop, PolygonRetryDrop, PolygonRetryMintDrop,
+            PolygonTransferAsset, PolygonUpdateDrop,
+        },
+        CreateEditionTransaction, MintEditionTransaction, NftEventKey, NftEvents,
+        TransferPolygonAsset, UpdateEdtionTransaction,
     },
-    CreateEditionTransaction, MintEditionTransaction, NftEventKey, NftEvents, TransferPolygonAsset,
-    UpdateEdtionTransaction,
 };
 
 #[derive(Clone)]
@@ -34,46 +37,69 @@ impl Polygon {
 impl DropEvent<CreateEditionTransaction, MintEditionTransaction, UpdateEdtionTransaction>
     for Polygon
 {
-    async fn create_drop(&self, key: NftEventKey, payload: CreateEditionTransaction) -> Result<()> {
-        let event = NftEvents {
-            event: Some(PolygonCreateDrop(payload)),
+    async fn create_drop(
+        &self,
+        drop_type: DropType,
+        key: NftEventKey,
+        payload: CreateEditionTransaction,
+    ) -> Result<()> {
+        let event = match drop_type {
+            DropType::Edition => Some(PolygonCreateDrop(payload)),
+            DropType::Open => bail!("Open drops are not supported on Polygon"),
         };
 
-        self.producer.send(Some(&event), Some(&key)).await?;
+        self.producer
+            .send(Some(&NftEvents { event }), Some(&key))
+            .await?;
 
         Ok(())
     }
 
     async fn retry_create_drop(
         &self,
+        drop_type: DropType,
         key: NftEventKey,
         payload: CreateEditionTransaction,
     ) -> Result<()> {
-        let event = NftEvents {
-            event: Some(PolygonRetryDrop(payload)),
+        let event = match drop_type {
+            DropType::Edition => Some(PolygonRetryDrop(payload)),
+            DropType::Open => bail!("Open drops are not supported on Polygon"),
         };
 
-        self.producer.send(Some(&event), Some(&key)).await?;
+        self.producer
+            .send(Some(&NftEvents { event }), Some(&key))
+            .await?;
 
         Ok(())
     }
 
-    async fn update_drop(&self, key: NftEventKey, payload: UpdateEdtionTransaction) -> Result<()> {
-        let event = NftEvents {
-            event: Some(PolygonUpdateDrop(payload)),
+    async fn update_drop(
+        &self,
+        drop_type: DropType,
+        key: NftEventKey,
+        payload: UpdateEdtionTransaction,
+    ) -> Result<()> {
+        let event = match drop_type {
+            DropType::Edition => Some(PolygonUpdateDrop(payload)),
+            DropType::Open => bail!("Open drops are not supported on Polygon"),
         };
 
-        self.producer.send(Some(&event), Some(&key)).await?;
+        self.producer
+            .send(Some(&NftEvents { event }), Some(&key))
+            .await?;
 
         Ok(())
     }
 
     async fn mint_drop(&self, key: NftEventKey, payload: MintEditionTransaction) -> Result<()> {
-        let event = NftEvents {
-            event: Some(PolygonMintDrop(payload)),
-        };
-
-        self.producer.send(Some(&event), Some(&key)).await?;
+        self.producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(PolygonMintDrop(payload)),
+                }),
+                Some(&key),
+            )
+            .await?;
 
         Ok(())
     }
@@ -83,11 +109,14 @@ impl DropEvent<CreateEditionTransaction, MintEditionTransaction, UpdateEdtionTra
         key: NftEventKey,
         payload: MintEditionTransaction,
     ) -> Result<()> {
-        let event = NftEvents {
-            event: Some(PolygonRetryMintDrop(payload)),
-        };
-
-        self.producer.send(Some(&event), Some(&key)).await?;
+        self.producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(PolygonRetryMintDrop(payload)),
+                }),
+                Some(&key),
+            )
+            .await?;
 
         Ok(())
     }

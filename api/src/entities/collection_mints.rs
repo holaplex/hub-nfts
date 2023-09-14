@@ -13,8 +13,8 @@ pub struct Model {
     pub collection_id: Uuid,
     #[sea_orm(column_type = "Text", nullable)]
     pub address: Option<String>,
-    #[sea_orm(column_type = "Text")]
-    pub owner: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub owner: Option<String>,
     pub creation_status: CreationStatus,
     pub created_by: Uuid,
     pub created_at: DateTimeWithTimeZone,
@@ -23,7 +23,8 @@ pub struct Model {
     pub edition: i64,
     pub seller_fee_basis_points: i16,
     pub credits_deduction_id: Option<Uuid>,
-    pub compressed: bool,
+    #[sea_orm(nullable)]
+    pub compressed: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -1,21 +1,32 @@
 use hub_core::{anyhow::Result, producer::Producer};
 
 use super::{CollectionEvent, DropEvent, TransferEvent};
-use crate::proto::{
-    nft_events::Event::{
-        SolanaCreateCollection, SolanaCreateDrop, SolanaMintDrop, SolanaMintToCollection,
-        SolanaRetryCreateCollection, SolanaRetryDrop, SolanaRetryMintDrop,
-        SolanaRetryMintToCollection, SolanaRetryUpdatedCollectionMint,
-        SolanaSwitchMintCollectionRequested, SolanaTransferAsset, SolanaUpdateCollection,
-        SolanaUpdateDrop, SolanaUpdatedCollectionMint,
+use crate::{
+    entities::sea_orm_active_enums::DropType,
+    proto::{
+        nft_events::Event::{
+            SolanaCreateCollection, SolanaCreateEditionDrop, SolanaCreateOpenDrop,
+            SolanaMintEditionDrop, SolanaMintOpenDrop, SolanaMintToCollection,
+            SolanaRetryCreateCollection, SolanaRetryEditionDrop, SolanaRetryMintEditionDrop,
+            SolanaRetryMintOpenDrop, SolanaRetryMintToCollection, SolanaRetryOpenDrop,
+            SolanaRetryUpdatedCollectionMint, SolanaSwitchMintCollectionRequested,
+            SolanaTransferAsset, SolanaUpdateCollection, SolanaUpdateEditionDrop,
+            SolanaUpdateOpenDrop, SolanaUpdatedCollectionMint,
+        },
+        MetaplexMasterEditionTransaction, MintMetaplexEditionTransaction,
+        MintMetaplexMetadataTransaction, NftEventKey, NftEvents, RetryUpdateSolanaMintPayload,
+        SwitchCollectionPayload, TransferMetaplexAssetTransaction, UpdateSolanaMintPayload,
     },
-    MetaplexMasterEditionTransaction, MintMetaplexEditionTransaction,
-    MintMetaplexMetadataTransaction, NftEventKey, NftEvents, RetryUpdateSolanaMintPayload,
-    SwitchCollectionPayload, TransferMetaplexAssetTransaction, UpdateSolanaMintPayload,
 };
+
 #[derive(Clone)]
 pub struct Solana {
     producer: Producer<NftEvents>,
+}
+
+pub enum MintDropTransaction {
+    Edition(MintMetaplexEditionTransaction),
+    Open(MintMetaplexMetadataTransaction),
 }
 
 impl Solana {
@@ -29,7 +40,7 @@ impl Solana {
         &self,
     ) -> impl DropEvent<
         MetaplexMasterEditionTransaction,
-        MintMetaplexEditionTransaction,
+        MintDropTransaction,
         MetaplexMasterEditionTransaction,
     > + TransferEvent<TransferMetaplexAssetTransaction>
     + CollectionEvent<
@@ -45,76 +56,86 @@ impl Solana {
 impl
     DropEvent<
         MetaplexMasterEditionTransaction,
-        MintMetaplexEditionTransaction,
+        MintDropTransaction,
         MetaplexMasterEditionTransaction,
     > for Solana
 {
     async fn create_drop(
         &self,
+        drop_type: DropType,
         key: NftEventKey,
         payload: MetaplexMasterEditionTransaction,
     ) -> Result<()> {
-        let event = NftEvents {
-            event: Some(SolanaCreateDrop(payload)),
+        let event = match drop_type {
+            DropType::Edition => Some(SolanaCreateEditionDrop(payload)),
+            DropType::Open => Some(SolanaCreateOpenDrop(payload)),
         };
 
-        self.producer.send(Some(&event), Some(&key)).await?;
+        self.producer
+            .send(Some(&NftEvents { event }), Some(&key))
+            .await?;
 
         Ok(())
     }
 
     async fn retry_create_drop(
         &self,
+        drop_type: DropType,
         key: NftEventKey,
         payload: MetaplexMasterEditionTransaction,
     ) -> Result<()> {
-        let event = NftEvents {
-            event: Some(SolanaRetryDrop(payload)),
+        let event = match drop_type {
+            DropType::Edition => Some(SolanaRetryEditionDrop(payload)),
+            DropType::Open => Some(SolanaRetryOpenDrop(payload)),
         };
 
-        self.producer.send(Some(&event), Some(&key)).await?;
+        self.producer
+            .send(Some(&NftEvents { event }), Some(&key))
+            .await?;
 
         Ok(())
     }
 
     async fn update_drop(
         &self,
+        drop_type: DropType,
         key: NftEventKey,
         payload: MetaplexMasterEditionTransaction,
     ) -> Result<()> {
-        let event = NftEvents {
-            event: Some(SolanaUpdateDrop(payload)),
+        let event = match drop_type {
+            DropType::Edition => Some(SolanaUpdateEditionDrop(payload)),
+            DropType::Open => Some(SolanaUpdateOpenDrop(payload)),
         };
 
-        self.producer.send(Some(&event), Some(&key)).await?;
+        self.producer
+            .send(Some(&NftEvents { event }), Some(&key))
+            .await?;
 
         Ok(())
     }
 
-    async fn mint_drop(
-        &self,
-        key: NftEventKey,
-        payload: MintMetaplexEditionTransaction,
-    ) -> Result<()> {
-        let event = NftEvents {
-            event: Some(SolanaMintDrop(payload)),
+    async fn mint_drop(&self, key: NftEventKey, payload: MintDropTransaction) -> Result<()> {
+        let event = match payload {
+            MintDropTransaction::Edition(p) => Some(SolanaMintEditionDrop(p)),
+            MintDropTransaction::Open(p) => Some(SolanaMintOpenDrop(p)),
         };
 
-        self.producer.send(Some(&event), Some(&key)).await?;
+        self.producer
+            .send(Some(&NftEvents { event }), Some(&key))
+            .await?;
 
         Ok(())
     }
 
-    async fn retry_mint_drop(
-        &self,
-        key: NftEventKey,
-        payload: MintMetaplexEditionTransaction,
-    ) -> Result<()> {
-        let event = NftEvents {
-            event: Some(SolanaRetryMintDrop(payload)),
+    async fn retry_mint_drop(&self, key: NftEventKey, payload: MintDropTransaction) -> Result<()> {
+        let event = match payload {
+            MintDropTransaction::Edition(tx) => Some(SolanaRetryMintEditionDrop(tx)),
+            MintDropTransaction::Open(tx) => Some(SolanaRetryMintOpenDrop(tx)),
         };
 
-        self.producer.send(Some(&event), Some(&key)).await?;
+        self.producer
+            .send(Some(&NftEvents { event }), Some(&key))
+            .await?;
 
         Ok(())
     }

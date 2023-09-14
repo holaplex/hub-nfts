@@ -521,7 +521,7 @@ impl Mutation {
             return Err(Error::new("New collection must be Metaplex Certified"));
         }
 
-        if mint.compressed {
+        if Some(true) == mint.compressed {
             return Err(Error::new(
                 "Switching collection is only supported for uncompressed mint",
             ));
@@ -577,8 +577,11 @@ impl Mutation {
     }
 }
 
-/// Res
+///  Fetches the owner's wallet address for a given project and blockchain.
+/// # Returns
+/// - Returns a `Result<String>` containing the wallet address of the owner if the operation is successful.
 /// # Errors
+/// - Returns an error if no project wallet is found for the specified blockchain.
 pub async fn fetch_owner(
     conn: &DatabaseConnection,
     project: Uuid,
@@ -636,8 +639,10 @@ impl CreateCollectionInput {
     }
 }
 
-/// Res
+/// Validates the Solana creator verification based on project treasury wallet address and the list of creators.
 /// # Errors
+/// - Returns an error if any of the creators are verified but their address does not match
+///   the project treasury wallet address.
 pub fn validate_solana_creator_verification(
     project_treasury_wallet_address: &str,
     creators: &Vec<Creator>,
@@ -699,8 +704,9 @@ pub fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<Creator>) ->
     Ok(())
 }
 
-/// Res
+/// Validates a Solana address
 /// # Errors
+/// - Returns an error if the provided address is not a valid Solana address.
 pub fn validate_solana_address(address: &str) -> Result<()> {
     if Pubkey::from_str(address).is_err() {
         return Err(Error::new(format!(
@@ -711,8 +717,9 @@ pub fn validate_solana_address(address: &str) -> Result<()> {
     Ok(())
 }
 
-/// Res
+/// Validates an EVM (Ethereum Virtual Machine) address format.
 /// # Errors
+/// - Returns an error  if the provided address does not match the required EVM address format.
 pub fn validate_evm_address(address: &str) -> Result<()> {
     let err = Err(Error::new(format!("{address} is not a valid EVM address")));
 

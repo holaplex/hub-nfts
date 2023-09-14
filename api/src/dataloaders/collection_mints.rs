@@ -74,12 +74,11 @@ impl DataLoader<String> for OwnerLoader {
         Ok(collection_mints
             .into_iter()
             .fold(HashMap::new(), |mut acc, collection_mint| {
-                acc.entry(collection_mint.owner.clone())
-                    .or_insert_with(Vec::new);
-
-                acc.entry(collection_mint.owner.clone())
-                    .and_modify(|collection_mints| collection_mints.push(collection_mint.into()));
-
+                if let Some(owner) = collection_mint.owner.clone() {
+                    acc.entry(owner)
+                        .or_insert_with(Vec::new)
+                        .push(collection_mint.into());
+                }
                 acc
             }))
     }

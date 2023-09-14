@@ -53,6 +53,10 @@ mod m20230725_144506_drop_solana_collections_table;
 mod m20230807_090847_create_histories_table;
 mod m20230818_163948_downcase_polygon_addresses;
 mod m20230821_131630_create_switch_collection_histories_table;
+mod m20230905_100852_add_type_to_drop;
+mod m20230910_204731_add_queued_variant_to_mints_status;
+mod m20230910_212742_make_owner_address_optional_for_mint;
+mod m20230911_144938_make_compressed_column_optional;
 
 pub struct Migrator;
 
@@ -113,6 +117,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20230807_090847_create_histories_table::Migration),
             Box::new(m20230818_163948_downcase_polygon_addresses::Migration),
             Box::new(m20230821_131630_create_switch_collection_histories_table::Migration),
+            Box::new(m20230905_100852_add_type_to_drop::Migration),
+            Box::new(m20230910_204731_add_queued_variant_to_mints_status::Migration),
+            Box::new(m20230910_212742_make_owner_address_optional_for_mint::Migration),
+            Box::new(m20230911_144938_make_compressed_column_optional::Migration),
         ]
     }
 }
