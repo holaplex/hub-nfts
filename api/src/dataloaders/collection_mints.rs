@@ -75,7 +75,7 @@ impl DataLoader<String> for OwnerLoader {
             .into_iter()
             .fold(HashMap::new(), |mut acc, collection_mint| {
                 if let Some(owner) = collection_mint.owner.clone() {
-                    acc.entry(owner.clone())
+                    acc.entry(owner)
                         .or_insert_with(Vec::new)
                         .push(collection_mint.into());
                 }
