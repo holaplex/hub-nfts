@@ -17,7 +17,7 @@ categories = ["cryptography::cryptocurrencies", "web-programming"]
 [lib]
 
 [dependencies]
-sea-orm = { version = "^0.10.0", features = [
+sea-orm = { version = "0.12.2", features = [
   "debug-print",
   "runtime-tokio-rustls",
   "sqlx-postgres",
@@ -31,7 +31,7 @@ async-graphql = { version = "5.0.4", features = [
 ] }
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
-solana-program = "1.15.0"
+solana-program = "1"
 poem = { version = "1.3.50", features = ["anyhow", "test"] }
 async-graphql-poem = "5.0.3"
 prost = "0.11.9"
@@ -42,7 +42,7 @@ strum = { version = "0.24.1", features = ["derive"] }
 
 [dependencies.hub-core]
 package = "holaplex-hub-core"
-version = "0.5.3"
+version = "0.5.4"
 git = "https://github.com/holaplex/hub-core"
 branch = "stable"
 features = ["kafka", "credits", "asset_proxy", "sea-orm"]

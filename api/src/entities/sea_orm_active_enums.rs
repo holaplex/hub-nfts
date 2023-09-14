@@ -47,17 +47,12 @@ pub enum CreationStatus {
     Queued,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Enum, Copy)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, EnumIter, DeriveActiveEnum, Enum, Copy)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "drop_type")]
 pub enum DropType {
+    #[default]
     #[sea_orm(string_value = "edition")]
     Edition,
     #[sea_orm(string_value = "open")]
     Open,
-}
-
-impl Default for DropType {
-    fn default() -> Self {
-        DropType::Edition
-    }
 }
