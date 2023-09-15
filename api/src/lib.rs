@@ -27,7 +27,7 @@ use dataloaders::{
     CollectionMintMintHistoryLoader, CollectionMintTransfersLoader, CollectionMintsLoader,
     CollectionMintsOwnerLoader, CreatorsLoader, DropLoader, DropMintHistoryLoader, HoldersLoader,
     MetadataJsonAttributesLoader, MetadataJsonLoader, MintCreatorsLoader, MinterMintHistoryLoader,
-    ProjectCollectionLoader, ProjectCollectionsLoader, ProjectDropsLoader,
+    ProjectCollectionLoader, ProjectCollectionsLoader, ProjectDropsLoader, QueuedMintsLoader,
     SwitchCollectionHistoryLoader, UpdateMintHistoryLoader,
 };
 use db::Connection;
@@ -291,6 +291,7 @@ pub struct AppContext {
     collection_mint_mint_history_loader: DataLoader<CollectionMintMintHistoryLoader>,
     collection_mint_transfers_loader: DataLoader<CollectionMintTransfersLoader>,
     switch_collection_history_loader: DataLoader<SwitchCollectionHistoryLoader>,
+    queued_mints_loader: DataLoader<QueuedMintsLoader>,
 }
 
 impl AppContext {
@@ -342,6 +343,7 @@ impl AppContext {
             DataLoader::new(CollectionMintTransfersLoader::new(db.clone()), tokio::spawn);
         let switch_collection_history_loader =
             DataLoader::new(SwitchCollectionHistoryLoader::new(db.clone()), tokio::spawn);
+        let queued_mints_loader = DataLoader::new(QueuedMintsLoader::new(db.clone()), tokio::spawn);
 
         Self {
             db,
@@ -369,6 +371,7 @@ impl AppContext {
             collection_mint_mint_history_loader,
             collection_mint_transfers_loader,
             switch_collection_history_loader,
+            queued_mints_loader,
         }
     }
 }
