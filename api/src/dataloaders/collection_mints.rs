@@ -140,11 +140,11 @@ impl DataLoader<Uuid> for QueuedMintsLoader {
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let drop_mints = drops::Entity::find()
             .select_with(collection_mints::Entity)
+            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
             .join(
                 JoinType::InnerJoin,
-                collection_mints::Relation::Collections.def(),
+                collections::Relation::CollectionMints.def(),
             )
-            .join(JoinType::InnerJoin, collections::Relation::Drop.def())
             .filter(collection_mints::Column::CreationStatus.eq(CreationStatus::Queued))
             .filter(drops::Column::Id.is_in(keys.iter().map(ToOwned::to_owned)))
             .all(self.db.get())
