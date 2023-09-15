@@ -2,7 +2,7 @@ use async_graphql::{Context, Enum, Error, Object, Result};
 use hub_core::chrono::Utc;
 use sea_orm::entity::prelude::*;
 
-use super::Collection;
+use super::{Collection, CollectionMint};
 use crate::{
     entities::{collections, drops, mint_histories, sea_orm_active_enums::CreationStatus},
     AppContext,
@@ -88,10 +88,11 @@ impl Drop {
         let paused_at = self.drop.paused_at;
         let shutdown_at = self.drop.shutdown_at;
 
+        let total_mints = self.collection.total_mints;
         let minted = self
             .collection
             .supply
-            .map(|supply| supply == self.collection.total_mints);
+            .map(|supply| supply == total_mints && total_mints > 0);
 
         match (
             scheduled,
@@ -123,6 +124,15 @@ impl Drop {
             },
             (_, _, _, _, _, CreationStatus::Queued) => Err(Error::new("Invalid Drop Status")),
         }
+    }
+
+    async fn queued_mints(&self, ctx: &Context<'_>) -> Result<Option<Vec<CollectionMint>>> {
+        let AppContext {
+            queued_mints_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        queued_mints_loader.load_one(self.drop.id).await
     }
 
     #[graphql(deprecation = "Use `mint_histories` under `Collection` Object instead.")]
