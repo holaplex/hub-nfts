@@ -19,3 +19,4 @@ pub mod sea_orm_active_enums;
 pub mod switch_collection_histories;
 pub mod transfer_charges;
 pub mod update_histories;
+pub mod job_trackings;

@@ -15,6 +15,7 @@ pub mod mutations;
 pub mod nft_storage;
 pub mod objects;
 pub mod queries;
+pub mod background_worker;
 
 use async_graphql::{
     dataloader::DataLoader,
