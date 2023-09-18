@@ -4,7 +4,10 @@ use sea_orm::entity::prelude::*;
 
 use super::{Collection, CollectionMint};
 use crate::{
-    entities::{collections, drops, mint_histories, sea_orm_active_enums::CreationStatus},
+    entities::{
+        collections, drops, mint_histories,
+        sea_orm_active_enums::{CreationStatus, DropType},
+    },
     AppContext,
 };
 /// An NFT campaign that controls the minting rules for a collection, such as its start date and end date.
@@ -26,6 +29,11 @@ impl Drop {
     /// The unique identifier for the drop.
     async fn id(&self) -> Uuid {
         self.drop.id
+    }
+
+    // The type of the drop.
+    async fn drop_type(&self) -> DropType {
+        self.drop.drop_type
     }
 
     /// The identifier of the project to which the drop is associated.
