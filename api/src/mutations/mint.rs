@@ -875,6 +875,12 @@ impl Mutation {
 
         let collection_model = collection.ok_or(Error::new("collection not found"))?;
 
+        let mut collection_am: collections::ActiveModel = collection_model.clone().into();
+
+        collection_am.supply = Set(collection_model.supply.map(|supply| supply.add(1)));
+
+        collection_am.update(conn).await?;
+
         let mint = collection_mints::ActiveModel {
             collection_id: Set(drop.collection_id),
             owner: Set(None),
@@ -989,6 +995,10 @@ impl Mutation {
                 balance,
             )
             .await?;
+
+        let mut collection_am = collections::ActiveModel::from(collection.clone());
+        collection_am.total_mints = Set(collection.total_mints.add(1));
+        collection_am.update(conn).await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
@@ -1135,6 +1145,10 @@ impl Mutation {
                 balance,
             )
             .await?;
+
+        let mut collection_am = collections::ActiveModel::from(collection.clone());
+        collection_am.total_mints = Set(collection.total_mints.add(1));
+        collection_am.update(conn).await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {

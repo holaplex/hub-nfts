@@ -703,7 +703,7 @@ impl CreateDropInput {
     /// # Errors
     /// - Err with an appropriate error message if any validation fails.
     pub fn validate(&self) -> Result<()> {
-        if self.supply == Some(0) {
+        if self.supply == Some(0) && self.drop_type == DropType::Edition {
             return Err(Error::new("Supply must be greater than 0 or undefined"));
         };
 
