@@ -986,7 +986,7 @@ impl Mutation {
             Actions::Mint
         };
 
-        let TransactionId(_) = credits
+        let TransactionId(deduction_id) = credits
             .submit_pending_deduction(
                 org_id,
                 user_id,
@@ -999,6 +999,11 @@ impl Mutation {
         let mut collection_am = collections::ActiveModel::from(collection.clone());
         collection_am.total_mints = Set(collection.total_mints.add(1));
         collection_am.update(conn).await?;
+
+        let mut mint_am: collection_mints::ActiveModel = mint.clone().into();
+        mint_am.credits_deduction_id = Set(Some(deduction_id));
+        mint_am.creation_status = Set(CreationStatus::Pending);
+        mint_am.update(conn).await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
@@ -1026,10 +1031,6 @@ impl Mutation {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
-
-        let mut mint_am: collection_mints::ActiveModel = mint.into();
-        mint_am.creation_status = Set(CreationStatus::Pending);
-        let mint = mint_am.update(conn).await?;
 
         let drop = drops::Entity::find()
             .filter(drops::Column::CollectionId.eq(collection.id))
@@ -1136,7 +1137,7 @@ impl Mutation {
             .all(conn)
             .await?;
 
-        let TransactionId(_) = credits
+        let TransactionId(deduction_id) = credits
             .submit_pending_deduction(
                 org_id,
                 user_id,
@@ -1149,6 +1150,11 @@ impl Mutation {
         let mut collection_am = collections::ActiveModel::from(collection.clone());
         collection_am.total_mints = Set(collection.total_mints.add(1));
         collection_am.update(conn).await?;
+
+        let mut mint_am: collection_mints::ActiveModel = mint.clone().into();
+        mint_am.credits_deduction_id = Set(Some(deduction_id));
+        mint_am.creation_status = Set(CreationStatus::Pending);
+        mint_am.update(conn).await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
@@ -1176,10 +1182,6 @@ impl Mutation {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
-
-        let mut mint_am: collection_mints::ActiveModel = mint.into();
-        mint_am.creation_status = Set(CreationStatus::Pending);
-        let mint = mint_am.update(conn).await?;
 
         let mint_history_am = mint_histories::ActiveModel {
             mint_id: Set(mint.id),
