@@ -28,6 +28,7 @@ impl DataLoader<Uuid> for Loader {
             .filter(
                 collection_mints::Column::CollectionId.is_in(keys.iter().map(ToOwned::to_owned)),
             )
+            .filter(collection_mints::Column::Owner.is_not_null())
             .select_only()
             .column(collection_mints::Column::CollectionId)
             .column_as(collection_mints::Column::Owner, "address")
