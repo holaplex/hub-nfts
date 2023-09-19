@@ -863,6 +863,7 @@ impl Mutation {
 
         let conn = db.get();
         let nft_storage = ctx.data::<NftStorageClient>()?;
+        let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
         let UserID(id) = user_id;
         let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
@@ -916,6 +917,22 @@ impl Mutation {
 
         mint_creators::Entity::insert_many(mint_creators)
             .exec(conn)
+            .await?;
+
+        nfts_producer
+            .send(
+                Some(&NftEvents {
+                    event: Some(NftEvent::DropMinted(MintCreation {
+                        drop_id: drop.id.to_string(),
+                        status: NftCreationStatus::Queued as i32,
+                    })),
+                }),
+                Some(&NftEventKey {
+                    id: mint_model.id.to_string(),
+                    project_id: drop.project_id.to_string(),
+                    user_id: user_id.to_string(),
+                }),
+            )
             .await?;
 
         Ok(QueueMintToDropPayload {
