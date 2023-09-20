@@ -10,6 +10,7 @@ pub mod entities;
 pub mod events;
 pub mod handlers;
 pub mod metadata_json;
+pub mod metrics;
 pub mod mutations;
 pub mod nft_storage;
 pub mod objects;
@@ -26,7 +27,7 @@ use dataloaders::{
     CollectionMintMintHistoryLoader, CollectionMintTransfersLoader, CollectionMintsLoader,
     CollectionMintsOwnerLoader, CreatorsLoader, DropLoader, DropMintHistoryLoader, HoldersLoader,
     MetadataJsonAttributesLoader, MetadataJsonLoader, MintCreatorsLoader, MinterMintHistoryLoader,
-    ProjectCollectionLoader, ProjectCollectionsLoader, ProjectDropsLoader,
+    ProjectCollectionLoader, ProjectCollectionsLoader, ProjectDropsLoader, QueuedMintsLoader,
     SwitchCollectionHistoryLoader, UpdateMintHistoryLoader,
 };
 use db::Connection;
@@ -41,6 +42,7 @@ use hub_core::{
     tokio,
     uuid::Uuid,
 };
+use metrics::Metrics;
 use mutations::Mutation;
 use nft_storage::NftStorageClient;
 use poem::{async_trait, FromRequest, Request, RequestBody};
@@ -239,6 +241,7 @@ pub struct AppState {
 
 impl AppState {
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         schema: AppSchema,
         connection: Connection,
@@ -288,10 +291,12 @@ pub struct AppContext {
     collection_mint_mint_history_loader: DataLoader<CollectionMintMintHistoryLoader>,
     collection_mint_transfers_loader: DataLoader<CollectionMintTransfersLoader>,
     switch_collection_history_loader: DataLoader<SwitchCollectionHistoryLoader>,
+    queued_mints_loader: DataLoader<QueuedMintsLoader>,
 }
 
 impl AppContext {
     #[must_use]
+    #[allow(clippy::similar_names)]
     pub fn new(
         db: Connection,
         user_id: UserID,
@@ -338,6 +343,8 @@ impl AppContext {
             DataLoader::new(CollectionMintTransfersLoader::new(db.clone()), tokio::spawn);
         let switch_collection_history_loader =
             DataLoader::new(SwitchCollectionHistoryLoader::new(db.clone()), tokio::spawn);
+        let queued_mints_loader = DataLoader::new(QueuedMintsLoader::new(db.clone()), tokio::spawn);
+
         Self {
             db,
             user_id,
@@ -364,6 +371,7 @@ impl AppContext {
             collection_mint_mint_history_loader,
             collection_mint_transfers_loader,
             switch_collection_history_loader,
+            queued_mints_loader,
         }
     }
 }

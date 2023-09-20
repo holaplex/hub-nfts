@@ -64,7 +64,10 @@ impl Mutation {
         let collection = collection.ok_or(Error::new("collection not found"))?;
         input.validate_recipient_address(collection.blockchain)?;
 
-        let owner_address = collection_mint_model.owner.clone();
+        let owner_address = collection_mint_model
+            .owner
+            .clone()
+            .ok_or(Error::new("NFT is not owned by any wallet"))?;
 
         CustomerWallets::find_by_address(owner_address.clone())
             .one(conn)

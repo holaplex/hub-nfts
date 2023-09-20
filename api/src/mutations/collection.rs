@@ -5,11 +5,11 @@ use hub_core::{
     chrono::Utc,
     credits::{CreditsClient, TransactionId},
     producer::Producer,
+    util::ValidateAddress,
 };
 use reqwest::Url;
 use sea_orm::{prelude::*, ModelTrait, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
-use solana_program::pubkey::Pubkey;
 
 use crate::{
     blockchains::{polygon::Polygon, solana::Solana, CollectionEvent},
@@ -521,7 +521,7 @@ impl Mutation {
             return Err(Error::new("New collection must be Metaplex Certified"));
         }
 
-        if mint.compressed == true {
+        if Some(true) == mint.compressed {
             return Err(Error::new(
                 "Switching collection is only supported for uncompressed mint",
             ));
@@ -577,6 +577,11 @@ impl Mutation {
     }
 }
 
+///  Fetches the owner's wallet address for a given project and blockchain.
+/// # Returns
+/// - Returns a `Result<String>` containing the wallet address of the owner if the operation is successful.
+/// # Errors
+/// - Returns an error if no project wallet is found for the specified blockchain.
 pub async fn fetch_owner(
     conn: &DatabaseConnection,
     project: Uuid,
@@ -593,7 +598,7 @@ pub async fn fetch_owner(
 
     let owner = wallet
         .ok_or(Error::new(format!(
-            "no project wallet found for {blockchain} blockchain"
+            "no project wallet found for {blockchain:?} blockchain"
         )))?
         .wallet_address;
     Ok(owner)
@@ -634,6 +639,10 @@ impl CreateCollectionInput {
     }
 }
 
+/// Validates the Solana creator verification based on project treasury wallet address and the list of creators.
+/// # Errors
+/// - Returns an error if any of the creators are verified but their address does not match
+///   the project treasury wallet address.
 pub fn validate_solana_creator_verification(
     project_treasury_wallet_address: &str,
     creators: &Vec<Creator>,
@@ -695,8 +704,11 @@ pub fn validate_creators(blockchain: BlockchainEnum, creators: &Vec<Creator>) ->
     Ok(())
 }
 
+/// Validates a Solana address
+/// # Errors
+/// - Returns an error if the provided address is not a valid Solana address.
 pub fn validate_solana_address(address: &str) -> Result<()> {
-    if Pubkey::from_str(address).is_err() {
+    if !ValidateAddress::is_solana_address(&address) {
         return Err(Error::new(format!(
             "{address} is not a valid Solana address"
         )));
@@ -705,22 +717,12 @@ pub fn validate_solana_address(address: &str) -> Result<()> {
     Ok(())
 }
 
+/// Validates an EVM (Ethereum Virtual Machine) address format.
+/// # Errors
+/// - Returns an error  if the provided address does not match the required EVM address format.
 pub fn validate_evm_address(address: &str) -> Result<()> {
-    let err = Err(Error::new(format!("{address} is not a valid EVM address")));
-
-    // Ethereum address must start with '0x'
-    if !address.starts_with("0x") {
-        return err;
-    }
-
-    // Ethereum address must be exactly 40 characters long after removing '0x'
-    if address.len() != 42 {
-        return err;
-    }
-
-    // Check that the address contains only hexadecimal characters
-    if !address[2..].chars().all(|c| c.is_ascii_hexdigit()) {
-        return err;
+    if !ValidateAddress::is_evm_address(&address) {
+        return Err(Error::new(format!("{address} is not a valid EVM address")));
     }
 
     Ok(())

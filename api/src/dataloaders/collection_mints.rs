@@ -2,9 +2,13 @@ use std::{borrow::Cow, collections::HashMap};
 
 use async_graphql::{dataloader::Loader as DataLoader, FieldError, Result};
 use poem::async_trait;
-use sea_orm::prelude::*;
+use sea_orm::{prelude::*, JoinType, QuerySelect};
 
-use crate::{db::Connection, entities::collection_mints, objects::CollectionMint};
+use crate::{
+    db::Connection,
+    entities::{collection_mints, collections, drops, sea_orm_active_enums::CreationStatus},
+    objects::CollectionMint,
+};
 
 #[derive(Debug, Clone)]
 pub struct Loader {
@@ -28,6 +32,7 @@ impl DataLoader<Uuid> for Loader {
             .filter(
                 collection_mints::Column::CollectionId.is_in(keys.iter().map(ToOwned::to_owned)),
             )
+            .filter(collection_mints::Column::CreationStatus.ne(CreationStatus::Queued))
             .all(self.db.get())
             .await?;
 
@@ -74,12 +79,11 @@ impl DataLoader<String> for OwnerLoader {
         Ok(collection_mints
             .into_iter()
             .fold(HashMap::new(), |mut acc, collection_mint| {
-                acc.entry(collection_mint.owner.clone())
-                    .or_insert_with(Vec::new);
-
-                acc.entry(collection_mint.owner.clone())
-                    .and_modify(|collection_mints| collection_mints.push(collection_mint.into()));
-
+                if let Some(owner) = collection_mint.owner.clone() {
+                    acc.entry(owner)
+                        .or_insert_with(Vec::new)
+                        .push(collection_mint.into());
+                }
                 acc
             }))
     }
@@ -111,6 +115,44 @@ impl DataLoader<Uuid> for CollectionMintLoader {
         Ok(collection_mints
             .into_iter()
             .map(|collection_mint| (collection_mint.id, collection_mint.into()))
+            .collect())
+    }
+}
+
+/// Dataloader for queued mints for a drop
+#[derive(Debug, Clone)]
+pub struct QueuedMintsLoader {
+    pub db: Connection,
+}
+
+impl QueuedMintsLoader {
+    #[must_use]
+    pub fn new(db: Connection) -> Self {
+        Self { db }
+    }
+}
+
+#[async_trait]
+impl DataLoader<Uuid> for QueuedMintsLoader {
+    type Error = FieldError;
+    type Value = Vec<CollectionMint>;
+
+    async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
+        let drop_mints = drops::Entity::find()
+            .select_with(collection_mints::Entity)
+            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
+            .join(
+                JoinType::InnerJoin,
+                collections::Relation::CollectionMints.def(),
+            )
+            .filter(collection_mints::Column::CreationStatus.eq(CreationStatus::Queued))
+            .filter(drops::Column::Id.is_in(keys.iter().map(ToOwned::to_owned)))
+            .all(self.db.get())
+            .await?;
+
+        Ok(drop_mints
+            .into_iter()
+            .map(|(drop, mints)| (drop.id, mints.into_iter().map(Into::into).collect()))
             .collect())
     }
 }
