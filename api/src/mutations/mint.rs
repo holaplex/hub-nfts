@@ -888,6 +888,7 @@ impl Mutation {
             creation_status: Set(CreationStatus::Queued),
             created_by: Set(user_id),
             compressed: Set(None),
+            seller_fee_basis_points: Set(collection_model.seller_fee_basis_points),
             ..Default::default()
         };
 
