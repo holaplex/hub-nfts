@@ -886,7 +886,6 @@ impl Mutation {
             collection_id: Set(drop.collection_id),
             owner: Set(None),
             creation_status: Set(CreationStatus::Queued),
-            seller_fee_basis_points: Set(collection_model.seller_fee_basis_points),
             created_by: Set(user_id),
             compressed: Set(None),
             ..Default::default()
@@ -1017,10 +1016,15 @@ impl Mutation {
         collection_am.total_mints = Set(collection.total_mints.add(1));
         collection_am.update(conn).await?;
 
-        let mut mint_am: collection_mints::ActiveModel = mint.clone().into();
-        mint_am.credits_deduction_id = Set(Some(deduction_id));
+        let mut mint_am: collection_mints::ActiveModel = mint.into();
+
         mint_am.creation_status = Set(CreationStatus::Pending);
-        mint_am.update(conn).await?;
+        mint_am.credits_deduction_id = Set(Some(deduction_id));
+        mint_am.compressed = Set(Some(input.compressed));
+        mint_am.owner = Set(Some(input.recipient.clone()));
+        mint_am.seller_fee_basis_points = Set(collection.seller_fee_basis_points);
+
+        let mint = mint_am.update(conn).await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
@@ -1033,7 +1037,8 @@ impl Mutation {
                                 owner_address,
                                 name: metadata_json.name,
                                 symbol: metadata_json.symbol,
-                                metadata_uri: uri.unwrap(),
+                                metadata_uri: uri
+                                    .ok_or(Error::new("No metadata json uri found"))?,
                                 seller_fee_basis_points: mint.seller_fee_basis_points.into(),
                                 creators: creators.into_iter().map(Into::into).collect(),
                             }),
@@ -1168,10 +1173,15 @@ impl Mutation {
         collection_am.total_mints = Set(collection.total_mints.add(1));
         collection_am.update(conn).await?;
 
-        let mut mint_am: collection_mints::ActiveModel = mint.clone().into();
-        mint_am.credits_deduction_id = Set(Some(deduction_id));
+        let mut mint_am: collection_mints::ActiveModel = mint.into();
+
         mint_am.creation_status = Set(CreationStatus::Pending);
-        mint_am.update(conn).await?;
+        mint_am.credits_deduction_id = Set(Some(deduction_id));
+        mint_am.compressed = Set(Some(input.compressed));
+        mint_am.owner = Set(Some(input.recipient.clone()));
+        mint_am.seller_fee_basis_points = Set(collection.seller_fee_basis_points);
+
+        let mint = mint_am.update(conn).await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
@@ -1184,7 +1194,7 @@ impl Mutation {
                                 owner_address,
                                 name: metadata_json.name,
                                 symbol: metadata_json.symbol,
-                                metadata_uri: uri.unwrap(),
+                                metadata_uri: uri.ok_or(Error::new("No metadata json uri"))?,
                                 seller_fee_basis_points: mint.seller_fee_basis_points.into(),
                                 creators: creators.into_iter().map(Into::into).collect(),
                             }),
