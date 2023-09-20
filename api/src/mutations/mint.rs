@@ -1160,11 +1160,17 @@ impl Mutation {
             .all(conn)
             .await?;
 
+        let action = if input.compressed {
+            Actions::MintCompressed
+        } else {
+            Actions::Mint
+        };
+
         let TransactionId(deduction_id) = credits
             .submit_pending_deduction(
                 org_id,
                 user_id,
-                Actions::Mint,
+                action,
                 collection.blockchain.into(),
                 balance,
             )
