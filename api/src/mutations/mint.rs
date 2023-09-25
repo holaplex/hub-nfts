@@ -846,8 +846,12 @@ impl Mutation {
             },
         };
 
+        let mut mint_am: collection_mints::ActiveModel = collection_mint_model.into();
+        mint_am.creation_status = Set(CreationStatus::Pending);
+        let mint = mint_am.update(conn).await?;
+
         Ok(RetryMintEditionPayload {
-            collection_mint: collection_mint_model.into(),
+            collection_mint: mint.into(),
         })
     }
 
