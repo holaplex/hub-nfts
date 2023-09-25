@@ -161,14 +161,11 @@ impl Mutation {
             BlockchainEnum::Polygon => {
                 polygon
                     .event()
-                    .mint_drop(
-                        event_key,
-                        proto::MintEditionTransaction {
-                            receiver: input.recipient.to_string(),
-                            amount: 1,
-                            collection_id: collection.id.to_string(),
-                        },
-                    )
+                    .mint_drop(event_key, proto::MintEditionTransaction {
+                        receiver: input.recipient.to_string(),
+                        amount: 1,
+                        collection_id: collection.id.to_string(),
+                    })
                     .await?;
             },
             BlockchainEnum::Ethereum => {
@@ -326,14 +323,11 @@ impl Mutation {
             BlockchainEnum::Polygon => {
                 polygon
                     .event()
-                    .retry_mint_drop(
-                        event_key,
-                        proto::MintEditionTransaction {
-                            receiver: recipient.to_string(),
-                            amount: 1,
-                            collection_id: collection.id.to_string(),
-                        },
-                    )
+                    .retry_mint_drop(event_key, proto::MintEditionTransaction {
+                        receiver: recipient.to_string(),
+                        amount: 1,
+                        collection_id: collection.id.to_string(),
+                    })
                     .await?;
             },
             BlockchainEnum::Ethereum => {
@@ -460,25 +454,22 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .mint_to_collection(
-                        event_key,
-                        proto::MintMetaplexMetadataTransaction {
-                            metadata: Some(MetaplexMetadata {
-                                owner_address,
-                                name: metadata_json.name,
-                                symbol: metadata_json.symbol,
-                                metadata_uri: metadata_json.uri,
-                                seller_fee_basis_points: seller_fee_basis_points.into(),
-                                creators: creators
-                                    .into_iter()
-                                    .map(TryFrom::try_from)
-                                    .collect::<Result<_>>()?,
-                            }),
-                            recipient_address: input.recipient.to_string(),
-                            compressed,
-                            collection_id: collection.id.to_string(),
-                        },
-                    )
+                    .mint_to_collection(event_key, proto::MintMetaplexMetadataTransaction {
+                        metadata: Some(MetaplexMetadata {
+                            owner_address,
+                            name: metadata_json.name,
+                            symbol: metadata_json.symbol,
+                            metadata_uri: metadata_json.uri,
+                            seller_fee_basis_points: seller_fee_basis_points.into(),
+                            creators: creators
+                                .into_iter()
+                                .map(TryFrom::try_from)
+                                .collect::<Result<_>>()?,
+                        }),
+                        recipient_address: input.recipient.to_string(),
+                        compressed,
+                        collection_id: collection.id.to_string(),
+                    })
                     .await?;
             },
             BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
@@ -833,24 +824,21 @@ impl Mutation {
             BlockchainEnum::Solana => {
                 solana
                     .event()
-                    .retry_mint_to_collection(
-                        event_key,
-                        proto::MintMetaplexMetadataTransaction {
-                            metadata: Some(MetaplexMetadata {
-                                owner_address,
-                                name: metadata_json.name,
-                                symbol: metadata_json.symbol,
-                                metadata_uri: uri.ok_or(Error::new("metadata uri not found"))?,
-                                seller_fee_basis_points: collection_mint_model
-                                    .seller_fee_basis_points
-                                    .into(),
-                                creators: creators.into_iter().map(Into::into).collect(),
-                            }),
-                            recipient_address: recipient.to_string(),
-                            compressed,
-                            collection_id: collection_mint_model.collection_id.to_string(),
-                        },
-                    )
+                    .retry_mint_to_collection(event_key, proto::MintMetaplexMetadataTransaction {
+                        metadata: Some(MetaplexMetadata {
+                            owner_address,
+                            name: metadata_json.name,
+                            symbol: metadata_json.symbol,
+                            metadata_uri: uri.ok_or(Error::new("metadata uri not found"))?,
+                            seller_fee_basis_points: collection_mint_model
+                                .seller_fee_basis_points
+                                .into(),
+                            creators: creators.into_iter().map(Into::into).collect(),
+                        }),
+                        recipient_address: recipient.to_string(),
+                        compressed,
+                        collection_id: collection_mint_model.collection_id.to_string(),
+                    })
                     .await?;
             },
             BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
