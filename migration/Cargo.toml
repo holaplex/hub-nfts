@@ -2,9 +2,7 @@
 name = "migration"
 version = "0.1.0"
 publish = false
-authors = [
-  "Holaplex <engineering@holaplex.com>",
-]
+authors = ["Holaplex <engineering@holaplex.com>"]
 edition = "2021"
 description = "Holaplex Hub Nfts migrations"
 readme = "./README.md"
@@ -22,11 +20,8 @@ name = "migration"
 
 
 [dependencies]
-tokio = { version = "1.32.0", features = ["macros"] }
+tokio = { version = "1.32.0", features = ["macros", "rt-multi-thread"] }
 
 [dependencies.sea-orm-migration]
 version = "0.12.2"
-features = [
-  "runtime-tokio-rustls",
-  "sqlx-postgres",
-]
+features = ["runtime-tokio-rustls", "sqlx-postgres"]

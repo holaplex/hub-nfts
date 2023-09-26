@@ -68,7 +68,7 @@ impl NftStorageClient {
     ///
     /// # Errors
     /// If the upload fails
-    pub async fn upload(&self, data: impl Serialize) -> Result<UploadResponse> {
+    pub async fn upload(&self, data: &impl Serialize) -> Result<UploadResponse> {
         self.post("/upload".to_string(), data)
             .await?
             .json()

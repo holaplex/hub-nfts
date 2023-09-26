@@ -64,3 +64,9 @@ impl Related<super::mint_histories::Entity> for Entity {
         Relation::MintHistories.def()
     }
 }
+
+impl Entity {
+    pub fn find_by_id(id: Uuid) -> Select<Self> {
+        Self::find().filter(Column::Id.eq(id))
+    }
+}

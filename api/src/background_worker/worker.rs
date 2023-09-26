@@ -1,79 +1,95 @@
-use super::job_queue::JobQueue;
-use crate::db::Connection;
 use hub_core::{
-    tokio,
+    thiserror, tokio,
     tracing::{error, info},
 };
-use std::sync::Arc;
+use sea_orm::{error::DbErr, ActiveModelTrait};
+use serde::{Deserialize, Serialize};
 
-pub struct Worker {
-    job_queue: Arc<JobQueue>,
-    db_pool: Arc<Connection>,
+use super::{
+    job_queue::{JobQueue, JobQueueError},
+    tasks::BackgroundTask,
+};
+use crate::{db::Connection, entities::job_trackings};
+
+#[derive(thiserror::Error, Debug)]
+pub enum WorkerError {
+    #[error("Job queue error: {0}")]
+    JobQueue(#[from] JobQueueError),
+    #[error("Database error: {0}")]
+    Database(#[from] DbErr),
+}
+pub struct Worker<C: Clone, T: BackgroundTask<C>> {
+    job_queue: JobQueue,
+    db_pool: Connection,
+    context: C,
+    _task_marker: std::marker::PhantomData<T>,
 }
 
-impl Worker {
-    pub fn new(job_queue: Arc<JobQueue>, db_pool: Connection) -> Self {
+impl<C, T> Worker<C, T>
+where
+    T: Serialize + for<'de> Deserialize<'de> + Send + Sync + BackgroundTask<C>,
+    C: Clone,
+{
+    pub fn new(job_queue: JobQueue, db_pool: Connection, context: C) -> Self {
         Self {
             job_queue,
-            db_pool: Arc::new(db_pool),
+            db_pool,
+            context,
+            _task_marker: std::marker::PhantomData,
         }
     }
 
-    pub async fn start(&self) {
+    /// Start the worker
+    /// # Arguments
+    /// * `self` - The worker
+    /// # Returns
+    /// * `Result<(), WorkerError>` - The result of the operation
+    /// # Errors
+    /// * `WorkerError` - The error that occurred
+    pub async fn start(&self) -> Result<(), WorkerError> {
         loop {
-            if let Ok(Some(mut job)) = self.job_queue.dequeue().await {
-                let job_queue_clone = self.job_queue.clone();
-                let job_id = job.id;
-                let db_pool_clone = Arc::clone(&self.db_pool);
-                tokio::spawn(async move {
-                    if JobTracking::find_by_id(job_id, &db_pool_clone)
-                        .await?
-                        .is_none()
+            // Dequeue the next job to process
+            let job_option = self.job_queue.dequeue::<C, T>().await?;
+            let db_conn = self.db_pool.get();
+
+            if let Some(job) = job_option {
+                // Process the job
+                let model = job_trackings::Entity::find_by_id(job.id)
+                    .one(db_conn)
+                    .await?;
+
+                if let Some(model) = model {
+                    match job
+                        .task
+                        .process(self.db_pool.clone(), self.context.clone())
+                        .await
                     {
+                        Ok(_) => {
+                            // If successful, update the status in the job_trackings table to "completed"
+                            let job_tracking_am =
+                                job_trackings::Entity::update_status(model, "completed");
 
-                        // Create a new record in the database
-                        JobTracking::create(
-                            job_id,
-                            "JobType",
-                            job.task.payload(),
-                            "processing",
-                            &db_pool_clone,
-                        )
-                        .await?;
+                            job_tracking_am.update(db_conn).await?;
 
-                        // sora elle espinola
-                        // Process the job using the trait method
-                        match job.task.process() {
-                            Ok(_) => {
-                                // Update the job status in the database to "completed"
-                                JobTracking::update_status(&job, "completed", &db_pool_clone)
-                                    .await
-                                    .unwrap();
-                            },
-                            Err(e) => {
-                                println!("Job processing failed: {}", e);
+                            info!("Successfully processed job {}", job.id);
+                        },
+                        Err(e) => {
+                            // If an error occurs, update the status in the job_trackings table to "failed"
+                            let job_tracking_am =
+                                job_trackings::Entity::update_status(model, "failed");
 
-                                // Re-queue the job and update the job status in the database to "queued"
-                                job_queue_clone
-                                    .enqueue(&job)
-                                    .await
-                                    .expect("Failed to re-queue job");
-                                JobTracking::update_status(&job, "queued", &db_pool_clone)
-                                    .await
-                                    .unwrap();
-                            },
-                        }
-                    } else {
-                        info!("Duplicate job detected, skipping: {}", job_id);
+                            job_tracking_am.update(db_conn).await?;
+
+                            // Log the error (or handle it in some other way)
+                            error!("Error processing job {}: {}", job.id, e);
+                        },
                     }
-                    Ok::<(), sea_orm::DbErr>(())
-                })
-                .await
-                .unwrap_or_else(|e| {
-                    error!("An error occurred: {}", e);
-
-                    Ok::<(), sea_orm::DbErr>(())
-                });
+                } else {
+                    error!("Job tracking record not found for job {}", job.id);
+                }
+            } else {
+                // If no job was dequeued, you might want to add a delay here to avoid busy-waiting
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
         }
     }

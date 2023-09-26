@@ -42,3 +42,11 @@ impl Related<super::collections::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+impl Entity {
+    pub fn find_by_id_with_collection(
+        id: Uuid,
+    ) -> sea_orm::SelectTwo<Self, super::prelude::Collections> {
+        Self::find_by_id(id).select_also(super::collections::Entity)
+    }
+}

@@ -1,14 +1,11 @@
 use async_graphql::{ComplexObject, Context, InputObject, Result, SimpleObject};
 use hub_core::{assets::AssetProxy, uuid::Uuid};
 use reqwest::Url;
+use sea_orm::{prelude::*, sea_query::OnConflict, DatabaseTransaction, Set};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    entities::{
-        metadata_json_attributes::{self, Model as MetadataJsonAttributeModel},
-        metadata_json_files::Model as MetadataJsonFileModel,
-        metadata_jsons::{self, Model as MetadataJsonModel},
-    },
+    entities::{metadata_json_attributes, metadata_json_files, metadata_jsons},
     AppContext,
 };
 
@@ -18,12 +15,14 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, SimpleObject)]
 #[graphql(complex, concrete(name = "MetadataJson", params()))]
 pub struct MetadataJson {
+    // The id of the metadata json.
     pub id: Uuid,
-    pub identifier: String,
+    // The assigned identifier of the metadata json uri.
+    pub identifier: Option<String>,
     /// The assigned name of the NFT.
     pub name: String,
     /// The URI for the complete metadata JSON.
-    pub uri: String,
+    pub uri: Option<String>,
     /// The symbol of the NFT.
     pub symbol: String,
     /// The description of the NFT.
@@ -59,34 +58,6 @@ impl MetadataJson {
             .proxy_ipfs_image(&url, None)
             .map_err(Into::into)
             .map(|u| u.map_or(self.image_original.clone(), Into::into))
-    }
-}
-
-impl From<metadata_jsons::Model> for MetadataJson {
-    fn from(
-        metadata_jsons::Model {
-            id,
-            identifier,
-            name,
-            uri,
-            symbol,
-            description,
-            image,
-            animation_url,
-            external_url,
-        }: metadata_jsons::Model,
-    ) -> Self {
-        Self {
-            id,
-            identifier,
-            name,
-            uri,
-            symbol,
-            description,
-            image_original: image,
-            animation_url,
-            external_url,
-        }
     }
 }
 
@@ -136,52 +107,109 @@ pub struct Collection {
     pub family: Option<String>,
 }
 
-impl
-    From<(
-        MetadataJsonModel,
-        Vec<MetadataJsonAttributeModel>,
-        Option<Vec<MetadataJsonFileModel>>,
-    )> for MetadataJsonInput
-{
-    fn from(
-        (metadata_json, attributes, files): (
-            MetadataJsonModel,
-            Vec<MetadataJsonAttributeModel>,
-            Option<Vec<MetadataJsonFileModel>>,
-        ),
-    ) -> Self {
-        let input = MetadataJsonInput {
-            name: metadata_json.name,
-            symbol: metadata_json.symbol,
-            description: metadata_json.description,
-            image: metadata_json.image,
-            animation_url: metadata_json.animation_url,
-            collection: None,
-            attributes: attributes.iter().map(|a| a.clone().into()).collect(),
-            external_url: metadata_json.external_url,
-            properties: Some(Property {
-                files: files.map(|files| files.iter().map(|f| f.clone().into()).collect()),
-                category: None,
-            }),
+impl MetadataJsonInput {
+    /// Saves the metadata json to the database. If the metadata json already exists, it will update the existing record.
+    /// # Arguments
+    /// * `id` - The id of the metadata json
+    /// * `tx` - The database transaction to use
+    /// # Returns
+    /// Returns Ok with ()
+    /// # Errors
+    /// Returns Err if unable to save records to the database
+    pub async fn save(&self, id: Uuid, tx: &DatabaseTransaction) -> Result<()> {
+        let metadata_json = self.clone();
+        let metadata_json_active_model = metadata_jsons::ActiveModel {
+            id: Set(id),
+            identifier: Set(None),
+            name: Set(metadata_json.name),
+            uri: Set(None),
+            symbol: Set(metadata_json.symbol),
+            description: Set(metadata_json.description),
+            image: Set(metadata_json.image),
+            animation_url: Set(metadata_json.animation_url),
+            external_url: Set(metadata_json.external_url),
         };
-        input
-    }
-}
 
-impl From<MetadataJsonAttributeModel> for Attribute {
-    fn from(attribute: MetadataJsonAttributeModel) -> Self {
-        Attribute {
-            trait_type: attribute.trait_type,
-            value: attribute.value,
+        let metadata_json_model = metadata_jsons::Entity::insert(metadata_json_active_model)
+            .on_conflict(
+                OnConflict::column(metadata_jsons::Column::Id)
+                    .update_columns([
+                        metadata_jsons::Column::Identifier,
+                        metadata_jsons::Column::Name,
+                        metadata_jsons::Column::Uri,
+                        metadata_jsons::Column::Symbol,
+                        metadata_jsons::Column::Description,
+                        metadata_jsons::Column::Image,
+                        metadata_jsons::Column::AnimationUrl,
+                        metadata_jsons::Column::ExternalUrl,
+                    ])
+                    .clone(),
+            )
+            .exec_with_returning(tx)
+            .await?;
+
+        metadata_json_attributes::Entity::delete_many()
+            .filter(metadata_json_attributes::Column::MetadataJsonId.eq(metadata_json_model.id))
+            .exec(tx)
+            .await?;
+
+        for attribute in metadata_json.attributes {
+            let am = metadata_json_attributes::ActiveModel {
+                metadata_json_id: Set(metadata_json_model.id),
+                trait_type: Set(attribute.trait_type),
+                value: Set(attribute.value),
+                ..Default::default()
+            };
+
+            am.insert(tx).await?;
         }
+
+        if let Some(files) = metadata_json.properties.unwrap_or_default().files {
+            metadata_json_files::Entity::delete_many()
+                .filter(metadata_json_files::Column::MetadataJsonId.eq(metadata_json_model.id))
+                .exec(tx)
+                .await?;
+
+            for file in files {
+                let metadata_json_file_am = metadata_json_files::ActiveModel {
+                    metadata_json_id: Set(metadata_json_model.id),
+                    uri: Set(file.uri),
+                    file_type: Set(file.file_type),
+                    ..Default::default()
+                };
+
+                metadata_json_file_am.insert(tx).await?;
+            }
+        }
+
+        Ok(())
     }
 }
 
-impl From<MetadataJsonFileModel> for File {
-    fn from(file: MetadataJsonFileModel) -> Self {
-        File {
-            uri: file.uri,
-            file_type: file.file_type,
+impl From<metadata_jsons::Model> for MetadataJson {
+    fn from(
+        metadata_jsons::Model {
+            id,
+            identifier,
+            name,
+            uri,
+            symbol,
+            description,
+            image,
+            animation_url,
+            external_url,
+        }: metadata_jsons::Model,
+    ) -> Self {
+        Self {
+            id,
+            identifier,
+            name,
+            uri,
+            symbol,
+            description,
+            image_original: image,
+            animation_url,
+            external_url,
         }
     }
 }
