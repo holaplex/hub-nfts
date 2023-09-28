@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
-use hub_core::{anyhow::Result, clap, prelude::*};
+use hub_core::{
+    anyhow::Result,
+    backon::{ExponentialBuilder, Retryable},
+    clap,
+    prelude::*,
+};
 use reqwest::Response;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -68,12 +73,19 @@ impl NftStorageClient {
     ///
     /// # Errors
     /// If the upload fails
-    pub async fn upload(&self, data: impl Serialize) -> Result<UploadResponse> {
-        self.post("/upload".to_string(), data)
-            .await?
-            .json()
-            .await
-            .context("failed to parse response")
+    pub async fn upload(&self, data: &impl Serialize) -> Result<UploadResponse> {
+        let post = || self.post("/upload".to_string(), data);
+
+        post.retry(
+            &ExponentialBuilder::default()
+                .with_jitter()
+                .with_min_delay(Duration::from_millis(30))
+                .with_max_times(15),
+        )
+        .await?
+        .json()
+        .await
+        .context("failed to parse response")
     }
 }
 

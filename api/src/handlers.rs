@@ -42,8 +42,8 @@ pub async fn graphql_handler(
                 .data(state.credits.clone())
                 .data(state.solana.clone())
                 .data(state.polygon.clone())
-                .data(state.nft_storage.clone())
-                .data(state.asset_proxy.clone()),
+                .data(state.asset_proxy.clone())
+                .data(state.metadata_json_upload_job_queue.clone()),
         )
         .await
         .into())

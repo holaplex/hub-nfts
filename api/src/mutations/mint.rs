@@ -16,25 +16,32 @@ use super::collection::{
     fetch_owner, validate_creators, validate_json, validate_solana_creator_verification,
 };
 use crate::{
+    background_worker::{
+        job_queue::JobQueue,
+        tasks::{
+            MetadataJsonUploadCaller, MetadataJsonUploadMintToCollection,
+            MetadataJsonUploadQueueMintToDrop, MetadataJsonUploadTask,
+            MetadataJsonUploadUpdateMint,
+        },
+    },
     blockchains::{
         polygon::Polygon,
         solana::{MintDropTransaction, Solana},
         CollectionEvent, DropEvent,
     },
     entities::{
-        collection_creators, collection_mints, collections, drops, mint_creators, mint_histories,
-        prelude::{CollectionCreators, CollectionMints, Collections, Drops},
-        project_wallets,
+        collection_creators, collection_mints, collections, drops, metadata_json_attributes,
+        metadata_json_files, metadata_jsons, mint_creators, mint_histories,
+        prelude::{CollectionCreators, CollectionMints, Collections},
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
         update_histories,
     },
-    metadata_json::MetadataJson,
     objects::{CollectionMint, Creator, MetadataJsonInput},
     proto::{
         self, nft_events::Event as NftEvent, CreationStatus as NftCreationStatus, MetaplexMetadata,
         MintCollectionCreation, MintCreation, NftEventKey, NftEvents, RetryUpdateSolanaMintPayload,
     },
-    Actions, AppContext, NftStorageClient, OrganizationId, UserID,
+    Actions, AppContext, OrganizationId, UserID,
 };
 
 #[derive(Default)]
@@ -72,19 +79,15 @@ impl Mutation {
             .0
             .ok_or(Error::new("X-CREDIT-BALANCE header not found"))?;
 
-        let drop_model = Drops::find()
-            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-            .select_also(Collections)
-            .filter(drops::Column::Id.eq(input.drop))
+        let (drop_model, collection) = drops::Entity::find_by_id_with_collection(input.drop)
             .one(conn)
-            .await?;
+            .await?
+            .ok_or(Error::new("drop not found"))?;
 
-        let (drop_model, collection_model) = drop_model.ok_or(Error::new("drop not found"))?;
+        let collection = collection.ok_or(Error::new("collection not found"))?;
 
         // Call check_drop_status to check that drop is currently running
         check_drop_status(&drop_model)?;
-
-        let collection = collection_model.ok_or(Error::new("collection not found"))?;
 
         if collection.supply == Some(collection.total_mints) {
             return Err(Error::new("Collection is sold out"));
@@ -92,22 +95,7 @@ impl Mutation {
 
         let edition = collection.total_mints.add(1);
 
-        // Fetch the project wallet address which will sign the transaction by hub-treasuries
-        let wallet = project_wallets::Entity::find()
-            .filter(
-                project_wallets::Column::ProjectId
-                    .eq(drop_model.project_id)
-                    .and(project_wallets::Column::Blockchain.eq(collection.blockchain)),
-            )
-            .one(conn)
-            .await?;
-
-        let owner_address = wallet
-            .ok_or(Error::new(format!(
-                "no project wallet found for {:?} blockchain",
-                collection.blockchain
-            )))?
-            .wallet_address;
+        let owner_address = fetch_owner(conn, collection.project_id, collection.blockchain).await?;
 
         let TransactionId(credits_deduction_id) = credits
             .submit_pending_deduction(
@@ -118,6 +106,8 @@ impl Mutation {
                 balance,
             )
             .await?;
+
+        let tx = conn.begin().await?;
 
         // insert a collection mint record into database
         let collection_mint_active_model = collection_mints::ActiveModel {
@@ -132,6 +122,104 @@ impl Mutation {
         };
 
         let collection_mint_model = collection_mint_active_model.insert(conn).await?;
+
+        let mut collection_am = collections::ActiveModel::from(collection.clone());
+        collection_am.total_mints = Set(edition);
+        collection_am.update(&tx).await?;
+
+        // inserts a mint histories record in the database
+        let mint_history_am = mint_histories::ActiveModel {
+            mint_id: Set(collection_mint_model.id),
+            wallet: Set(input.recipient.clone()),
+            collection_id: Set(collection.id),
+            tx_signature: Set(None),
+            status: Set(CreationStatus::Pending),
+            created_at: Set(Utc::now().into()),
+            ..Default::default()
+        };
+
+        mint_history_am.insert(&tx).await?;
+
+        if collection.blockchain == BlockchainEnum::Solana {
+            let collection_metadata_json = metadata_jsons::Entity::find_by_id(collection.id)
+                .one(conn)
+                .await?
+                .ok_or(Error::new("metadata json not found"))?;
+
+            let creators = collection_creators::Entity::find()
+                .filter(collection_creators::Column::CollectionId.eq(collection.id))
+                .all(conn)
+                .await?;
+
+            let files = metadata_json_files::Entity::find()
+                .filter(metadata_json_files::Column::MetadataJsonId.eq(collection_metadata_json.id))
+                .all(conn)
+                .await?;
+            let attributes = metadata_json_attributes::Entity::find()
+                .filter(
+                    metadata_json_attributes::Column::MetadataJsonId
+                        .eq(collection_metadata_json.id),
+                )
+                .all(conn)
+                .await?;
+
+            let mut metadata_json_am = metadata_jsons::ActiveModel::from(collection_metadata_json);
+
+            metadata_json_am.id = Set(collection_mint_model.id);
+
+            let collection_mint_metadata_json = metadata_json_am.insert(&tx).await?;
+
+            let creators: Vec<mint_creators::ActiveModel> = creators
+                .into_iter()
+                .map(|creator| mint_creators::ActiveModel {
+                    collection_mint_id: Set(collection_mint_model.id),
+                    address: Set(creator.address),
+                    verified: Set(creator.verified),
+                    share: Set(creator.share),
+                })
+                .collect();
+
+            if !creators.is_empty() {
+                mint_creators::Entity::insert_many(creators)
+                    .exec(&tx)
+                    .await?;
+            }
+
+            let files: Vec<metadata_json_files::ActiveModel> = files
+                .into_iter()
+                .map(|file| metadata_json_files::ActiveModel {
+                    metadata_json_id: Set(collection_mint_metadata_json.id),
+                    uri: Set(file.uri),
+                    file_type: Set(file.file_type),
+                    ..Default::default()
+                })
+                .collect();
+
+            if !files.is_empty() {
+                metadata_json_files::Entity::insert_many(files)
+                    .exec(&tx)
+                    .await?;
+            }
+
+            let attributes: Vec<metadata_json_attributes::ActiveModel> = attributes
+                .into_iter()
+                .map(|attribute| metadata_json_attributes::ActiveModel {
+                    metadata_json_id: Set(collection_mint_metadata_json.id),
+                    trait_type: Set(attribute.trait_type),
+                    value: Set(attribute.value),
+                    ..Default::default()
+                })
+                .collect();
+
+            if !attributes.is_empty() {
+                metadata_json_attributes::Entity::insert_many(attributes)
+                    .exec(&tx)
+                    .await?;
+            }
+        }
+
+        tx.commit().await?;
+
         let event_key = NftEventKey {
             id: collection_mint_model.id.to_string(),
             user_id: user_id.to_string(),
@@ -140,11 +228,6 @@ impl Mutation {
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
-                MetadataJson::fetch(collection.id, db)
-                    .await?
-                    .save(collection_mint_model.id, db)
-                    .await?;
-
                 solana
                     .event()
                     .mint_drop(
@@ -172,23 +255,6 @@ impl Mutation {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
-
-        let mut collection_am = collections::ActiveModel::from(collection.clone());
-        collection_am.total_mints = Set(edition);
-        collection_am.update(conn).await?;
-
-        // inserts a mint histories record in the database
-        let purchase_am = mint_histories::ActiveModel {
-            mint_id: Set(collection_mint_model.id),
-            wallet: Set(input.recipient),
-            collection_id: Set(collection.id),
-            tx_signature: Set(None),
-            status: Set(CreationStatus::Pending),
-            created_at: Set(Utc::now().into()),
-            ..Default::default()
-        };
-
-        purchase_am.insert(conn).await?;
 
         nfts_producer
             .send(
@@ -272,22 +338,7 @@ impl Mutation {
         let edition = collection_mint_model.edition;
         let project_id = drop_model.project_id;
 
-        // Fetch the project wallet address which will sign the transaction by hub-treasuries
-        let wallet = project_wallets::Entity::find()
-            .filter(
-                project_wallets::Column::ProjectId
-                    .eq(project_id)
-                    .and(project_wallets::Column::Blockchain.eq(collection.blockchain)),
-            )
-            .one(conn)
-            .await?;
-
-        let owner_address = wallet
-            .ok_or(Error::new(format!(
-                "no project wallet found for {:?} blockchain",
-                collection.blockchain
-            )))?
-            .wallet_address;
+        let owner_address = fetch_owner(conn, project_id, collection.blockchain).await?;
 
         let TransactionId(_) = credits
             .submit_pending_deduction(
@@ -360,9 +411,8 @@ impl Mutation {
         } = ctx.data::<AppContext>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
-        let solana = ctx.data::<Solana>()?;
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
-        let nft_storage = ctx.data::<NftStorageClient>()?;
+        let metadata_json_upload_job_queue = ctx.data::<JobQueue>()?;
 
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
@@ -375,12 +425,11 @@ impl Mutation {
 
         let creators = input.creators;
 
-        let collection = Collections::find()
-            .filter(collections::Column::Id.eq(input.collection))
+        let collection = Collections::find_by_id(input.collection)
             .one(conn)
-            .await?;
+            .await?
+            .ok_or(Error::new("collection not found"))?;
 
-        let collection = collection.ok_or(Error::new("collection not found"))?;
         let blockchain = collection.blockchain;
         let compressed = input.compressed.unwrap_or_default();
 
@@ -413,27 +462,28 @@ impl Mutation {
             )
             .await?;
 
+        let tx = conn.begin().await?;
+
         // insert a collection mint record into database
         let collection_mint_active_model = collection_mints::ActiveModel {
             collection_id: Set(collection.id),
             owner: Set(Some(input.recipient.clone())),
             creation_status: Set(CreationStatus::Pending),
-            seller_fee_basis_points: Set(collection.seller_fee_basis_points),
+            seller_fee_basis_points: Set(seller_fee_basis_points.try_into()?),
             created_by: Set(user_id),
             compressed: Set(Some(compressed)),
             credits_deduction_id: Set(Some(credits_deduction_id)),
             ..Default::default()
         };
 
-        let collection_mint_model = collection_mint_active_model.insert(conn).await?;
+        let collection_mint_model = collection_mint_active_model.insert(&tx).await?;
 
-        let metadata_json = MetadataJson::new(input.metadata_json)
-            .upload(nft_storage)
-            .await?
-            .save(collection_mint_model.id, db)
+        input
+            .metadata_json
+            .save(collection_mint_model.id, &tx)
             .await?;
 
-        for creator in creators.clone() {
+        for creator in creators {
             let am = mint_creators::ActiveModel {
                 collection_mint_id: Set(collection_mint_model.id),
                 address: Set(creator.address),
@@ -441,45 +491,12 @@ impl Mutation {
                 share: Set(creator.share.try_into()?),
             };
 
-            am.insert(conn).await?;
+            am.insert(&tx).await?;
         }
-
-        let event_key = NftEventKey {
-            id: collection_mint_model.id.to_string(),
-            user_id: user_id.to_string(),
-            project_id: collection.project_id.to_string(),
-        };
-
-        match collection.blockchain {
-            BlockchainEnum::Solana => {
-                solana
-                    .event()
-                    .mint_to_collection(event_key, proto::MintMetaplexMetadataTransaction {
-                        metadata: Some(MetaplexMetadata {
-                            owner_address,
-                            name: metadata_json.name,
-                            symbol: metadata_json.symbol,
-                            metadata_uri: metadata_json.uri,
-                            seller_fee_basis_points: seller_fee_basis_points.into(),
-                            creators: creators
-                                .into_iter()
-                                .map(TryFrom::try_from)
-                                .collect::<Result<_>>()?,
-                        }),
-                        recipient_address: input.recipient.to_string(),
-                        compressed,
-                        collection_id: collection.id.to_string(),
-                    })
-                    .await?;
-            },
-            BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
-                return Err(Error::new("blockchain not supported as this time"));
-            },
-        };
 
         let mut collection_am = collections::ActiveModel::from(collection.clone());
         collection_am.total_mints = Set(collection.total_mints.add(1));
-        collection_am.update(conn).await?;
+        collection_am.update(&tx).await?;
 
         let mint_history_am = mint_histories::ActiveModel {
             mint_id: Set(collection_mint_model.id),
@@ -491,7 +508,20 @@ impl Mutation {
             ..Default::default()
         };
 
-        mint_history_am.insert(conn).await?;
+        mint_history_am.insert(&tx).await?;
+
+        tx.commit().await?;
+
+        metadata_json_upload_job_queue
+            .enqueue(MetadataJsonUploadTask {
+                caller: MetadataJsonUploadCaller::MintToCollection(
+                    MetadataJsonUploadMintToCollection {
+                        collection_mint_id: collection_mint_model.id,
+                    },
+                ),
+                metadata_json: input.metadata_json,
+            })
+            .await?;
 
         nfts_producer
             .send(
@@ -531,8 +561,7 @@ impl Mutation {
         } = ctx.data::<AppContext>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
-        let solana = ctx.data::<Solana>()?;
-        let nft_storage = ctx.data::<NftStorageClient>()?;
+        let metadata_json_upload_job_queue = ctx.data::<JobQueue>()?;
 
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
@@ -545,9 +574,7 @@ impl Mutation {
 
         let creators = input.creators;
 
-        let (mint, collection) = CollectionMints::find()
-            .find_also_related(Collections)
-            .filter(collection_mints::Column::Id.eq(input.id))
+        let (mint, collection) = CollectionMints::find_by_id_with_collection(input.id)
             .one(conn)
             .await?
             .ok_or(Error::new("Mint not found"))?;
@@ -589,7 +616,7 @@ impl Mutation {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let deduction_id = credits
+        let TransactionId(deduction_id) = credits
             .submit_pending_deduction(
                 org_id,
                 user_id,
@@ -599,81 +626,49 @@ impl Mutation {
             )
             .await?;
 
+        let tx = conn.begin().await?;
+
         let mut mint_am: collection_mints::ActiveModel = mint.clone().into();
 
         let update_history_am = update_histories::ActiveModel {
             mint_id: Set(mint.id),
             txn_signature: Set(None),
-            credit_deduction_id: Set(deduction_id.0),
+            credit_deduction_id: Set(deduction_id),
             created_by: Set(user_id),
             status: Set(CreationStatus::Pending),
             ..Default::default()
         };
 
-        let update_history = update_history_am.insert(db.get()).await?;
-        let sfbp = mint.seller_fee_basis_points.try_into()?;
-        conn.transaction::<_, (), DbErr>(|txn| {
-            Box::pin(async move {
-                mint_creators::Entity::delete_many()
-                    .filter(mint_creators::Column::CollectionMintId.eq(mint.id))
-                    .exec(txn)
-                    .await?;
+        let update_history = update_history_am.insert(&tx).await?;
 
-                mint_creators::Entity::insert_many(creators_am)
-                    .exec(txn)
-                    .await?;
-
-                if let Some(sfbp) = input.seller_fee_basis_points {
-                    mint_am.seller_fee_basis_points = Set(sfbp.try_into().unwrap_or_default());
-                    mint_am.update(txn).await?;
-                }
-
-                Ok(())
-            })
-        })
-        .await?;
-
-        let metadata_json = MetadataJson::new(input.metadata_json)
-            .upload(nft_storage)
-            .await?
-            .save(mint.id, db)
+        mint_creators::Entity::delete_many()
+            .filter(mint_creators::Column::CollectionMintId.eq(mint.id))
+            .exec(&tx)
             .await?;
 
-        match collection.blockchain {
-            BlockchainEnum::Solana => {
-                solana
-                    .event()
-                    .update_collection_mint(
-                        NftEventKey {
-                            id: update_history.id.to_string(),
-                            project_id: collection.project_id.to_string(),
-                            user_id: user_id.to_string(),
-                        },
-                        proto::UpdateSolanaMintPayload {
-                            metadata: Some(MetaplexMetadata {
-                                owner_address,
-                                name: metadata_json.name,
-                                symbol: metadata_json.symbol,
-                                metadata_uri: metadata_json.uri,
-                                seller_fee_basis_points: input
-                                    .seller_fee_basis_points
-                                    .unwrap_or(sfbp)
-                                    .try_into()?,
-                                creators: creators
-                                    .into_iter()
-                                    .map(TryFrom::try_from)
-                                    .collect::<Result<_>>()?,
-                            }),
-                            collection_id: collection.id.to_string(),
-                            mint_id: update_history.mint_id.to_string(),
-                        },
-                    )
-                    .await?;
-            },
-            BlockchainEnum::Ethereum | BlockchainEnum::Polygon => {
-                return Err(Error::new("blockchain not supported as this time"));
-            },
-        };
+        if !creators_am.is_empty() {
+            mint_creators::Entity::insert_many(creators_am)
+                .exec(&tx)
+                .await?;
+        }
+
+        if let Some(sfbp) = input.seller_fee_basis_points {
+            mint_am.seller_fee_basis_points = Set(sfbp.try_into().unwrap_or_default());
+            mint_am.update(&tx).await?;
+        }
+
+        input.metadata_json.save(mint.id, &tx).await?;
+
+        tx.commit().await?;
+
+        metadata_json_upload_job_queue
+            .enqueue(MetadataJsonUploadTask {
+                caller: MetadataJsonUploadCaller::UpdateMint(MetadataJsonUploadUpdateMint {
+                    update_history_id: update_history.id,
+                }),
+                metadata_json: input.metadata_json,
+            })
+            .await?;
 
         Ok(UpdateMintPayload {
             collection_mint: mint.into(),
@@ -707,15 +702,15 @@ impl Mutation {
             .await?
             .ok_or(Error::new("Update history not found"))?;
 
+        let collection = collection.ok_or(Error::new("Collection not found"))?;
+
         if update_history.status == CreationStatus::Created {
             return Err(Error::new("Mint already updated"));
         }
 
         let mut update_history_am = update_histories::ActiveModel::from(update_history.clone());
         update_history_am.status = Set(CreationStatus::Pending);
-        update_history_am.update(db.get()).await?;
-
-        let collection = collection.ok_or(Error::new("Collection not found"))?;
+        update_history_am.update(conn).await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
@@ -796,15 +791,14 @@ impl Mutation {
 
         let owner_address = fetch_owner(conn, project_id, blockchain).await?;
 
-        let MetadataJson {
-            metadata_json, uri, ..
-        } = MetadataJson::fetch(collection_mint_model.id, db).await?;
+        let metadata_json = metadata_jsons::Entity::find_by_id(collection_mint_model.id)
+            .one(conn)
+            .await?
+            .ok_or(Error::new("metadata json not found"))?;
 
-        let event_key = NftEventKey {
-            id: collection_mint_model.id.to_string(),
-            user_id: user_id.to_string(),
-            project_id: project_id.to_string(),
-        };
+        let metadata_uri = metadata_json
+            .uri
+            .ok_or(Error::new("metadata uri not found"))?;
 
         let creators = mint_creators::Entity::find_by_collection_mint_id(collection_mint_model.id)
             .all(conn)
@@ -820,6 +814,12 @@ impl Mutation {
             )
             .await?;
 
+        let event_key = NftEventKey {
+            id: collection_mint_model.id.to_string(),
+            user_id: user_id.to_string(),
+            project_id: project_id.to_string(),
+        };
+
         match collection.blockchain {
             BlockchainEnum::Solana => {
                 solana
@@ -829,7 +829,7 @@ impl Mutation {
                             owner_address,
                             name: metadata_json.name,
                             symbol: metadata_json.symbol,
-                            metadata_uri: uri.ok_or(Error::new("metadata uri not found"))?,
+                            metadata_uri,
                             seller_fee_basis_points: collection_mint_model
                                 .seller_fee_basis_points
                                 .into(),
@@ -866,25 +866,32 @@ impl Mutation {
         let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
 
         let conn = db.get();
-        let nft_storage = ctx.data::<NftStorageClient>()?;
+
+        let metadata_json_upload_job_queue = ctx.data::<JobQueue>()?;
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
         let UserID(id) = user_id;
         let user_id = id.ok_or(Error::new("X-USER-ID header not found"))?;
 
-        let (drop, collection) = drops::Entity::find_by_id(input.drop)
-            .find_also_related(Collections)
+        let (drop, collection) = drops::Entity::find_by_id_with_collection(input.drop)
             .one(conn)
             .await?
             .ok_or(Error::new("drop not found"))?;
 
         let collection_model = collection.ok_or(Error::new("collection not found"))?;
 
+        let creators = CollectionCreators::find()
+            .filter(collection_creators::Column::CollectionId.eq(collection_model.id))
+            .all(conn)
+            .await?;
+
+        let tx = conn.begin().await?;
+
         let mut collection_am: collections::ActiveModel = collection_model.clone().into();
 
         collection_am.supply = Set(collection_model.supply.map(|supply| supply.add(1)));
 
-        collection_am.update(conn).await?;
+        collection_am.update(&tx).await?;
 
         let mint = collection_mints::ActiveModel {
             collection_id: Set(drop.collection_id),
@@ -896,18 +903,9 @@ impl Mutation {
             ..Default::default()
         };
 
-        let mint_model = mint.insert(conn).await?;
+        let mint_model = mint.insert(&tx).await?;
 
-        MetadataJson::new(input.metadata_json)
-            .upload(nft_storage)
-            .await?
-            .save(mint_model.id, db)
-            .await?;
-
-        let creators = CollectionCreators::find()
-            .filter(collection_creators::Column::CollectionId.eq(collection_model.id))
-            .all(conn)
-            .await?;
+        input.metadata_json.save(mint_model.id, &tx).await?;
 
         let mint_creators: Vec<_> = creators
             .iter()
@@ -919,8 +917,24 @@ impl Mutation {
             })
             .collect();
 
-        mint_creators::Entity::insert_many(mint_creators)
-            .exec(conn)
+        if !mint_creators.is_empty() {
+            mint_creators::Entity::insert_many(mint_creators)
+                .exec(&tx)
+                .await?;
+        }
+
+        tx.commit().await?;
+
+        metadata_json_upload_job_queue
+            .enqueue(MetadataJsonUploadTask {
+                caller: MetadataJsonUploadCaller::QueueMintToDrop(
+                    MetadataJsonUploadQueueMintToDrop {
+                        drop_id: drop.id,
+                        collection_mint_id: mint_model.id,
+                    },
+                ),
+                metadata_json: input.metadata_json,
+            })
             .await?;
 
         nfts_producer
@@ -934,7 +948,7 @@ impl Mutation {
                 Some(&NftEventKey {
                     id: mint_model.id.to_string(),
                     project_id: drop.project_id.to_string(),
-                    user_id: user_id.to_string(),
+                    user_id: mint_model.created_by.to_string(),
                 }),
             )
             .await?;
@@ -957,10 +971,12 @@ impl Mutation {
             balance,
             ..
         } = ctx.data::<AppContext>()?;
+
         let credits = ctx.data::<CreditsClient<Actions>>()?;
-        let conn = db.get();
-        let solana = ctx.data::<Solana>()?;
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
+        let solana = ctx.data::<Solana>()?;
+
+        let conn = db.get();
 
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
@@ -982,14 +998,25 @@ impl Mutation {
 
         let collection = collection.ok_or(Error::new("collection not found"))?;
 
+        let drop = drops::Entity::find()
+            .filter(drops::Column::CollectionId.eq(collection.id))
+            .one(conn)
+            .await?
+            .ok_or(Error::new("drop not found"))?;
+
         let project_id = collection.project_id;
         let blockchain = collection.blockchain;
 
         let owner_address = fetch_owner(conn, project_id, blockchain).await?;
 
-        let MetadataJson {
-            metadata_json, uri, ..
-        } = MetadataJson::fetch(mint.id, db).await?;
+        let metadata_json = metadata_jsons::Entity::find_by_id(mint.id)
+            .one(conn)
+            .await?
+            .ok_or(Error::new("metadata json not found"))?;
+
+        let metadata_uri = metadata_json
+            .uri
+            .ok_or(Error::new("No metadata json uri found"))?;
 
         let event_key = NftEventKey {
             id: mint.id.to_string(),
@@ -1017,9 +1044,13 @@ impl Mutation {
             )
             .await?;
 
+        let tx = conn.begin().await?;
+
         let mut collection_am = collections::ActiveModel::from(collection.clone());
+
         collection_am.total_mints = Set(collection.total_mints.add(1));
-        collection_am.update(conn).await?;
+
+        collection_am.update(&tx).await?;
 
         let mut mint_am: collection_mints::ActiveModel = mint.into();
 
@@ -1029,7 +1060,21 @@ impl Mutation {
         mint_am.owner = Set(Some(input.recipient.clone()));
         mint_am.seller_fee_basis_points = Set(collection.seller_fee_basis_points);
 
-        let mint = mint_am.update(conn).await?;
+        let mint = mint_am.update(&tx).await?;
+
+        let mint_history_am = mint_histories::ActiveModel {
+            mint_id: Set(mint.id),
+            wallet: Set(input.recipient.clone()),
+            collection_id: Set(collection.id),
+            tx_signature: Set(None),
+            status: Set(CreationStatus::Pending),
+            created_at: Set(Utc::now().into()),
+            ..Default::default()
+        };
+
+        mint_history_am.insert(&tx).await?;
+
+        tx.commit().await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
@@ -1042,8 +1087,7 @@ impl Mutation {
                                 owner_address,
                                 name: metadata_json.name,
                                 symbol: metadata_json.symbol,
-                                metadata_uri: uri
-                                    .ok_or(Error::new("No metadata json uri found"))?,
+                                metadata_uri,
                                 seller_fee_basis_points: mint.seller_fee_basis_points.into(),
                                 creators: creators.into_iter().map(Into::into).collect(),
                             }),
@@ -1058,12 +1102,6 @@ impl Mutation {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
-
-        let drop = drops::Entity::find()
-            .filter(drops::Column::CollectionId.eq(collection.id))
-            .one(conn)
-            .await?
-            .ok_or(Error::new("drop not found"))?;
 
         nfts_producer
             .send(
@@ -1080,18 +1118,6 @@ impl Mutation {
                 }),
             )
             .await?;
-
-        let mint_history_am = mint_histories::ActiveModel {
-            mint_id: Set(mint.id),
-            wallet: Set(input.recipient),
-            collection_id: Set(collection.id),
-            tx_signature: Set(None),
-            status: Set(CreationStatus::Pending),
-            created_at: Set(Utc::now().into()),
-            ..Default::default()
-        };
-
-        mint_history_am.insert(conn).await?;
 
         Ok(MintQueuedPayload {
             collection_mint: mint.into(),
@@ -1150,15 +1176,14 @@ impl Mutation {
 
         let owner_address = fetch_owner(conn, project_id, blockchain).await?;
 
-        let MetadataJson {
-            metadata_json, uri, ..
-        } = MetadataJson::fetch(mint.id, db).await?;
+        let metadata_json = metadata_jsons::Entity::find_by_id(mint.id)
+            .one(conn)
+            .await?
+            .ok_or(Error::new("metadata json not found"))?;
 
-        let event_key = NftEventKey {
-            id: mint.id.to_string(),
-            user_id: user_id.to_string(),
-            project_id: project_id.to_string(),
-        };
+        let metadata_uri = metadata_json
+            .uri
+            .ok_or(Error::new("No metadata json uri found"))?;
 
         let creators = mint_creators::Entity::find_by_collection_mint_id(mint.id)
             .all(conn)
@@ -1180,9 +1205,11 @@ impl Mutation {
             )
             .await?;
 
+        let tx = conn.begin().await?;
+
         let mut collection_am = collections::ActiveModel::from(collection.clone());
         collection_am.total_mints = Set(collection.total_mints.add(1));
-        collection_am.update(conn).await?;
+        collection_am.update(&tx).await?;
 
         let mut mint_am: collection_mints::ActiveModel = mint.into();
 
@@ -1192,7 +1219,27 @@ impl Mutation {
         mint_am.owner = Set(Some(input.recipient.clone()));
         mint_am.seller_fee_basis_points = Set(collection.seller_fee_basis_points);
 
-        let mint = mint_am.update(conn).await?;
+        let mint = mint_am.update(&tx).await?;
+
+        let mint_history_am = mint_histories::ActiveModel {
+            mint_id: Set(mint.id),
+            wallet: Set(input.recipient.clone()),
+            collection_id: Set(collection.id),
+            tx_signature: Set(None),
+            status: Set(CreationStatus::Pending),
+            created_at: Set(Utc::now().into()),
+            ..Default::default()
+        };
+
+        mint_history_am.insert(&tx).await?;
+
+        tx.commit().await?;
+
+        let event_key = NftEventKey {
+            id: mint.id.to_string(),
+            user_id: user_id.to_string(),
+            project_id: project_id.to_string(),
+        };
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
@@ -1205,7 +1252,7 @@ impl Mutation {
                                 owner_address,
                                 name: metadata_json.name,
                                 symbol: metadata_json.symbol,
-                                metadata_uri: uri.ok_or(Error::new("No metadata json uri"))?,
+                                metadata_uri,
                                 seller_fee_basis_points: mint.seller_fee_basis_points.into(),
                                 creators: creators.into_iter().map(Into::into).collect(),
                             }),
@@ -1220,18 +1267,6 @@ impl Mutation {
                 return Err(Error::new("blockchain not supported as this time"));
             },
         };
-
-        let mint_history_am = mint_histories::ActiveModel {
-            mint_id: Set(mint.id),
-            wallet: Set(input.recipient),
-            collection_id: Set(collection.id),
-            tx_signature: Set(None),
-            status: Set(CreationStatus::Pending),
-            created_at: Set(Utc::now().into()),
-            ..Default::default()
-        };
-
-        mint_history_am.insert(conn).await?;
 
         nfts_producer
             .send(

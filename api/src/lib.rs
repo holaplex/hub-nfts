@@ -2,14 +2,13 @@
 #![warn(clippy::pedantic, clippy::cargo)]
 #![allow(clippy::module_name_repetitions)]
 
+pub mod background_worker;
 pub mod blockchains;
-pub mod collection;
 pub mod dataloaders;
 pub mod db;
 pub mod entities;
 pub mod events;
 pub mod handlers;
-pub mod metadata_json;
 pub mod metrics;
 pub mod mutations;
 pub mod nft_storage;
@@ -21,6 +20,7 @@ use async_graphql::{
     extensions::{ApolloTracing, Logger},
     EmptySubscription, Schema,
 };
+use background_worker::job_queue::JobQueue;
 use blockchains::{polygon::Polygon, solana::Solana};
 use dataloaders::{
     CollectionDropLoader, CollectionLoader, CollectionMintHistoriesLoader, CollectionMintLoader,
@@ -44,7 +44,6 @@ use hub_core::{
 };
 use metrics::Metrics;
 use mutations::Mutation;
-use nft_storage::NftStorageClient;
 use poem::{async_trait, FromRequest, Request, RequestBody};
 use queries::Query;
 
@@ -116,6 +115,9 @@ pub struct Args {
 
     #[command(flatten)]
     pub nft_storage: nft_storage::NftStorageArgs,
+
+    #[arg(long, env)]
+    pub redis_url: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -235,8 +237,8 @@ pub struct AppState {
     pub credits: CreditsClient<Actions>,
     pub solana: Solana,
     pub polygon: Polygon,
-    pub nft_storage: NftStorageClient,
     pub asset_proxy: AssetProxy,
+    pub metadata_json_upload_job_queue: JobQueue,
 }
 
 impl AppState {
@@ -249,8 +251,8 @@ impl AppState {
         credits: CreditsClient<Actions>,
         solana: Solana,
         polygon: Polygon,
-        nft_storage: NftStorageClient,
         asset_proxy: AssetProxy,
+        metadata_json_upload_job_queue: JobQueue,
     ) -> Self {
         Self {
             schema,
@@ -259,8 +261,8 @@ impl AppState {
             credits,
             solana,
             polygon,
-            nft_storage,
             asset_proxy,
+            metadata_json_upload_job_queue,
         }
     }
 }

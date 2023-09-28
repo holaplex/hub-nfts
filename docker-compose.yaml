@@ -1,5 +1,11 @@
 version: '3.8'
 services:
+  redis:
+    image: redis:7.2.1
+    ports:
+      - 6379:6379
+    volumes:
+      - holaplex_hub_nfts_redis:/data
   db:
     image: postgres:15.1
     container_name: db
@@ -28,4 +34,6 @@ services:
       - 29092:29092
 volumes:
   holaplex_hub_nfts:
+    driver: local
+  holaplex_hub_nfts_redis:
     driver: local

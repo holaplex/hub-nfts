@@ -11,11 +11,13 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    pub identifier: String,
+    #[sea_orm(nullable)]
+    pub identifier: Option<String>,
     /// The assigned name of the NFT.
     pub name: String,
     /// The URI for the complete metadata JSON.
-    pub uri: String,
+    #[sea_orm(nullable)]
+    pub uri: Option<String>,
     /// The symbol of the NFT.
     pub symbol: String,
     /// The description of the NFT.
@@ -23,8 +25,10 @@ pub struct Model {
     /// The image URI for the NFT.
     pub image: String,
     /// An optional animated version of the NFT art.
+    #[sea_orm(nullable)]
     pub animation_url: Option<String>,
     /// An optional URL where viewers can find more information on the NFT, such as the collection's homepage or Twitter page.
+    #[sea_orm(nullable)]
     pub external_url: Option<String>,
 }
 
@@ -49,3 +53,9 @@ impl Related<super::metadata_json_files::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+impl Entity {
+    pub fn find_by_id(id: Uuid) -> Select<Self> {
+        Self::find().filter(Column::Id.eq(id))
+    }
+}

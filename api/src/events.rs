@@ -1,5 +1,5 @@
 use hub_core::{
-    chrono::{DateTime, NaiveDateTime, Offset, Utc},
+    chrono::{NaiveDateTime, TimeZone, Utc},
     credits::{CreditsClient, TransactionId},
     metrics::KeyValue,
     prelude::*,
@@ -365,13 +365,13 @@ impl Processor {
         let metadata_json = metadata_jsons::ActiveModel {
             id: Set(id.parse()?),
             name: Set(name),
-            uri: Set(uri),
+            uri: Set(Some(uri)),
             symbol: Set(symbol),
             description: Set(description.unwrap_or_default()),
             image: Set(image),
             animation_url: Set(None),
             external_url: Set(None),
-            identifier: Set(String::new()),
+            identifier: Set(Some(String::new())),
         };
 
         let json_model = metadata_json.insert(self.db.get()).await?;
@@ -420,8 +420,10 @@ impl Processor {
             image,
         } = metadata.ok_or(ProcessorErrorKind::MissingCollectionMetadata)?;
 
+        let id = id.parse()?;
+
         let mint_am = collection_mints::ActiveModel {
-            id: Set(id.parse()?),
+            id: Set(id),
             collection_id: Set(collection_id.parse()?),
             address: Set(Some(mint_address)),
             owner: Set(Some(owner)),
@@ -440,15 +442,15 @@ impl Processor {
         let mint_model = mint_am.insert(self.db.get()).await?;
 
         let metadata_json = metadata_jsons::ActiveModel {
-            id: Set(id.parse()?),
+            id: Set(id),
             name: Set(name),
-            uri: Set(uri),
+            uri: Set(Some(uri)),
             symbol: Set(symbol),
             description: Set(description.unwrap_or_default()),
             image: Set(image),
             animation_url: Set(None),
             external_url: Set(None),
-            identifier: Set(String::new()),
+            identifier: Set(Some(String::new())),
         };
 
         let json_model = metadata_json.insert(self.db.get()).await?;
@@ -526,10 +528,10 @@ impl Processor {
 
         let created_at = timestamp
             .and_then(|t| {
-                Some(DateTime::from_naive_utc_and_offset(
-                    NaiveDateTime::from_timestamp_opt(t.seconds, t.nanos.try_into().ok()?)?,
-                    Utc.fix(),
-                ))
+                let naive_datetime =
+                    NaiveDateTime::from_timestamp_opt(t.seconds, t.nanos.try_into().ok()?)?;
+
+                Some(Utc.from_utc_datetime(&naive_datetime))
             })
             .ok_or(ProcessorErrorKind::InvalidTimestamp)?;
 
@@ -556,7 +558,7 @@ impl Processor {
                 collection_mint_id: Set(mint.id),
                 sender: Set(mint.owner.ok_or(ProcessorErrorKind::RecordMissingOwner)?),
                 recipient: Set(new_owner.clone()),
-                created_at: Set(created_at),
+                created_at: Set(created_at.into()),
                 ..Default::default()
             };
 
