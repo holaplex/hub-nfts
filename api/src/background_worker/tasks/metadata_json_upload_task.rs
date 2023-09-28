@@ -1,4 +1,4 @@
-use hub_core::{anyhow::Result, producer::Producer};
+use hub_core::anyhow::Result;
 use sea_orm::{prelude::*, Set};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -16,8 +16,8 @@ use crate::{
     objects::MetadataJsonInput,
     proto::{
         CreateEditionTransaction, EditionInfo, MasterEdition, MetaplexMasterEditionTransaction,
-        MetaplexMetadata, MintMetaplexMetadataTransaction, NftEventKey, NftEvents,
-        UpdateEdtionTransaction, UpdateSolanaMintPayload,
+        MetaplexMetadata, MintMetaplexMetadataTransaction, NftEventKey, UpdateEdtionTransaction,
+        UpdateSolanaMintPayload,
     },
 };
 
@@ -670,27 +670,20 @@ impl MetadataJsonUploadTask {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Context {
     nft_storage: NftStorageClient,
     solana: Solana,
     polygon: Polygon,
-    producer: Producer<NftEvents>,
 }
 
 impl Context {
     #[must_use]
-    pub fn new(
-        nft_storage: NftStorageClient,
-        solana: Solana,
-        polygon: Polygon,
-        producer: Producer<NftEvents>,
-    ) -> Self {
+    pub fn new(nft_storage: NftStorageClient, solana: Solana, polygon: Polygon) -> Self {
         Self {
             nft_storage,
             solana,
             polygon,
-            producer,
         }
     }
 }

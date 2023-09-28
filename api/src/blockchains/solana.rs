@@ -19,7 +19,7 @@ use crate::{
     },
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Solana {
     producer: Producer<NftEvents>,
 }

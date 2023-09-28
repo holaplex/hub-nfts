@@ -1,7 +1,5 @@
 //!
 
-use std::sync::Arc;
-
 use holaplex_hub_nfts::{
     background_worker::{
         job_queue::JobQueue,
@@ -62,14 +60,9 @@ pub fn main() {
             let polygon = Polygon::new(producer.clone());
 
             let redis_client = RedisClient::open(redis_url)?;
-            let redis_client = Arc::new(tokio::sync::Mutex::new(redis_client));
 
-            let metadata_json_upload_task_context = MetadataJsonUploadContext::new(
-                nft_storage,
-                solana.clone(),
-                polygon.clone(),
-                producer.clone(),
-            );
+            let metadata_json_upload_task_context =
+                MetadataJsonUploadContext::new(nft_storage, solana.clone(), polygon.clone());
 
             let job_queue = JobQueue::new(redis_client, connection.clone());
             let worker = Worker::<MetadataJsonUploadContext, MetadataJsonUploadTask>::new(

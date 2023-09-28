@@ -503,9 +503,11 @@ impl Mutation {
                 .exec(&tx)
                 .await?;
 
-            collection_creators::Entity::insert_many(creator_ams)
-                .exec(&tx)
-                .await?;
+            if !creator_ams.is_empty() {
+                collection_creators::Entity::insert_many(creator_ams)
+                    .exec(&tx)
+                    .await?;
+            }
 
             creators
                 .into_iter()

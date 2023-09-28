@@ -6,7 +6,7 @@ use serde_json::Value as Json;
 #[sea_orm(table_name = "job_trackings")]
 pub struct Model {
     #[sea_orm(primary_key)]
-    pub id: i64,
+    pub id: i32,
     pub job_type: String,
     pub payload: Json,
     pub status: String,
@@ -21,7 +21,7 @@ impl ActiveModelBehavior for ActiveModel {}
 
 impl Entity {
     // Find a job tracking record by its ID
-    pub fn find_by_id(id: i64) -> Select<Self> {
+    pub fn find_by_id(id: i32) -> Select<Self> {
         Self::find().filter(Column::Id.eq(id))
     }
 
@@ -41,9 +41,11 @@ impl Entity {
 
     // Update the status of an existing job tracking record
     pub fn update_status(model: Model, new_status: &str) -> ActiveModel {
+        let now: DateTimeWithTimeZone = chrono::Utc::now().into();
         let mut active_model: ActiveModel = model.into();
 
         active_model.status = Set(new_status.to_string());
+        active_model.updated_at = Set(now);
 
         active_model
     }

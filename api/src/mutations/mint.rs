@@ -33,7 +33,6 @@ use crate::{
         collection_creators, collection_mints, collections, drops, metadata_json_attributes,
         metadata_json_files, metadata_jsons, mint_creators, mint_histories,
         prelude::{CollectionCreators, CollectionMints, Collections},
-        project_wallets,
         sea_orm_active_enums::{Blockchain as BlockchainEnum, CreationStatus},
         update_histories,
     },
@@ -142,14 +141,13 @@ impl Mutation {
         mint_history_am.insert(&tx).await?;
 
         if collection.blockchain == BlockchainEnum::Solana {
-            let collection_metadata_json =
-                metadata_jsons::Entity::find_by_id(collection_mint_model.id)
-                    .one(conn)
-                    .await?
-                    .ok_or(Error::new("metadata json not found"))?;
+            let collection_metadata_json = metadata_jsons::Entity::find_by_id(collection.id)
+                .one(conn)
+                .await?
+                .ok_or(Error::new("metadata json not found"))?;
 
-            let creators = mint_creators::Entity::find()
-                .filter(mint_creators::Column::CollectionMintId.eq(collection_mint_model.id))
+            let creators = collection_creators::Entity::find()
+                .filter(collection_creators::Column::CollectionId.eq(collection.id))
                 .all(conn)
                 .await?;
 
@@ -171,7 +169,6 @@ impl Mutation {
 
             let collection_mint_metadata_json = metadata_json_am.insert(&tx).await?;
 
-            // TODO: Look into bug regarding creators not being saved to the database when minting editions
             let creators: Vec<mint_creators::ActiveModel> = creators
                 .into_iter()
                 .map(|creator| mint_creators::ActiveModel {
@@ -182,9 +179,11 @@ impl Mutation {
                 })
                 .collect();
 
-            mint_creators::Entity::insert_many(creators)
-                .exec(&tx)
-                .await?;
+            if !creators.is_empty() {
+                mint_creators::Entity::insert_many(creators)
+                    .exec(&tx)
+                    .await?;
+            }
 
             let files: Vec<metadata_json_files::ActiveModel> = files
                 .into_iter()
@@ -196,9 +195,11 @@ impl Mutation {
                 })
                 .collect();
 
-            metadata_json_files::Entity::insert_many(files)
-                .exec(&tx)
-                .await?;
+            if !files.is_empty() {
+                metadata_json_files::Entity::insert_many(files)
+                    .exec(&tx)
+                    .await?;
+            }
 
             let attributes: Vec<metadata_json_attributes::ActiveModel> = attributes
                 .into_iter()
@@ -210,9 +211,11 @@ impl Mutation {
                 })
                 .collect();
 
-            metadata_json_attributes::Entity::insert_many(attributes)
-                .exec(&tx)
-                .await?;
+            if !attributes.is_empty() {
+                metadata_json_attributes::Entity::insert_many(attributes)
+                    .exec(&tx)
+                    .await?;
+            }
         }
 
         tx.commit().await?;
@@ -335,22 +338,7 @@ impl Mutation {
         let edition = collection_mint_model.edition;
         let project_id = drop_model.project_id;
 
-        // Fetch the project wallet address which will sign the transaction by hub-treasuries
-        let wallet = project_wallets::Entity::find()
-            .filter(
-                project_wallets::Column::ProjectId
-                    .eq(project_id)
-                    .and(project_wallets::Column::Blockchain.eq(collection.blockchain)),
-            )
-            .one(conn)
-            .await?;
-
-        let owner_address = wallet
-            .ok_or(Error::new(format!(
-                "no project wallet found for {:?} blockchain",
-                collection.blockchain
-            )))?
-            .wallet_address;
+        let owner_address = fetch_owner(conn, project_id, collection.blockchain).await?;
 
         let TransactionId(_) = credits
             .submit_pending_deduction(
@@ -437,12 +425,11 @@ impl Mutation {
 
         let creators = input.creators;
 
-        let collection = Collections::find()
-            .filter(collections::Column::Id.eq(input.collection))
+        let collection = Collections::find_by_id(input.collection)
             .one(conn)
-            .await?;
+            .await?
+            .ok_or(Error::new("collection not found"))?;
 
-        let collection = collection.ok_or(Error::new("collection not found"))?;
         let blockchain = collection.blockchain;
         let compressed = input.compressed.unwrap_or_default();
 
@@ -659,9 +646,11 @@ impl Mutation {
             .exec(&tx)
             .await?;
 
-        mint_creators::Entity::insert_many(creators_am)
-            .exec(&tx)
-            .await?;
+        if !creators_am.is_empty() {
+            mint_creators::Entity::insert_many(creators_am)
+                .exec(&tx)
+                .await?;
+        }
 
         if let Some(sfbp) = input.seller_fee_basis_points {
             mint_am.seller_fee_basis_points = Set(sfbp.try_into().unwrap_or_default());
@@ -928,9 +917,11 @@ impl Mutation {
             })
             .collect();
 
-        mint_creators::Entity::insert_many(mint_creators)
-            .exec(&tx)
-            .await?;
+        if !mint_creators.is_empty() {
+            mint_creators::Entity::insert_many(mint_creators)
+                .exec(&tx)
+                .await?;
+        }
 
         tx.commit().await?;
 

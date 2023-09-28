@@ -33,7 +33,7 @@ pub enum BackgroundTaskError {
 }
 
 #[async_trait::async_trait]
-pub trait BackgroundTask<C: Clone>: Send + Sync + std::fmt::Debug {
+pub trait BackgroundTask<C: Clone + Send + Sync>: Send + Sync + std::fmt::Debug {
     /// Process the task
     /// # Arguments
     /// * `self` - The task

@@ -1,6 +1,6 @@
-use std::{error::Error as StdError, fmt, sync::Arc};
+use std::{error::Error as StdError, fmt};
 
-use hub_core::{prelude::*, thiserror, tokio::sync::Mutex};
+use hub_core::{prelude::*, thiserror};
 use redis::{Client, RedisError};
 use sea_orm::{error::DbErr, ActiveModelTrait};
 use serde::{Deserialize, Serialize};
@@ -32,14 +32,15 @@ pub enum JobQueueError {
     #[error("Background task error: {0}")]
     BackgroundTask(#[from] Error),
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct JobQueue {
-    client: Arc<Mutex<Client>>,
+    client: Client,
     db_pool: Connection,
 }
 
 impl JobQueue {
-    pub fn new(client: Arc<Mutex<Client>>, db_pool: Connection) -> Self {
+    #[must_use]
+    pub fn new(client: Client, db_pool: Connection) -> Self {
         Self { client, db_pool }
     }
 
@@ -54,10 +55,9 @@ impl JobQueue {
     pub async fn enqueue<C, T>(&self, task: T) -> Result<(), JobQueueError>
     where
         T: Serialize + for<'de> Deserialize<'de> + Send + Sync + BackgroundTask<C>,
-        C: Clone,
+        C: Clone + std::fmt::Debug + Send + Sync,
     {
-        let client_guard = self.client.lock().await;
-        let mut conn = client_guard.get_async_connection().await?;
+        let mut conn = self.client.get_async_connection().await?;
         let db_conn = self.db_pool.get();
 
         let payload = task.payload()?;
@@ -88,20 +88,19 @@ impl JobQueue {
     pub async fn dequeue<C, T>(&self) -> Result<Option<Job<C, T>>, JobQueueError>
     where
         T: Serialize + for<'de> Deserialize<'de> + Send + Sync + BackgroundTask<C>,
-        C: Clone,
+        C: Clone + std::fmt::Debug + Send + Sync,
     {
-        let client_guard = self.client.lock().await;
-        let mut conn = client_guard.get_async_connection().await?;
+        let mut conn = self.client.get_async_connection().await?;
         let db_conn = self.db_pool.get();
 
-        let res: Option<String> = redis::cmd("BRPOP")
+        let res: Option<(String, String)> = redis::cmd("BRPOP")
             .arg("job_queue")
             .arg(0)
             .query_async(&mut conn)
             .await?;
 
-        if let Some(job_data) = res {
-            let job: Job<C, T> = serde_json::from_str(&job_data)?;
+        if let Some((_, job_details)) = res {
+            let job: Job<C, T> = serde_json::from_str(&job_details)?;
 
             let job_tracking = job_trackings::Entity::find_by_id(job.id)
                 .one(db_conn)

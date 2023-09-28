@@ -18,7 +18,7 @@ pub enum WorkerError {
     #[error("Database error: {0}")]
     Database(#[from] DbErr),
 }
-pub struct Worker<C: Clone, T: BackgroundTask<C>> {
+pub struct Worker<C: Clone + std::fmt::Debug + Send + Sync, T: BackgroundTask<C>> {
     job_queue: JobQueue,
     db_pool: Connection,
     context: C,
@@ -27,8 +27,8 @@ pub struct Worker<C: Clone, T: BackgroundTask<C>> {
 
 impl<C, T> Worker<C, T>
 where
-    T: Serialize + for<'de> Deserialize<'de> + Send + Sync + BackgroundTask<C>,
-    C: Clone,
+    T: 'static + Serialize + for<'de> Deserialize<'de> + Send + Sync + BackgroundTask<C>,
+    C: 'static + Clone + std::fmt::Debug + Send + Sync,
 {
     pub fn new(job_queue: JobQueue, db_pool: Connection, context: C) -> Self {
         Self {
@@ -40,57 +40,83 @@ where
     }
 
     /// Start the worker
+    ///
+    /// This method starts the worker by continuously dequeuing jobs from the job queue and processing them.
+    /// Each job is processed in a separate asynchronous task. If a job is found, it is processed and its status is updated in the database.
+    /// If no job is found, the worker sleeps for a short duration before trying to dequeue the next job.
+    /// Errors during job processing or database operations are logged.
+    ///
     /// # Arguments
-    /// * `self` - The worker
+    /// * `self` - A reference to the worker instance.
+    ///
     /// # Returns
-    /// * `Result<(), WorkerError>` - The result of the operation
+    /// * `Result<(), WorkerError>` - This method returns a `Result` type. If the worker starts successfully, it returns `Ok(())`.
+    ///   If an error occurs while dequeuing a job from the job queue, it returns `Err(WorkerError)`.
+    ///
     /// # Errors
-    /// * `WorkerError` - The error that occurred
+    /// * `WorkerError::JobQueue(JobQueueError)` - This error occurs when there is an issue dequeuing a job from the job queue.
+    /// * `WorkerError::Database(DbErr)` - This error occurs when there is a database operation error.
     pub async fn start(&self) -> Result<(), WorkerError> {
+        let db_pool = self.db_pool.clone();
+        let context = self.context.clone();
+        let job_queue = self.job_queue.clone();
+
         loop {
             // Dequeue the next job to process
-            let job_option = self.job_queue.dequeue::<C, T>().await?;
-            let db_conn = self.db_pool.get();
+            let job_option = job_queue.dequeue::<C, T>().await?;
 
-            if let Some(job) = job_option {
-                // Process the job
-                let model = job_trackings::Entity::find_by_id(job.id)
-                    .one(db_conn)
-                    .await?;
+            tokio::spawn({
+                let db_pool = db_pool.clone();
+                let context = context.clone();
+                async move {
+                    let db_conn = db_pool.get();
+                    let db_pool_process = db_pool.clone();
 
-                if let Some(model) = model {
-                    match job
-                        .task
-                        .process(self.db_pool.clone(), self.context.clone())
-                        .await
-                    {
-                        Ok(_) => {
-                            // If successful, update the status in the job_trackings table to "completed"
-                            let job_tracking_am =
-                                job_trackings::Entity::update_status(model, "completed");
+                    if let Some(job) = job_option {
+                        // Process the job
+                        let job_tracking_result =
+                            job_trackings::Entity::find_by_id(job.id).one(db_conn).await;
 
-                            job_tracking_am.update(db_conn).await?;
+                        // Handle the error explicitly here
+                        let model = match job_tracking_result {
+                            Ok(model) => model,
+                            Err(e) => {
+                                error!("Error finding job tracking: {}", e);
+                                return;
+                            },
+                        };
 
-                            info!("Successfully processed job {}", job.id);
-                        },
-                        Err(e) => {
-                            // If an error occurs, update the status in the job_trackings table to "failed"
-                            let job_tracking_am =
-                                job_trackings::Entity::update_status(model, "failed");
+                        let Some(model) = model
+                          else {
+                            error!("Job tracking not found");
+                            return;
+                        };
 
-                            job_tracking_am.update(db_conn).await?;
+                        let result = job.task.process(db_pool_process, context).await;
 
-                            // Log the error (or handle it in some other way)
-                            error!("Error processing job {}: {}", job.id, e);
-                        },
+                        match result {
+                            Ok(_) => {
+                                let job_tracking_am =
+                                    job_trackings::Entity::update_status(model, "completed");
+                                if let Err(e) = job_tracking_am.update(db_conn).await {
+                                    error!("Error updating job tracking: {}", e);
+                                }
+                                info!("Successfully processed job {}", job.id);
+                            },
+                            Err(e) => {
+                                let job_tracking_am =
+                                    job_trackings::Entity::update_status(model, "failed");
+                                if let Err(e) = job_tracking_am.update(db_conn).await {
+                                    error!("Error updating job tracking: {}", e);
+                                }
+                                error!("Error processing job {}: {}", job.id, e);
+                            },
+                        }
+                    } else {
+                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                     }
-                } else {
-                    error!("Job tracking record not found for job {}", job.id);
                 }
-            } else {
-                // If no job was dequeued, you might want to add a delay here to avoid busy-waiting
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
+            });
         }
     }
 }

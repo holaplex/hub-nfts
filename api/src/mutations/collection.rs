@@ -272,17 +272,18 @@ impl Mutation {
             .one(conn)
             .await?;
 
-        let txn = conn.begin().await?;
-
         if let Some(collection) = collection.clone() {
+            let txn = conn.begin().await?;
+
             let mints = CollectionMints::find()
                 .filter(collection_mints::Column::CollectionId.eq(collection.id))
                 .all(&txn)
                 .await?;
 
-            if let Some(collection_json) =
-                MetadataJsons::find_by_id(collection.id).one(&txn).await?
-            {
+            let collection_json_response =
+                MetadataJsons::find_by_id(collection.id).one(&txn).await?;
+
+            if let Some(collection_json) = collection_json_response {
                 collection_json.delete(&txn).await?;
             }
 
@@ -395,9 +396,11 @@ impl Mutation {
                 .exec(&tx)
                 .await?;
 
-            collection_creators::Entity::insert_many(creator_ams)
-                .exec(&tx)
-                .await?;
+            if !creator_ams.is_empty() {
+                collection_creators::Entity::insert_many(creator_ams)
+                    .exec(&tx)
+                    .await?;
+            }
 
             creators
                 .into_iter()
