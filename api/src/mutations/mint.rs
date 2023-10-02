@@ -885,13 +885,16 @@ impl Mutation {
             .all(conn)
             .await?;
 
-        let tx = conn.begin().await?;
+        let tx: sea_orm::DatabaseTransaction = conn.begin().await?;
 
-        let mut collection_am: collections::ActiveModel = collection_model.clone().into();
-
-        collection_am.supply = Set(collection_model.supply.map(|supply| supply.add(1)));
-
-        collection_am.update(&tx).await?;
+        collections::Entity::update_many()
+            .col_expr(
+                collections::Column::Supply,
+                Expr::value(Expr::col(collections::Column::Supply).add(Value::Int(Some(1)))),
+            )
+            .filter(collections::Column::Id.eq(collection_model.id))
+            .exec(&tx)
+            .await?;
 
         let mint = collection_mints::ActiveModel {
             collection_id: Set(drop.collection_id),
