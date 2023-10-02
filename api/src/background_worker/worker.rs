@@ -86,8 +86,7 @@ where
                             },
                         };
 
-                        let Some(model) = model
-                          else {
+                        let Some(model) = model else {
                             error!("Job tracking not found");
                             return;
                         };
