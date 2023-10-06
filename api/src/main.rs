@@ -11,8 +11,8 @@ use holaplex_hub_nfts::{
     db::Connection,
     events,
     handlers::{graphql_handler, health, metrics_handler, playground},
+    hub_uploads::HubUploadClient,
     metrics::Metrics,
-    nft_storage::NftStorageClient,
     proto, Actions, AppState, Args, Services,
 };
 use hub_core::{prelude::*, tokio};
@@ -28,7 +28,7 @@ pub fn main() {
         let Args {
             port,
             db,
-            nft_storage,
+            hub_uploads,
             redis_url,
         } = args;
 
@@ -45,7 +45,7 @@ pub fn main() {
                 .build::<proto::NftEvents>()
                 .await?;
             let credits = common.credits_cfg.build::<Actions>().await?;
-            let nft_storage = NftStorageClient::new(nft_storage)?;
+            let hub_uploads = HubUploadClient::new(hub_uploads)?;
 
             let metrics = Metrics::new()?;
 
@@ -62,7 +62,7 @@ pub fn main() {
             let redis_client = RedisClient::open(redis_url)?;
 
             let metadata_json_upload_task_context =
-                MetadataJsonUploadContext::new(nft_storage, solana.clone(), polygon.clone());
+                MetadataJsonUploadContext::new(hub_uploads, solana.clone(), polygon.clone());
 
             let job_queue = JobQueue::new(redis_client, connection.clone());
             let worker = Worker::<MetadataJsonUploadContext, MetadataJsonUploadTask>::new(

@@ -30,6 +30,8 @@ pub enum BackgroundTaskError {
     Conversion(#[from] std::convert::Infallible),
     #[error("No creator")]
     NoCreator,
+    #[error("No metadata json uri")]
+    NoMetadataUri,
 }
 
 #[async_trait::async_trait]
