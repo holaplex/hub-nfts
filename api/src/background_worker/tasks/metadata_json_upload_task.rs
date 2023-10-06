@@ -11,8 +11,8 @@ use crate::{
         collection_creators, collection_mints, collections, drops, metadata_jsons, mint_creators,
         sea_orm_active_enums::Blockchain as BlockchainEnum, update_histories,
     },
+    hub_uploads::{HubUploadClient, UploadResponse},
     mutations::collection::fetch_owner,
-    nft_storage::NftStorageClient,
     objects::MetadataJsonInput,
     proto::{
         CreateEditionTransaction, EditionInfo, MasterEdition, MetaplexMasterEditionTransaction,
@@ -27,7 +27,7 @@ trait After {
         &self,
         db: Connection,
         context: Context,
-        identifier: String,
+        upload_response: UploadResponse,
     ) -> Result<(), BackgroundTaskError>;
 }
 
@@ -42,14 +42,8 @@ impl After for CreateDrop {
         &self,
         db: Connection,
         context: Context,
-        identifier: String,
+        upload_response: UploadResponse,
     ) -> Result<(), BackgroundTaskError> {
-        let metadata_uri = context
-            .nft_storage
-            .ipfs_endpoint
-            .join(&identifier)?
-            .to_string();
-
         let conn = db.get();
         let (drop, collection) = drops::Entity::find_by_id_with_collection(self.drop_id)
             .one(conn)
@@ -75,10 +69,13 @@ impl After for CreateDrop {
 
         let mut metadata_json_am: metadata_jsons::ActiveModel = metadata_json.clone().into();
 
-        metadata_json_am.uri = Set(Some(metadata_uri.clone()));
-        metadata_json_am.identifier = Set(Some(identifier.clone()));
+        metadata_json_am.uri = Set(Some(upload_response.uri));
+        metadata_json_am.identifier = Set(Some(upload_response.cid));
 
-        metadata_json_am.update(conn).await?;
+        let metadata_json = metadata_json_am.update(conn).await?;
+        let metadata_uri = metadata_json
+            .uri
+            .ok_or(BackgroundTaskError::NoMetadataUri)?;
 
         let event_key = NftEventKey {
             id: collection.id.to_string(),
@@ -98,9 +95,9 @@ impl After for CreateDrop {
                             master_edition: Some(MasterEdition {
                                 owner_address,
                                 supply,
+                                metadata_uri,
                                 name: metadata_json.name,
                                 symbol: metadata_json.symbol,
-                                metadata_uri,
                                 seller_fee_basis_points: seller_fee_basis_points.into(),
                                 creators: creators.into_iter().map(Into::into).collect(),
                             }),
@@ -149,14 +146,8 @@ impl After for MintToCollection {
         &self,
         db: Connection,
         context: Context,
-        identifier: String,
+        upload_response: UploadResponse,
     ) -> Result<(), BackgroundTaskError> {
-        let metadata_uri = context
-            .nft_storage
-            .ipfs_endpoint
-            .join(&identifier)?
-            .to_string();
-
         let conn = db.get();
         let (collection_mint, collection) =
             collection_mints::Entity::find_by_id_with_collection(self.collection_mint_id)
@@ -182,10 +173,13 @@ impl After for MintToCollection {
 
         let mut metadata_json_am: metadata_jsons::ActiveModel = metadata_json.clone().into();
 
-        metadata_json_am.uri = Set(Some(metadata_uri.clone()));
-        metadata_json_am.identifier = Set(Some(identifier.clone()));
+        metadata_json_am.uri = Set(Some(upload_response.uri));
+        metadata_json_am.identifier = Set(Some(upload_response.cid));
 
-        metadata_json_am.update(conn).await?;
+        let metadata_json = metadata_json_am.update(conn).await?;
+        let metadata_uri = metadata_json
+            .uri
+            .ok_or(BackgroundTaskError::NoMetadataUri)?;
 
         let event_key = NftEventKey {
             id: collection_mint.id.to_string(),
@@ -204,9 +198,9 @@ impl After for MintToCollection {
                     .mint_to_collection(event_key, MintMetaplexMetadataTransaction {
                         metadata: Some(MetaplexMetadata {
                             owner_address,
+                            metadata_uri,
                             name: metadata_json.name,
                             symbol: metadata_json.symbol,
-                            metadata_uri,
                             seller_fee_basis_points: seller_fee_basis_points.into(),
                             creators: creators.into_iter().map(Into::into).collect(),
                         }),
@@ -236,14 +230,8 @@ impl After for CreateCollection {
         &self,
         db: Connection,
         context: Context,
-        identifier: String,
+        upload_response: UploadResponse,
     ) -> Result<(), BackgroundTaskError> {
-        let metadata_uri = context
-            .nft_storage
-            .ipfs_endpoint
-            .join(&identifier)?
-            .to_string();
-
         let conn = db.get();
 
         let collection = collections::Entity::find_by_id(self.collection_id)
@@ -268,10 +256,13 @@ impl After for CreateCollection {
 
         let mut metadata_json_am: metadata_jsons::ActiveModel = metadata_json.clone().into();
 
-        metadata_json_am.uri = Set(Some(metadata_uri.clone()));
-        metadata_json_am.identifier = Set(Some(identifier.clone()));
+        metadata_json_am.uri = Set(Some(upload_response.uri));
+        metadata_json_am.identifier = Set(Some(upload_response.cid));
 
-        metadata_json_am.update(conn).await?;
+        let metadata_json = metadata_json_am.update(conn).await?;
+        let metadata_uri = metadata_json
+            .uri
+            .ok_or(BackgroundTaskError::NoMetadataUri)?;
 
         let event_key = NftEventKey {
             id: collection.id.to_string(),
@@ -287,10 +278,10 @@ impl After for CreateCollection {
                     .create_collection(event_key, MetaplexMasterEditionTransaction {
                         master_edition: Some(MasterEdition {
                             owner_address,
+                            metadata_uri,
                             supply: Some(0),
                             name: metadata_json.name,
                             symbol: metadata_json.symbol,
-                            metadata_uri,
                             seller_fee_basis_points: seller_fee_basis_points.into(),
                             creators: creators.into_iter().map(Into::into).collect(),
                         }),
@@ -317,15 +308,9 @@ impl After for QueueMintToDrop {
     async fn after(
         &self,
         db: Connection,
-        context: Context,
-        identifier: String,
+        _context: Context,
+        upload_response: UploadResponse,
     ) -> Result<(), BackgroundTaskError> {
-        let metadata_uri = context
-            .nft_storage
-            .ipfs_endpoint
-            .join(&identifier)?
-            .to_string();
-
         let conn = db.get();
 
         let metadata_json = metadata_jsons::Entity::find_by_id(self.collection_mint_id)
@@ -335,8 +320,8 @@ impl After for QueueMintToDrop {
 
         let mut metadata_json_am: metadata_jsons::ActiveModel = metadata_json.clone().into();
 
-        metadata_json_am.uri = Set(Some(metadata_uri.clone()));
-        metadata_json_am.identifier = Set(Some(identifier.clone()));
+        metadata_json_am.uri = Set(Some(upload_response.uri));
+        metadata_json_am.identifier = Set(Some(upload_response.cid));
 
         metadata_json_am.update(conn).await?;
 
@@ -355,14 +340,8 @@ impl After for UpdateMint {
         &self,
         db: Connection,
         context: Context,
-        identifier: String,
+        upload_response: UploadResponse,
     ) -> Result<(), BackgroundTaskError> {
-        let metadata_uri = context
-            .nft_storage
-            .ipfs_endpoint
-            .join(&identifier)?
-            .to_string();
-
         let conn = db.get();
 
         let update_history = update_histories::Entity::find()
@@ -394,10 +373,13 @@ impl After for UpdateMint {
 
         let mut metadata_json_am: metadata_jsons::ActiveModel = metadata_json.clone().into();
 
-        metadata_json_am.uri = Set(Some(metadata_uri.clone()));
-        metadata_json_am.identifier = Set(Some(identifier.clone()));
+        metadata_json_am.uri = Set(Some(upload_response.uri));
+        metadata_json_am.identifier = Set(Some(upload_response.cid));
 
-        metadata_json_am.update(conn).await?;
+        let metadata_json = metadata_json_am.update(conn).await?;
+        let metadata_uri = metadata_json
+            .uri
+            .ok_or(BackgroundTaskError::NoMetadataUri)?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
@@ -413,9 +395,9 @@ impl After for UpdateMint {
                         UpdateSolanaMintPayload {
                             metadata: Some(MetaplexMetadata {
                                 owner_address,
+                                metadata_uri,
                                 name: metadata_json.name,
                                 symbol: metadata_json.symbol,
-                                metadata_uri,
                                 seller_fee_basis_points: collection.seller_fee_basis_points.into(),
                                 creators: creators.into_iter().map(Into::into).collect(),
                             }),
@@ -446,14 +428,8 @@ impl After for PatchCollection {
         &self,
         db: Connection,
         context: Context,
-        identifier: String,
+        upload_response: UploadResponse,
     ) -> Result<(), BackgroundTaskError> {
-        let metadata_uri = context
-            .nft_storage
-            .ipfs_endpoint
-            .join(&identifier)?
-            .to_string();
-
         let conn = db.get();
 
         let collection = collections::Entity::find_by_id(self.collection_id)
@@ -478,10 +454,13 @@ impl After for PatchCollection {
 
         let mut metadata_json_am: metadata_jsons::ActiveModel = metadata_json.clone().into();
 
-        metadata_json_am.uri = Set(Some(metadata_uri.clone()));
-        metadata_json_am.identifier = Set(Some(identifier.clone()));
+        metadata_json_am.uri = Set(Some(upload_response.uri));
+        metadata_json_am.identifier = Set(Some(upload_response.cid));
 
-        metadata_json_am.update(conn).await?;
+        let metadata_json = metadata_json_am.update(conn).await?;
+        let metadata_uri = metadata_json
+            .uri
+            .ok_or(BackgroundTaskError::NoMetadataUri)?;
 
         let event_key = NftEventKey {
             id: collection.id.to_string(),
@@ -497,10 +476,10 @@ impl After for PatchCollection {
                     .update_collection(event_key, MetaplexMasterEditionTransaction {
                         master_edition: Some(MasterEdition {
                             owner_address,
+                            metadata_uri,
                             supply: Some(0),
                             name: metadata_json.name,
                             symbol: metadata_json.symbol,
-                            metadata_uri,
                             seller_fee_basis_points: seller_fee_basis_points.into(),
                             creators: creators.into_iter().map(Into::into).collect(),
                         }),
@@ -528,14 +507,8 @@ impl After for PatchDrop {
         &self,
         db: Connection,
         context: Context,
-        identifier: String,
+        upload_response: UploadResponse,
     ) -> Result<(), BackgroundTaskError> {
-        let metadata_uri = context
-            .nft_storage
-            .ipfs_endpoint
-            .join(&identifier)?
-            .to_string();
-
         let conn = db.get();
 
         let (drop, collection) = drops::Entity::find_by_id_with_collection(self.drop_id)
@@ -562,10 +535,13 @@ impl After for PatchDrop {
 
         let mut metadata_json_am: metadata_jsons::ActiveModel = metadata_json.clone().into();
 
-        metadata_json_am.uri = Set(Some(metadata_uri.clone()));
-        metadata_json_am.identifier = Set(Some(identifier.clone()));
+        metadata_json_am.uri = Set(Some(upload_response.uri));
+        metadata_json_am.identifier = Set(Some(upload_response.cid));
 
-        metadata_json_am.update(conn).await?;
+        let metadata_json = metadata_json_am.update(conn).await?;
+        let metadata_uri = metadata_json
+            .uri
+            .ok_or(BackgroundTaskError::NoMetadataUri)?;
 
         let event_key = NftEventKey {
             id: collection.id.to_string(),
@@ -584,10 +560,10 @@ impl After for PatchDrop {
                         MetaplexMasterEditionTransaction {
                             master_edition: Some(MasterEdition {
                                 owner_address,
+                                metadata_uri,
                                 supply: collection.supply.map(TryInto::try_into).transpose()?,
                                 name: metadata_json.name,
                                 symbol: metadata_json.symbol,
-                                metadata_uri,
                                 seller_fee_basis_points: seller_fee_basis_points.into(),
                                 creators: creators.into_iter().map(Into::into).collect(),
                             }),
@@ -640,16 +616,16 @@ impl After for Caller {
         &self,
         db: Connection,
         context: Context,
-        identifier: String,
+        upload_response: UploadResponse,
     ) -> Result<(), BackgroundTaskError> {
         match self {
-            Self::CreateDrop(inner) => inner.after(db, context, identifier).await,
-            Self::MintToCollection(inner) => inner.after(db, context, identifier).await,
-            Self::CreateCollection(inner) => inner.after(db, context, identifier).await,
-            Self::QueueMintToDrop(inner) => inner.after(db, context, identifier).await,
-            Self::UpdateMint(inner) => inner.after(db, context, identifier).await,
-            Self::PatchCollection(inner) => inner.after(db, context, identifier).await,
-            Self::PatchDrop(inner) => inner.after(db, context, identifier).await,
+            Self::CreateDrop(inner) => inner.after(db, context, upload_response).await,
+            Self::MintToCollection(inner) => inner.after(db, context, upload_response).await,
+            Self::CreateCollection(inner) => inner.after(db, context, upload_response).await,
+            Self::QueueMintToDrop(inner) => inner.after(db, context, upload_response).await,
+            Self::UpdateMint(inner) => inner.after(db, context, upload_response).await,
+            Self::PatchCollection(inner) => inner.after(db, context, upload_response).await,
+            Self::PatchDrop(inner) => inner.after(db, context, upload_response).await,
         }
     }
 }
@@ -672,16 +648,16 @@ impl MetadataJsonUploadTask {
 
 #[derive(Clone, Debug)]
 pub struct Context {
-    nft_storage: NftStorageClient,
+    hub_uploads: HubUploadClient,
     solana: Solana,
     polygon: Polygon,
 }
 
 impl Context {
     #[must_use]
-    pub fn new(nft_storage: NftStorageClient, solana: Solana, polygon: Polygon) -> Self {
+    pub fn new(hub_uploads: HubUploadClient, solana: Solana, polygon: Polygon) -> Self {
         Self {
-            nft_storage,
+            hub_uploads,
             solana,
             polygon,
         }
@@ -699,10 +675,9 @@ impl BackgroundTask<Context> for MetadataJsonUploadTask {
     }
 
     async fn process(&self, db: Connection, context: Context) -> Result<(), BackgroundTaskError> {
-        let response = context.nft_storage.upload(&self.metadata_json).await?;
-        let cid = response.value.cid;
+        let response = context.hub_uploads.upload(&self.metadata_json).await?;
 
-        self.caller.after(db, context.clone(), cid).await?;
+        self.caller.after(db, context.clone(), response).await?;
 
         Ok(())
     }

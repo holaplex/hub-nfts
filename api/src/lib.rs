@@ -9,9 +9,9 @@ pub mod db;
 pub mod entities;
 pub mod events;
 pub mod handlers;
+pub mod hub_uploads;
 pub mod metrics;
 pub mod mutations;
-pub mod nft_storage;
 pub mod objects;
 pub mod queries;
 
@@ -114,7 +114,7 @@ pub struct Args {
     pub db: db::DbArgs,
 
     #[command(flatten)]
-    pub nft_storage: nft_storage::NftStorageArgs,
+    pub hub_uploads: hub_uploads::HubUploadArgs,
 
     #[arg(long, env)]
     pub redis_url: String,
