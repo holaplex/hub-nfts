@@ -2,9 +2,7 @@
 name = "holaplex-hub-nfts"
 version = "0.1.1"
 publish = false
-authors = [
-  "Holaplex <engineering@holaplex.com>",
-]
+authors = ["Holaplex <engineering@holaplex.com>"]
 edition = "2021"
 description = "Holaplex Hub nfts service"
 readme = "./README.md"
@@ -29,6 +27,7 @@ async-graphql = { version = "5.0.4", features = [
   "dataloader",
   "apollo_tracing",
 ] }
+redis = { version = "0.23.3", features = ["tokio-comp"] }
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
 solana-program = "1"
@@ -36,7 +35,7 @@ poem = { version = "1.3.50", features = ["anyhow", "test"] }
 async-graphql-poem = "5.0.3"
 prost = "0.11.9"
 prost-types = "0.11.9"
-reqwest = { version = "0.11.14", features = ["json"] }
+reqwest = { version = "0.11.14", features = ["json", "multipart"] }
 async-trait = "0.1.68"
 strum = { version = "0.24.1", features = ["derive"] }
 

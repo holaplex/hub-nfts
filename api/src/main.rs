@@ -1,17 +1,23 @@
 //!
 
 use holaplex_hub_nfts::{
+    background_worker::{
+        job_queue::JobQueue,
+        tasks::{MetadataJsonUploadContext, MetadataJsonUploadTask},
+        worker::Worker,
+    },
     blockchains::{polygon::Polygon, solana::Solana},
     build_schema,
     db::Connection,
     events,
     handlers::{graphql_handler, health, metrics_handler, playground},
+    hub_uploads::HubUploadClient,
     metrics::Metrics,
-    nft_storage::NftStorageClient,
     proto, Actions, AppState, Args, Services,
 };
 use hub_core::{prelude::*, tokio};
 use poem::{get, listener::TcpListener, middleware::AddData, post, EndpointExt, Route, Server};
+use redis::Client as RedisClient;
 
 pub fn main() {
     let opts = hub_core::StartConfig {
@@ -22,7 +28,8 @@ pub fn main() {
         let Args {
             port,
             db,
-            nft_storage,
+            hub_uploads,
+            redis_url,
         } = args;
 
         common.rt.block_on(async move {
@@ -38,7 +45,7 @@ pub fn main() {
                 .build::<proto::NftEvents>()
                 .await?;
             let credits = common.credits_cfg.build::<Actions>().await?;
-            let nft_storage = NftStorageClient::new(nft_storage)?;
+            let hub_uploads = HubUploadClient::new(hub_uploads)?;
 
             let metrics = Metrics::new()?;
 
@@ -52,18 +59,32 @@ pub fn main() {
             let solana = Solana::new(producer.clone());
             let polygon = Polygon::new(producer.clone());
 
+            let redis_client = RedisClient::open(redis_url)?;
+
+            let metadata_json_upload_task_context =
+                MetadataJsonUploadContext::new(hub_uploads, solana.clone(), polygon.clone());
+
+            let job_queue = JobQueue::new(redis_client, connection.clone());
+            let worker = Worker::<MetadataJsonUploadContext, MetadataJsonUploadTask>::new(
+                job_queue.clone(),
+                connection.clone(),
+                metadata_json_upload_task_context,
+            );
+
             let state = AppState::new(
                 schema,
                 connection.clone(),
                 producer.clone(),
                 credits.clone(),
-                solana,
-                polygon,
-                nft_storage,
+                solana.clone(),
+                polygon.clone(),
                 common.asset_proxy,
+                job_queue.clone(),
             );
 
             let cons = common.consumer_cfg.build::<Services>().await?;
+
+            tokio::spawn(async move { worker.start().await });
 
             tokio::spawn(async move {
                 cons.consume(

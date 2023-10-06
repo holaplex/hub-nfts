@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Polygon {
     producer: Producer<NftEvents>,
 }
