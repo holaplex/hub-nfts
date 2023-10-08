@@ -4,10 +4,7 @@ use hub_core::{
     clap,
     prelude::*,
 };
-use reqwest::{
-    multipart::{Form, Part},
-    Response,
-};
+use reqwest::Response;
 use serde::{Deserialize, Serialize};
 
 /// Arguments for establishing a nft storage connection
@@ -49,14 +46,9 @@ impl HubUploadClient {
     async fn post(&self, endpoint: String, body: impl Serialize) -> Result<Response> {
         let url = self.api_base_url.join(&endpoint)?;
 
-        let serialized_body = serde_json::to_vec(&body).context("failed to serialize body")?;
-        let part = Part::bytes(serialized_body).file_name("file_name.extension");
-
-        let form = Form::new().part("file", part);
-
         self.http
             .post(url)
-            .multipart(form)
+            .json(&body)
             .send()
             .await
             .context("failed to send post request")
