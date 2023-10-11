@@ -2,13 +2,9 @@ use std::collections::HashMap;
 
 use async_graphql::{dataloader::Loader as DataLoader, FieldError, Result};
 use poem::async_trait;
-use sea_orm::{prelude::*, JoinType, QuerySelect};
+use sea_orm::prelude::*;
 
-use crate::{
-    db::Connection,
-    entities::{collections, drops},
-    objects::Drop,
-};
+use crate::{db::Connection, entities::drops, objects::Drop};
 
 #[derive(Debug, Clone)]
 pub struct ProjectLoader {
@@ -29,17 +25,13 @@ impl DataLoader<Uuid> for ProjectLoader {
 
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let drops = drops::Entity::find()
-            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-            .select_also(collections::Entity)
             .filter(drops::Column::ProjectId.is_in(keys.iter().map(ToOwned::to_owned)))
             .all(self.db.get())
             .await?;
 
         Ok(drops
             .into_iter()
-            .filter_map(|(drop, collection)| {
-                collection.map(|collection| (drop.project_id, Drop::new(drop, collection)))
-            })
+            .map(|drop| (drop.project_id, drop.into()))
             .fold(HashMap::new(), |mut acc, (project, drop)| {
                 acc.entry(project).or_insert_with(Vec::new);
 

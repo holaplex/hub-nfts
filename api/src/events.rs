@@ -8,7 +8,6 @@ use hub_core::{
     uuid::{self, Uuid},
 };
 use sea_orm::{
-    sea_query::{Expr, SimpleExpr},
     ActiveModelTrait, ColumnTrait, EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait,
     Set, TransactionTrait,
 };
@@ -350,7 +349,6 @@ impl Processor {
             project_id: Set(Uuid::from_str(&project_id)?),
             credits_deduction_id: Set(None),
             creation_status: Set(CreationStatus::Created),
-            total_mints: Set(0),
             address: Set(Some(mint_address)),
             signature: Set(None),
             seller_fee_basis_points: Set(seller_fee_basis_points
@@ -469,18 +467,6 @@ impl Processor {
         }
         index_attributes(&self.db, json_model.id, attributes).await?;
         index_files(&self.db, json_model.id, files).await?;
-
-        let collection_id = Uuid::from_str(&collection_id)?;
-
-        collections::Entity::update_many()
-            .col_expr(
-                collections::Column::TotalMints,
-                <Expr as Into<SimpleExpr>>::into(Expr::col(collections::Column::TotalMints))
-                    .add(SimpleExpr::Value(1.into())),
-            )
-            .filter(collections::Column::Id.eq(collection_id))
-            .exec(self.db.get())
-            .await?;
 
         Ok(())
     }
