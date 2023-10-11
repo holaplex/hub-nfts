@@ -1162,7 +1162,6 @@ impl Mutation {
         let mint = CollectionMints::find()
             .filter(collection_mints::Column::CollectionId.eq(drop.collection_id))
             .filter(collection_mints::Column::CreationStatus.eq(CreationStatus::Queued))
-            .order_by(SimpleExpr::FunctionCall(Func::random()), Order::Asc)
             .one(conn)
             .await?
             .ok_or(Error::new("No Queued mint found for the drop"))?;
