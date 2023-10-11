@@ -4,7 +4,7 @@ use hub_core::{
     credits::{CreditsClient, TransactionId},
     producer::Producer,
 };
-use sea_orm::{prelude::*, JoinType, ModelTrait, QuerySelect, Set, TransactionTrait};
+use sea_orm::{prelude::*, ModelTrait, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 
 use super::collection::{validate_creators, validate_json, validate_solana_creator_verification};
@@ -67,7 +67,7 @@ impl Mutation {
 
         let owner_address = fetch_owner(conn, input.project, input.blockchain).await?;
         let supply = if input.drop_type == DropType::Open {
-            Some(0)
+            None
         } else {
             input.supply.map(TryInto::try_into).transpose()?
         };
@@ -161,7 +161,7 @@ impl Mutation {
             .await?;
 
         Ok(CreateDropPayload {
-            drop: Drop::new(drop_model, collection),
+            drop: drop_model.into(),
         })
     }
 
@@ -293,9 +293,7 @@ impl Mutation {
         drop_am.creation_status = Set(CreationStatus::Pending);
         let drop = drop_am.update(conn).await?;
 
-        Ok(CreateDropPayload {
-            drop: Drop::new(drop, collection),
-        })
+        Ok(CreateDropPayload { drop: drop.into() })
     }
     /// This mutation allows for the temporary blocking of the minting of editions and can be resumed by calling the resumeDrop mutation.
     pub async fn pause_drop(
@@ -306,18 +304,11 @@ impl Mutation {
         let AppContext { db, .. } = ctx.data::<AppContext>()?;
         let conn = db.get();
 
-        let (drop, collection) = Drops::find()
-            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-            .select_also(Collections)
+        let drop = Drops::find()
             .filter(drops::Column::Id.eq(input.drop))
             .one(conn)
             .await?
             .ok_or(Error::new("drop not found"))?;
-
-        let collection_model = collection.ok_or(Error::new(format!(
-            "no collection found for drop {}",
-            input.drop
-        )))?;
 
         let mut drops_active_model: drops::ActiveModel = drop.into();
 
@@ -325,7 +316,7 @@ impl Mutation {
         let drop_model = drops_active_model.update(db.get()).await?;
 
         Ok(PauseDropPayload {
-            drop: Drop::new(drop_model, collection_model),
+            drop: drop_model.into(),
         })
     }
 
@@ -338,27 +329,20 @@ impl Mutation {
         let AppContext { db, .. } = ctx.data::<AppContext>()?;
         let conn = db.get();
 
-        let (drop, collection) = Drops::find()
-            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-            .select_also(Collections)
+        let drop = Drops::find()
             .filter(drops::Column::Id.eq(input.drop))
             .one(conn)
             .await?
             .ok_or(Error::new("drop not found"))?;
 
-        let collection_model = collection.ok_or(Error::new(format!(
-            "no collection found for drop {}",
-            input.drop
-        )))?;
-
         let mut drops_active_model: drops::ActiveModel = drop.into();
 
         drops_active_model.paused_at = Set(None);
 
-        let drop_model = drops_active_model.update(db.get()).await?;
+        let drop_model = drops_active_model.update(conn).await?;
 
         Ok(ResumeDropPayload {
-            drop: Drop::new(drop_model, collection_model),
+            drop: drop_model.into(),
         })
     }
 
@@ -375,18 +359,11 @@ impl Mutation {
         let AppContext { db, .. } = ctx.data::<AppContext>()?;
         let conn = db.get();
 
-        let (drop, collection) = Drops::find()
-            .join(JoinType::InnerJoin, drops::Relation::Collections.def())
-            .select_also(Collections)
+        let drop = Drops::find()
             .filter(drops::Column::Id.eq(input.drop))
             .one(conn)
             .await?
             .ok_or(Error::new("drop not found"))?;
-
-        let collection_model = collection.ok_or(Error::new(format!(
-            "no collection found for drop {}",
-            input.drop
-        )))?;
 
         let mut drops_active_model: drops::ActiveModel = drop.into();
 
@@ -395,7 +372,7 @@ impl Mutation {
         let drop_model = drops_active_model.update(db.get()).await?;
 
         Ok(ShutdownDropPayload {
-            drop: Drop::new(drop_model, collection_model),
+            drop: drop_model.into(),
         })
     }
 
@@ -598,7 +575,7 @@ impl Mutation {
         tx.commit().await?;
 
         Ok(PatchDropPayload {
-            drop: Drop::new(drop_model, collection),
+            drop: drop_model.into(),
         })
     }
 }

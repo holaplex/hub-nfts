@@ -88,4 +88,12 @@ impl Entity {
             .select_also(collections::Entity)
             .filter(Column::Id.eq(id))
     }
+
+    pub fn filter_by_collection(id: Uuid) -> Select<Self> {
+        Self::find().filter(
+            Column::CollectionId
+                .eq(id)
+                .and(Column::CreationStatus.ne(CreationStatus::Queued)),
+        )
+    }
 }
