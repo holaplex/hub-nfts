@@ -70,7 +70,7 @@ impl JobQueue {
         let payload = serde_json::to_string(&job_to_enqueue)?;
 
         redis::cmd("LPUSH")
-            .arg("job_queue")
+            .arg(T::QUEUE)
             .arg(payload)
             .query_async(&mut conn)
             .await?;
@@ -94,7 +94,7 @@ impl JobQueue {
         let db_conn = self.db_pool.get();
 
         let res: Option<(String, String)> = redis::cmd("BRPOP")
-            .arg("job_queue")
+            .arg(T::QUEUE)
             .arg(0)
             .query_async(&mut conn)
             .await?;

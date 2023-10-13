@@ -15,7 +15,7 @@ use holaplex_hub_nfts::{
     metrics::Metrics,
     proto, Actions, AppState, Args, Services,
 };
-use hub_core::{prelude::*, tokio};
+use hub_core::{clap, prelude::*, tokio, tracing::info};
 use poem::{get, listener::TcpListener, middleware::AddData, post, EndpointExt, Route, Server};
 use redis::Client as RedisClient;
 
@@ -36,18 +36,15 @@ pub fn main() {
             let connection = Connection::new(db)
                 .await
                 .context("failed to get database connection")?;
-
-            let schema = build_schema();
+            let hub_uploads = HubUploadClient::new(hub_uploads)?;
+            let credits = common.credits_cfg.build::<Actions>().await?;
+            let metrics = Metrics::new()?;
 
             let producer = common
                 .producer_cfg
                 .clone()
                 .build::<proto::NftEvents>()
                 .await?;
-            let credits = common.credits_cfg.build::<Actions>().await?;
-            let hub_uploads = HubUploadClient::new(hub_uploads)?;
-
-            let metrics = Metrics::new()?;
 
             let event_processor = events::Processor::new(
                 connection.clone(),
@@ -70,6 +67,20 @@ pub fn main() {
                 connection.clone(),
                 metadata_json_upload_task_context,
             );
+
+            let matches = clap::Command::new("hub-nfts")
+                .subcommand(clap::command!("jobs").subcommand(clap::command!("retry")))
+                .get_matches();
+
+            if let Some(("jobs", jobs_command)) = matches.subcommand() {
+                if let Some(("retry", _retry_command)) = jobs_command.subcommand() {
+                    worker.retry().await?;
+
+                    return Ok(());
+                }
+            }
+
+            let schema = build_schema();
 
             let state = AppState::new(
                 schema,
