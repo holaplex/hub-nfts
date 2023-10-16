@@ -6,7 +6,6 @@ use hub_core::{
     credits::{CreditsClient, TransactionId},
     producer::Producer,
 };
-use redis::AsyncCommands;
 use sea_orm::{
     prelude::*,
     sea_query::{Func, SimpleExpr},
@@ -63,12 +62,10 @@ impl Mutation {
             user_id,
             organization_id,
             balance,
-            redis,
             ..
         } = ctx.data::<AppContext>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
-        let mut redis_conn = redis.get_async_connection().await?;
         let solana = ctx.data::<Solana>()?;
         let polygon = ctx.data::<Polygon>()?;
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
@@ -92,17 +89,11 @@ impl Mutation {
         // Call check_drop_status to check that drop is currently running
         check_drop_status(&drop_model)?;
 
-        let total_mints = collection_mints::Entity::filter_by_collection(collection.id)
-            .count(conn)
-            .await?;
-
-        let total_mints = i64::try_from(total_mints)?;
-
-        if collection.supply == Some(total_mints) {
+        if collection.supply == Some(collection.total_mints) {
             return Err(Error::new("Collection is sold out"));
         }
 
-        let edition = total_mints.add(1);
+        let edition = collection.total_mints.add(1);
 
         let owner_address = fetch_owner(conn, collection.project_id, collection.blockchain).await?;
 
@@ -131,6 +122,10 @@ impl Mutation {
         };
 
         let collection_mint_model = collection_mint_active_model.insert(conn).await?;
+
+        let mut collection_am = collections::ActiveModel::from(collection.clone());
+        collection_am.total_mints = Set(edition);
+        collection_am.update(&tx).await?;
 
         // inserts a mint histories record in the database
         let mint_history_am = mint_histories::ActiveModel {
@@ -224,10 +219,6 @@ impl Mutation {
         }
 
         tx.commit().await?;
-
-        redis_conn
-            .del(format!("collection:{}:total_mints", collection.id))
-            .await?;
 
         let event_key = NftEventKey {
             id: collection_mint_model.id.to_string(),
@@ -416,12 +407,10 @@ impl Mutation {
             user_id,
             organization_id,
             balance,
-            redis,
             ..
         } = ctx.data::<AppContext>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
-        let mut redis_conn = redis.get_async_connection().await?;
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
         let metadata_json_upload_job_queue = ctx.data::<JobQueue>()?;
 
@@ -505,6 +494,10 @@ impl Mutation {
             am.insert(&tx).await?;
         }
 
+        let mut collection_am = collections::ActiveModel::from(collection.clone());
+        collection_am.total_mints = Set(collection.total_mints.add(1));
+        collection_am.update(&tx).await?;
+
         let mint_history_am = mint_histories::ActiveModel {
             mint_id: Set(collection_mint_model.id),
             wallet: Set(input.recipient),
@@ -518,10 +511,6 @@ impl Mutation {
         mint_history_am.insert(&tx).await?;
 
         tx.commit().await?;
-
-        redis_conn
-            .del(format!("collection:{}:total_mints", collection.id))
-            .await?;
 
         metadata_json_upload_job_queue
             .enqueue(MetadataJsonUploadTask {
@@ -983,7 +972,6 @@ impl Mutation {
             user_id,
             organization_id,
             balance,
-            redis,
             ..
         } = ctx.data::<AppContext>()?;
 
@@ -992,7 +980,6 @@ impl Mutation {
         let solana = ctx.data::<Solana>()?;
 
         let conn = db.get();
-        let mut redis_conn = redis.get_async_connection().await?;
 
         let UserID(id) = user_id;
         let OrganizationId(org) = organization_id;
@@ -1062,6 +1049,12 @@ impl Mutation {
 
         let tx = conn.begin().await?;
 
+        let mut collection_am = collections::ActiveModel::from(collection.clone());
+
+        collection_am.total_mints = Set(collection.total_mints.add(1));
+
+        collection_am.update(&tx).await?;
+
         let mut mint_am: collection_mints::ActiveModel = mint.into();
 
         mint_am.creation_status = Set(CreationStatus::Pending);
@@ -1085,10 +1078,6 @@ impl Mutation {
         mint_history_am.insert(&tx).await?;
 
         tx.commit().await?;
-
-        redis_conn
-            .del(format!("collection:{}:total_mints", collection.id))
-            .await?;
 
         match collection.blockchain {
             BlockchainEnum::Solana => {
@@ -1149,12 +1138,10 @@ impl Mutation {
             user_id,
             organization_id,
             balance,
-            redis,
             ..
         } = ctx.data::<AppContext>()?;
         let credits = ctx.data::<CreditsClient<Actions>>()?;
         let conn = db.get();
-        let mut redis_conn = redis.get_async_connection().await?;
         let solana = ctx.data::<Solana>()?;
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
@@ -1223,6 +1210,10 @@ impl Mutation {
 
         let tx = conn.begin().await?;
 
+        let mut collection_am = collections::ActiveModel::from(collection.clone());
+        collection_am.total_mints = Set(collection.total_mints.add(1));
+        collection_am.update(&tx).await?;
+
         let mut mint_am: collection_mints::ActiveModel = mint.into();
 
         mint_am.creation_status = Set(CreationStatus::Pending);
@@ -1246,10 +1237,6 @@ impl Mutation {
         mint_history_am.insert(&tx).await?;
 
         tx.commit().await?;
-
-        redis_conn
-            .del(format!("collection:{}:total_mints", collection.id))
-            .await?;
 
         let event_key = NftEventKey {
             id: mint.id.to_string(),

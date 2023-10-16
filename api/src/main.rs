@@ -64,7 +64,7 @@ pub fn main() {
             let metadata_json_upload_task_context =
                 MetadataJsonUploadContext::new(hub_uploads, solana.clone(), polygon.clone());
 
-            let job_queue = JobQueue::new(redis_client.clone(), connection.clone());
+            let job_queue = JobQueue::new(redis_client, connection.clone());
             let worker = Worker::<MetadataJsonUploadContext, MetadataJsonUploadTask>::new(
                 job_queue.clone(),
                 connection.clone(),
@@ -80,7 +80,6 @@ pub fn main() {
                 polygon.clone(),
                 common.asset_proxy,
                 job_queue.clone(),
-                redis_client,
             );
 
             let cons = common.consumer_cfg.build::<Services>().await?;

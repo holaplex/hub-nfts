@@ -31,13 +31,7 @@ pub async fn graphql_handler(
     balance: Balance,
     req: GraphQLRequest,
 ) -> Result<GraphQLResponse> {
-    let context = AppContext::new(
-        state.connection.clone(),
-        state.redis.clone(),
-        user_id,
-        organization,
-        balance,
-    );
+    let context = AppContext::new(state.connection.clone(), user_id, organization, balance);
 
     Ok(state
         .schema
