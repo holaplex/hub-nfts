@@ -5,121 +5,102 @@ use sea_orm::entity::prelude::*;
 use super::{Collection, CollectionMint};
 use crate::{
     entities::{
-        drops, mint_histories,
+        collections, drops, mint_histories,
         sea_orm_active_enums::{CreationStatus, DropType},
     },
     AppContext,
 };
-
 /// An NFT campaign that controls the minting rules for a collection, such as its start date and end date.
 #[derive(Clone, Debug)]
 pub struct Drop {
-    pub id: Uuid,
-    pub drop_type: DropType,
-    pub project_id: Uuid,
-    pub collection_id: Uuid,
-    pub creation_status: CreationStatus,
-    pub start_time: Option<DateTimeWithTimeZone>,
-    pub end_time: Option<DateTimeWithTimeZone>,
-    pub price: i64,
-    pub created_by: Uuid,
-    pub created_at: DateTimeWithTimeZone,
-    pub paused_at: Option<DateTimeWithTimeZone>,
-    pub shutdown_at: Option<DateTimeWithTimeZone>,
+    pub drop: drops::Model,
+    pub collection: collections::Model,
+}
+
+impl Drop {
+    #[must_use]
+    pub fn new(drop: drops::Model, collection: collections::Model) -> Self {
+        Self { drop, collection }
+    }
 }
 
 #[Object]
 impl Drop {
     /// The unique identifier for the drop.
     async fn id(&self) -> Uuid {
-        self.id
+        self.drop.id
     }
 
     // The type of the drop.
     async fn drop_type(&self) -> DropType {
-        self.drop_type
+        self.drop.drop_type
     }
 
     /// The identifier of the project to which the drop is associated.
     async fn project_id(&self) -> Uuid {
-        self.project_id
+        self.drop.project_id
     }
 
     /// The creation status of the drop.
     async fn creation_status(&self) -> CreationStatus {
-        self.creation_status
+        self.drop.creation_status
     }
 
     /// The date and time in UTC when the drop is eligible for minting. A value of `null` means the drop can be minted immediately.
     async fn start_time(&self) -> Option<DateTimeWithTimeZone> {
-        self.start_time
+        self.drop.start_time
     }
 
     /// The end date and time in UTC for the drop. A value of `null` means the drop does not end until it is fully minted.
     async fn end_time(&self) -> Option<DateTimeWithTimeZone> {
-        self.end_time
+        self.drop.end_time
     }
 
     /// The cost to mint the drop in US dollars. When purchasing with crypto the user will be charged at the current conversion rate for the blockchain's native coin at the time of minting.
     async fn price(&self) -> i64 {
-        self.price
+        self.drop.price
     }
 
     /// The user id of the person who created the drop.
     async fn created_by_id(&self) -> Uuid {
-        self.created_by
+        self.drop.created_by
     }
 
     /// The date and time in UTC when the drop was created.
     async fn created_at(&self) -> DateTimeWithTimeZone {
-        self.created_at
+        self.drop.created_at
     }
 
     // The paused_at field represents the date and time in UTC when the drop was paused.
     // If it is null, the drop is currently not paused.
     async fn paused_at(&self) -> Option<DateTimeWithTimeZone> {
-        self.paused_at
+        self.drop.paused_at
     }
 
     /// The shutdown_at field represents the date and time in UTC when the drop was shutdown
     /// If it is null, the drop is currently not shutdown
     async fn shutdown_at(&self) -> Option<DateTimeWithTimeZone> {
-        self.shutdown_at
+        self.drop.shutdown_at
     }
 
     /// The collection for which the drop is managing mints.
-    async fn collection(&self, ctx: &Context<'_>) -> Result<Option<Collection>> {
-        let AppContext {
-            collection_loader, ..
-        } = ctx.data::<AppContext>()?;
-
-        collection_loader.load_one(self.collection_id).await
+    async fn collection(&self) -> Result<Collection> {
+        Ok(self.collection.clone().into())
     }
 
     /// The current status of the drop.
-    async fn status(&self, ctx: &Context<'_>) -> Result<DropStatus> {
-        let AppContext {
-            collection_total_mints_loader,
-            collection_supply_loader,
-            ..
-        } = ctx.data::<AppContext>()?;
-
+    async fn status(&self) -> Result<DropStatus> {
         let now = Utc::now();
-        let scheduled = self.start_time.map(|start_time| now < start_time);
-        let expired = self.end_time.map(|end_time| now > end_time);
-        let paused_at = self.paused_at;
-        let shutdown_at = self.shutdown_at;
+        let scheduled = self.drop.start_time.map(|start_time| now < start_time);
+        let expired = self.drop.end_time.map(|end_time| now > end_time);
+        let paused_at = self.drop.paused_at;
+        let shutdown_at = self.drop.shutdown_at;
 
-        let total_mints = collection_total_mints_loader
-            .load_one(self.collection_id)
-            .await?
-            .ok_or(Error::new("Unable to find collection total mints"))?;
-        let supply = collection_supply_loader
-            .load_one(self.collection_id)
-            .await?
-            .ok_or(Error::new("Unable to find collection supply"))?;
-
-        let minted = supply.map(|supply| supply == total_mints && total_mints > 0);
+        let total_mints = self.collection.total_mints;
+        let minted = self
+            .collection
+            .supply
+            .map(|supply| supply == total_mints && total_mints > 0);
 
         match (
             scheduled,
@@ -127,7 +108,7 @@ impl Drop {
             minted,
             paused_at,
             shutdown_at,
-            self.creation_status,
+            self.drop.creation_status,
         ) {
             (_, _, _, Some(_), ..) => Ok(DropStatus::Paused),
             (_, _, _, _, Some(_), _) => Ok(DropStatus::Shutdown),
@@ -149,9 +130,7 @@ impl Drop {
             (_, _, Some(false), ..) | (_, _, None, _, _, CreationStatus::Created) => {
                 Ok(DropStatus::Minting)
             },
-            (_, _, _, _, _, CreationStatus::Queued) => {
-                Err(Error::new("Unable to calculate drop status"))
-            },
+            (_, _, _, _, _, CreationStatus::Queued) => Err(Error::new("Invalid Drop Status")),
         }
     }
 
@@ -161,7 +140,7 @@ impl Drop {
             ..
         } = ctx.data::<AppContext>()?;
 
-        queued_mints_loader.load_one(self.id).await
+        queued_mints_loader.load_one(self.drop.id).await
     }
 
     #[graphql(deprecation = "Use `mint_histories` under `Collection` Object instead.")]
@@ -172,42 +151,7 @@ impl Drop {
             ..
         } = ctx.data::<AppContext>()?;
 
-        drop_mint_history_loader.load_one(self.id).await
-    }
-}
-
-impl From<drops::Model> for Drop {
-    fn from(
-        drops::Model {
-            id,
-            drop_type,
-            project_id,
-            collection_id,
-            creation_status,
-            start_time,
-            end_time,
-            price,
-            created_by,
-            created_at,
-            paused_at,
-            shutdown_at,
-            ..
-        }: drops::Model,
-    ) -> Self {
-        Self {
-            id,
-            drop_type,
-            project_id,
-            collection_id,
-            creation_status,
-            start_time,
-            end_time,
-            price,
-            created_by,
-            created_at,
-            paused_at,
-            shutdown_at,
-        }
+        drop_mint_history_loader.load_one(self.drop.id).await
     }
 }
 

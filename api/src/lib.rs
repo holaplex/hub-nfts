@@ -25,11 +25,10 @@ use blockchains::{polygon::Polygon, solana::Solana};
 use dataloaders::{
     CollectionDropLoader, CollectionLoader, CollectionMintHistoriesLoader, CollectionMintLoader,
     CollectionMintMintHistoryLoader, CollectionMintTransfersLoader, CollectionMintsLoader,
-    CollectionMintsOwnerLoader, CollectionSupplyLoader, CollectionTotalMintsLoader, CreatorsLoader,
-    DropLoader, DropMintHistoryLoader, HoldersLoader, MetadataJsonAttributesLoader,
-    MetadataJsonLoader, MintCreatorsLoader, MinterMintHistoryLoader, ProjectCollectionLoader,
-    ProjectCollectionsLoader, ProjectDropsLoader, QueuedMintsLoader, SwitchCollectionHistoryLoader,
-    UpdateMintHistoryLoader,
+    CollectionMintsOwnerLoader, CreatorsLoader, DropLoader, DropMintHistoryLoader, HoldersLoader,
+    MetadataJsonAttributesLoader, MetadataJsonLoader, MintCreatorsLoader, MinterMintHistoryLoader,
+    ProjectCollectionLoader, ProjectCollectionsLoader, ProjectDropsLoader, QueuedMintsLoader,
+    SwitchCollectionHistoryLoader, UpdateMintHistoryLoader,
 };
 use db::Connection;
 use hub_core::{
@@ -47,7 +46,6 @@ use metrics::Metrics;
 use mutations::Mutation;
 use poem::{async_trait, FromRequest, Request, RequestBody};
 use queries::Query;
-use redis::Client as Redis;
 
 #[allow(clippy::pedantic)]
 pub mod proto {
@@ -241,7 +239,6 @@ pub struct AppState {
     pub polygon: Polygon,
     pub asset_proxy: AssetProxy,
     pub metadata_json_upload_job_queue: JobQueue,
-    pub redis: Redis,
 }
 
 impl AppState {
@@ -256,7 +253,6 @@ impl AppState {
         polygon: Polygon,
         asset_proxy: AssetProxy,
         metadata_json_upload_job_queue: JobQueue,
-        redis: Redis,
     ) -> Self {
         Self {
             schema,
@@ -267,7 +263,6 @@ impl AppState {
             polygon,
             asset_proxy,
             metadata_json_upload_job_queue,
-            redis,
         }
     }
 }
@@ -277,7 +272,6 @@ pub struct AppContext {
     user_id: UserID,
     organization_id: OrganizationId,
     balance: Balance,
-    redis: Redis,
     project_drops_loader: DataLoader<ProjectDropsLoader>,
     project_collections_loader: DataLoader<ProjectCollectionsLoader>,
     project_collection_loader: DataLoader<ProjectCollectionLoader>,
@@ -300,8 +294,6 @@ pub struct AppContext {
     collection_mint_transfers_loader: DataLoader<CollectionMintTransfersLoader>,
     switch_collection_history_loader: DataLoader<SwitchCollectionHistoryLoader>,
     queued_mints_loader: DataLoader<QueuedMintsLoader>,
-    collection_total_mints_loader: DataLoader<CollectionTotalMintsLoader>,
-    collection_supply_loader: DataLoader<CollectionSupplyLoader>,
 }
 
 impl AppContext {
@@ -309,7 +301,6 @@ impl AppContext {
     #[allow(clippy::similar_names)]
     pub fn new(
         db: Connection,
-        redis: Redis,
         user_id: UserID,
         organization_id: OrganizationId,
         balance: Balance,
@@ -355,21 +346,12 @@ impl AppContext {
         let switch_collection_history_loader =
             DataLoader::new(SwitchCollectionHistoryLoader::new(db.clone()), tokio::spawn);
         let queued_mints_loader = DataLoader::new(QueuedMintsLoader::new(db.clone()), tokio::spawn);
-        let collection_total_mints_loader = DataLoader::new(
-            CollectionTotalMintsLoader::new(db.clone(), redis.clone()),
-            tokio::spawn,
-        );
-        let collection_supply_loader = DataLoader::new(
-            CollectionSupplyLoader::new(db.clone(), redis.clone()),
-            tokio::spawn,
-        );
 
         Self {
             db,
             user_id,
             organization_id,
             balance,
-            redis,
             project_drops_loader,
             project_collections_loader,
             project_collection_loader,
@@ -392,8 +374,6 @@ impl AppContext {
             collection_mint_transfers_loader,
             switch_collection_history_loader,
             queued_mints_loader,
-            collection_total_mints_loader,
-            collection_supply_loader,
         }
     }
 }
