@@ -1,4 +1,4 @@
-use async_graphql::{Context, Object, Result};
+use async_graphql::{Context, Error, Object, Result};
 use sea_orm::entity::prelude::*;
 
 use super::{metadata_json::MetadataJson, CollectionMint, Drop, Holder};
@@ -21,16 +21,12 @@ pub struct Collection {
     pub id: Uuid,
     /// The blockchain of the collection.
     pub blockchain: Blockchain,
-    /// The total supply of the collection. Setting to `null` implies unlimited minting.
-    pub supply: Option<i64>,
     /// The creation status of the collection. When the collection is in a `CREATED` status you can mint NFTs from the collection.
     pub creation_status: CreationStatus,
     /// The blockchain address of the collection used to view it in blockchain explorers.
     /// On Solana this is the mint address.
     /// On EVM chains it is the concatenation of the contract address and the token id `{contractAddress}:{tokenId}`.
     pub address: Option<String>,
-    /// The current number of NFTs minted from the collection.
-    pub total_mints: i64,
     /// The transaction signature of the collection.
     pub signature: Option<String>,
     /// The royalties assigned to mints belonging to the collection expressed in basis points.
@@ -57,8 +53,18 @@ impl Collection {
         self.blockchain
     }
     /// The total supply of the collection. Setting to `null` implies unlimited minting.
-    async fn supply(&self) -> Option<i64> {
-        self.supply
+    async fn supply(&self, ctx: &Context<'_>) -> Result<Option<i64>> {
+        let AppContext {
+            collection_supply_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        let supply = collection_supply_loader
+            .load_one(self.id)
+            .await?
+            .ok_or(Error::new("Unable to find collection supply"))?;
+
+        Ok(supply)
     }
 
     /// The creation status of the collection. When the collection is in a `CREATED` status you can mint NFTs from the collection.
@@ -89,11 +95,6 @@ impl Collection {
     /// On EVM chains it is the concatenation of the contract address and the token id `{contractAddress}:{tokenId}`.
     async fn address(&self) -> Option<String> {
         self.address.clone()
-    }
-
-    /// The current number of NFTs minted from the collection.
-    async fn total_mints(&self) -> i64 {
-        self.total_mints
     }
 
     /// The transaction signature of the collection.
@@ -176,6 +177,21 @@ impl Collection {
 
         collection_drop_loader.load_one(self.id).await
     }
+
+    /// The current number of NFTs minted from the collection.
+    async fn total_mints(&self, ctx: &Context<'_>) -> Result<i64> {
+        let AppContext {
+            collection_total_mints_loader,
+            ..
+        } = ctx.data::<AppContext>()?;
+
+        let total_mints = collection_total_mints_loader
+            .load_one(self.id)
+            .await?
+            .ok_or(Error::new("Unable to find collection total mints"))?;
+
+        Ok(total_mints)
+    }
 }
 
 impl From<Model> for Collection {
@@ -183,9 +199,7 @@ impl From<Model> for Collection {
         Model {
             id,
             blockchain,
-            supply,
             creation_status,
-            total_mints,
             signature,
             seller_fee_basis_points,
             address,
@@ -193,15 +207,14 @@ impl From<Model> for Collection {
             credits_deduction_id,
             created_at,
             created_by,
+            ..
         }: Model,
     ) -> Self {
         Self {
             id,
             blockchain,
-            supply,
             creation_status,
             address,
-            total_mints,
             signature,
             seller_fee_basis_points,
             project_id,

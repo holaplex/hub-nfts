@@ -2,9 +2,17 @@ use std::collections::HashMap;
 
 use async_graphql::{dataloader::Loader as DataLoader, FieldError, Result};
 use poem::async_trait;
-use sea_orm::prelude::*;
+use redis::{AsyncCommands, Client as Redis};
+use sea_orm::{prelude::*, FromQueryResult, QueryFilter, QuerySelect};
 
-use crate::{db::Connection, entities::collections, objects::Collection};
+use crate::{
+    db::Connection,
+    entities::{
+        collection_mints, collections, drops,
+        sea_orm_active_enums::{CreationStatus, DropType},
+    },
+    objects::Collection,
+};
 
 #[derive(Debug, Clone)]
 pub struct Loader {
@@ -33,5 +41,185 @@ impl DataLoader<Uuid> for Loader {
             .into_iter()
             .map(|collection| Ok((collection.id, collection.into())))
             .collect()
+    }
+}
+
+#[derive(FromQueryResult)]
+struct CollectionTotalMintsCount {
+    id: Uuid,
+    count: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct TotalMintsLoader {
+    pub db: Connection,
+    pub redis: Redis,
+}
+
+impl TotalMintsLoader {
+    #[must_use]
+    pub fn new(db: Connection, redis: Redis) -> Self {
+        Self { db, redis }
+    }
+}
+
+#[async_trait]
+impl DataLoader<Uuid> for TotalMintsLoader {
+    type Error = FieldError;
+    type Value = i64;
+
+    async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
+        let mut results: HashMap<Uuid, Self::Value> = HashMap::new();
+        let mut missing_keys: Vec<Uuid> = Vec::new();
+
+        let mut redis_connection = self.redis.get_async_connection().await?;
+
+        for key in keys {
+            let redis_key = format!("collection:{key}:total_mints");
+            match redis_connection.get::<_, i64>(&redis_key).await {
+                Ok(value) => {
+                    results.insert(*key, value);
+                },
+                Err(_) => {
+                    missing_keys.push(*key);
+                },
+            }
+        }
+
+        if missing_keys.is_empty() {
+            return Ok(results);
+        }
+
+        let conn = self.db.get();
+        let count_results = collection_mints::Entity::find()
+            .select_only()
+            .column_as(collection_mints::Column::Id.count(), "count")
+            .column_as(collection_mints::Column::CollectionId, "id")
+            .filter(
+                collection_mints::Column::CollectionId
+                    .is_in(missing_keys.iter().map(ToOwned::to_owned))
+                    .and(collection_mints::Column::CreationStatus.ne(CreationStatus::Queued)),
+            )
+            .group_by(collection_mints::Column::CollectionId)
+            .into_model::<CollectionTotalMintsCount>()
+            .all(conn)
+            .await?;
+
+        for count_result in count_results {
+            let redis_key = format!("collection:{}:total_mints", count_result.id);
+
+            let count = redis_connection
+                .set::<_, i64, i64>(&redis_key, count_result.count)
+                .await?;
+
+            results.insert(count_result.id, count);
+        }
+
+        Ok(results)
+    }
+}
+
+#[derive(FromQueryResult)]
+struct CollectionSupplyCount {
+    id: Uuid,
+    count: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SupplyLoader {
+    pub db: Connection,
+    pub redis: Redis,
+}
+
+impl SupplyLoader {
+    #[must_use]
+    pub fn new(db: Connection, redis: Redis) -> Self {
+        Self { db, redis }
+    }
+}
+
+#[async_trait]
+impl DataLoader<Uuid> for SupplyLoader {
+    type Error = FieldError;
+    type Value = Option<i64>;
+
+    async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
+        let mut results: HashMap<Uuid, Self::Value> = HashMap::new();
+        let mut missing_keys: Vec<Uuid> = Vec::new();
+
+        let mut redis_connection = self.redis.get_async_connection().await?;
+
+        for key in keys {
+            let redis_key = format!("collection:{key}:supply");
+            match redis_connection.get::<_, Option<i64>>(&redis_key).await {
+                Ok(value) => {
+                    results.insert(*key, value);
+                },
+                Err(_) => {
+                    missing_keys.push(*key);
+                },
+            }
+        }
+
+        if missing_keys.is_empty() {
+            return Ok(results);
+        }
+
+        let conn = self.db.get();
+        let mut computed_supplies: Vec<Uuid> = Vec::new();
+
+        let collection_with_drops = collections::Entity::find()
+            .filter(collections::Column::Id.is_in(missing_keys.iter().map(ToOwned::to_owned)))
+            .inner_join(drops::Entity)
+            .select_also(drops::Entity)
+            .all(conn)
+            .await?;
+
+        for (collection, drop) in collection_with_drops {
+            if let Some(drop) = drop {
+                if drop.drop_type == DropType::Open {
+                    computed_supplies.push(collection.id);
+                    continue;
+                }
+                continue;
+            }
+
+            let redis_key = format!("collection:{}:supply", collection.id);
+
+            let supply = redis_connection
+                .set::<_, Option<i64>, Option<i64>>(&redis_key, collection.supply)
+                .await?;
+
+            results.insert(collection.id, supply);
+        }
+
+        let count_results = collection_mints::Entity::find()
+            .select_only()
+            .column_as(collection_mints::Column::Id.count(), "count")
+            .column_as(collection_mints::Column::CollectionId, "id")
+            .filter(
+                collection_mints::Column::CollectionId
+                    .is_in(computed_supplies.iter().map(ToOwned::to_owned)),
+            )
+            .group_by(collection_mints::Column::CollectionId)
+            .into_model::<CollectionSupplyCount>()
+            .all(conn)
+            .await?
+            .into_iter()
+            .map(|result| (result.id, result.count))
+            .collect::<HashMap<_, _>>();
+
+        for key in computed_supplies {
+            let count = count_results.get(&key).copied().unwrap_or_default();
+            let redis_key = format!("collection:{key}:supply");
+
+            let count = redis_connection
+                .set::<_, Option<i64>, Option<i64>>(&redis_key, Some(count))
+                .await?;
+
+            results.insert(key, count);
+        }
+
+        Ok(results)
     }
 }
