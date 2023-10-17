@@ -1333,13 +1333,25 @@ impl Mutation {
             .await?
             .ok_or(Error::new("drop not found"))?;
 
-        let mints = CollectionMints::find()
+        let result = CollectionMints::find()
+            .select_also(metadata_jsons::Entity)
+            .join(
+                JoinType::InnerJoin,
+                metadata_jsons::Entity::belongs_to(CollectionMints)
+                    .from(metadata_jsons::Column::Id)
+                    .to(collection_mints::Column::Id)
+                    .into(),
+            )
             .filter(collection_mints::Column::CollectionId.eq(drop.collection_id))
             .filter(collection_mints::Column::CreationStatus.eq(CreationStatus::Queued))
             .order_by(SimpleExpr::FunctionCall(Func::random()), Order::Asc)
             .limit(Some(batch_size.try_into()?))
             .all(conn)
             .await?;
+
+        let (mints, _): (Vec<_>, Vec<_>) = result.iter().cloned().unzip();
+
+        let creators = mints.load_many(mint_creators::Entity, conn).await?;
 
         if mints.len() != batch_size {
             return Err(Error::new("Not enough mints found for the drop"));
@@ -1373,19 +1385,15 @@ impl Mutation {
 
         let mut transactions = Vec::new();
 
-        for (mint, recipient) in mints.clone().into_iter().zip(input.recipients.into_iter()) {
-            let metadata_json = metadata_jsons::Entity::find_by_id(mint.id)
-                .one(conn)
-                .await?
-                .ok_or(Error::new("metadata json not found"))?;
-
+        for (((mint, metadata_json), creators), recipient) in result
+            .into_iter()
+            .zip(creators.into_iter())
+            .zip(input.recipients.into_iter())
+        {
+            let metadata_json = metadata_json.ok_or(Error::new("No metadata json found"))?;
             let metadata_uri = metadata_json
                 .uri
                 .ok_or(Error::new("No metadata json uri found"))?;
-
-            let creators = mint_creators::Entity::find_by_collection_mint_id(mint.id)
-                .all(conn)
-                .await?;
 
             let TransactionId(deduction_id) = credits
                 .submit_pending_deduction(
@@ -1398,10 +1406,6 @@ impl Mutation {
                 .await?;
 
             let tx = conn.begin().await?;
-
-            let mut collection_am = collections::ActiveModel::from(collection.clone());
-            collection_am.total_mints = Set(collection.total_mints.add(1));
-            collection_am.update(&tx).await?;
 
             let mut mint_am: collection_mints::ActiveModel = mint.into();
 
