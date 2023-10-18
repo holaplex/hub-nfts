@@ -215,11 +215,11 @@ impl DataLoader<Uuid> for SupplyLoader {
             .collect::<HashMap<_, _>>();
 
         for key in computed_supplies {
-            let count = count_results.get(&key).copied().unwrap_or_default();
+            let count = count_results.get(&key).copied();
             let redis_key = format!("collection:{key}:supply");
 
-            let count = redis_connection
-                .set::<_, Option<i64>, Option<i64>>(&redis_key, Some(count))
+            redis_connection
+                .set::<_, Option<i64>, Option<i64>>(&redis_key, count)
                 .await?;
 
             results.insert(key, count);
