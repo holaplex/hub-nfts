@@ -14,14 +14,17 @@ mod project_collections;
 mod switch_collection_histories;
 mod update_histories;
 
-pub use collection::Loader as CollectionLoader;
+pub use collection::{
+    Loader as CollectionLoader, SupplyLoader as CollectionSupplyLoader,
+    TotalMintsLoader as CollectionTotalMintsLoader,
+};
 pub use collection_drop::Loader as CollectionDropLoader;
 pub use collection_mints::{
     CollectionMintLoader, Loader as CollectionMintsLoader,
     OwnerLoader as CollectionMintsOwnerLoader, QueuedMintsLoader,
 };
 pub use creators::Loader as CreatorsLoader;
-pub use drop::Loader as DropLoader;
+pub use drop::DropLoader;
 pub use drops::ProjectLoader as ProjectDropsLoader;
 pub use holders::Loader as HoldersLoader;
 pub use metadata_json::{
