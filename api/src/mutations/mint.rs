@@ -1350,9 +1350,9 @@ impl Mutation {
             .select_also(metadata_jsons::Entity)
             .join(
                 JoinType::InnerJoin,
-                metadata_jsons::Entity::belongs_to(CollectionMints)
-                    .from(metadata_jsons::Column::Id)
-                    .to(collection_mints::Column::Id)
+                collection_mints::Entity::belongs_to(metadata_jsons::Entity)
+                    .from(collection_mints::Column::Id)
+                    .to(metadata_jsons::Column::Id)
                     .into(),
             )
             .filter(collection_mints::Column::CollectionId.eq(drop.collection_id))
