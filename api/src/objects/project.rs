@@ -32,7 +32,7 @@ impl Project {
         let drop = drop_loader.load_one(id).await?;
 
         if let Some(drop) = drop {
-            if drop.drop.project_id == self.id {
+            if drop.project_id == self.id {
                 return Ok(Some(drop));
             }
 
