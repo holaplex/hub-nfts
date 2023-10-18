@@ -1173,12 +1173,7 @@ impl Mutation {
             .await?
             .ok_or(Error::new("drop not found"))?;
 
-        let (mint, collection) = CollectionMints::find()
-            .join(
-                JoinType::InnerJoin,
-                collection_mints::Relation::Collections.def(),
-            )
-            .select_also(collections::Entity)
+        let mint = CollectionMints::find()
             .filter(collection_mints::Column::CollectionId.eq(drop.collection_id))
             .filter(collection_mints::Column::CreationStatus.eq(CreationStatus::Queued))
             .order_by(SimpleExpr::FunctionCall(Func::random()), Order::Asc)
@@ -1186,7 +1181,10 @@ impl Mutation {
             .await?
             .ok_or(Error::new("No Queued mint found for the drop"))?;
 
-        let collection = collection.ok_or(Error::new("collection not found"))?;
+        let collection = collections::Entity::find_by_id(drop.collection_id)
+            .one(conn)
+            .await?
+            .ok_or(Error::new("collection not found"))?;
 
         let project_id = collection.project_id;
         let blockchain = collection.blockchain;

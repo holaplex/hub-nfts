@@ -60,6 +60,7 @@ mod m20230911_144938_make_compressed_column_optional;
 mod m20230914_154759_add_job_trackings_table;
 mod m20230915_111128_create_mints_creation_status_idx;
 mod m20230922_150621_nullable_metadata_jsons_identifier_and_uri;
+mod m20231011_202917_create_queued_mints_idx;
 
 pub struct Migrator;
 
@@ -127,6 +128,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20230915_111128_create_mints_creation_status_idx::Migration),
             Box::new(m20230914_154759_add_job_trackings_table::Migration),
             Box::new(m20230922_150621_nullable_metadata_jsons_identifier_and_uri::Migration),
+            Box::new(m20231011_202917_create_queued_mints_idx::Migration),
         ]
     }
 }
