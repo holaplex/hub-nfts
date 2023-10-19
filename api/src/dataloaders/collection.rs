@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use async_graphql::{dataloader::Loader as DataLoader, FieldError, Result};
+use hub_core::tracing::info;
 use poem::async_trait;
 use redis::{AsyncCommands, Client as Redis};
 use sea_orm::{prelude::*, FromQueryResult, QueryFilter, QuerySelect};
@@ -157,20 +158,24 @@ impl DataLoader<Uuid> for SupplyLoader {
             let redis_key = format!("collection:{key}:supply");
             match redis_connection.get::<_, Option<i64>>(&redis_key).await {
                 Ok(value) => {
+                    info!("Got value from Redis for key: {}", key);
                     results.insert(*key, value);
                 },
                 Err(_) => {
+                    info!("Failed to get value from Redis for key: {}", key);
                     missing_keys.push(*key);
                 },
             }
         }
 
         if missing_keys.is_empty() {
+            info!("No missing keys, returning results");
             return Ok(results);
         }
 
         let conn = self.db.get();
         let mut computed_supplies: Vec<Uuid> = Vec::new();
+        info!("Missing keys: {:?}", missing_keys);
 
         let collection_with_drops = collections::Entity::find()
             .filter(collections::Column::Id.is_in(missing_keys.iter().map(ToOwned::to_owned)))
@@ -178,19 +183,26 @@ impl DataLoader<Uuid> for SupplyLoader {
             .select_also(drops::Entity)
             .all(conn)
             .await?;
+        info!("Collection with drops: {:?}", collection_with_drops);
 
         for (collection, drop) in collection_with_drops {
             if let Some(drop) = drop {
                 if drop.drop_type == DropType::Open {
+                    info!("Open drop for collection: {}", collection.id);
                     computed_supplies.push(collection.id);
                     continue;
                 }
                 let redis_key = format!("collection:{}:supply", collection.id);
 
                 redis_connection.set(&redis_key, collection.supply).await?;
+                info!(
+                    "supply: {} for collection {}",
+                    collection.supply, collection.id
+                );
 
                 results.insert(collection.id, collection.supply);
             } else {
+                info!("No drop for collection: {}", collection.id);
                 computed_supplies.push(collection.id);
             }
         }
@@ -216,6 +228,10 @@ impl DataLoader<Uuid> for SupplyLoader {
             let redis_key = format!("collection:{key}:supply");
 
             redis_connection.set(&redis_key, count).await?;
+            info!(
+                "Set Redis key for computed supply: {} count: {}",
+                key, count
+            );
 
             results.insert(key, count);
         }
