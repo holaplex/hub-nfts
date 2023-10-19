@@ -190,17 +190,17 @@ impl DataLoader<Uuid> for SupplyLoader {
                 if drop.drop_type == DropType::Open {
                     info!("Open drop for collection: {}", collection.id);
                     computed_supplies.push(collection.id);
-                    continue;
+                } else {
+                    let redis_key = format!("collection:{}:supply", collection.id);
+
+                    redis_connection.set(&redis_key, collection.supply).await?;
+                    info!(
+                        "supply: {:?} for collection {}",
+                        collection.supply, collection.id
+                    );
+
+                    results.insert(collection.id, collection.supply);
                 }
-                let redis_key = format!("collection:{}:supply", collection.id);
-
-                redis_connection.set(&redis_key, collection.supply).await?;
-                info!(
-                    "supply: {} for collection {}",
-                    collection.supply, collection.id
-                );
-
-                results.insert(collection.id, collection.supply);
             } else {
                 info!("No drop for collection: {}", collection.id);
                 computed_supplies.push(collection.id);
@@ -229,7 +229,7 @@ impl DataLoader<Uuid> for SupplyLoader {
 
             redis_connection.set(&redis_key, count).await?;
             info!(
-                "Set Redis key for computed supply: {} count: {}",
+                "Set Redis key for computed supply: {} count: {:?}",
                 key, count
             );
 
