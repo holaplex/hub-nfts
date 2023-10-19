@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use async_graphql::{dataloader::Loader as DataLoader, FieldError, Result};
-use hub_core::tracing::info;
 use poem::async_trait;
 use redis::{AsyncCommands, Client as Redis};
 use sea_orm::{prelude::*, FromQueryResult, QueryFilter, QuerySelect};
@@ -77,13 +76,9 @@ impl DataLoader<Uuid> for TotalMintsLoader {
 
         for key in keys {
             let redis_key = format!("collection:{key}:total_mints");
-            info!("total mints loader - get: redis_key: {}", redis_key);
+
             match redis_connection.get::<_, i64>(&redis_key).await {
                 Ok(value) => {
-                    info!(
-                        "total mints loader - get: redis_key: {} value: {:?}",
-                        redis_key, value
-                    );
                     results.insert(*key, value);
                 },
                 Err(_) => {
@@ -119,14 +114,7 @@ impl DataLoader<Uuid> for TotalMintsLoader {
             let count = count_results.get(&key).copied().unwrap_or_default();
             let redis_key = format!("collection:{key}:total_mints");
 
-            info!(
-                "total mints loader - insert: redis_key: {} count: {:?}",
-                redis_key, count
-            );
-
-            redis_connection
-                .set::<_, i64, Option<i64>>(&redis_key, count)
-                .await?;
+            redis_connection.set(&redis_key, count).await?;
 
             results.insert(key, count);
         }
@@ -167,13 +155,8 @@ impl DataLoader<Uuid> for SupplyLoader {
 
         for key in keys {
             let redis_key = format!("collection:{key}:supply");
-            info!("supply loader - get: redis_key: {}", redis_key);
             match redis_connection.get::<_, Option<i64>>(&redis_key).await {
                 Ok(value) => {
-                    info!(
-                        "supply loader - get: redis_key: {} value: {:?}",
-                        redis_key, value
-                    );
                     results.insert(*key, value);
                 },
                 Err(_) => {
@@ -202,16 +185,14 @@ impl DataLoader<Uuid> for SupplyLoader {
                     computed_supplies.push(collection.id);
                     continue;
                 }
-                continue;
+                let redis_key = format!("collection:{}:supply", collection.id);
+
+                redis_connection.set(&redis_key, collection.supply).await?;
+
+                results.insert(collection.id, collection.supply);
+            } else {
+                computed_supplies.push(collection.id);
             }
-
-            let redis_key = format!("collection:{}:supply", collection.id);
-
-            let supply = redis_connection
-                .set::<_, Option<i64>, Option<i64>>(&redis_key, collection.supply)
-                .await?;
-
-            results.insert(collection.id, supply);
         }
 
         let count_results = collection_mints::Entity::find()
@@ -233,14 +214,8 @@ impl DataLoader<Uuid> for SupplyLoader {
         for key in computed_supplies {
             let count = count_results.get(&key).copied();
             let redis_key = format!("collection:{key}:supply");
-            info!(
-                "supply loader - insert: redis_key: {} count: {:?}",
-                redis_key, count
-            );
 
-            redis_connection
-                .set::<_, Option<i64>, Option<i64>>(&redis_key, count)
-                .await?;
+            redis_connection.set(&redis_key, count).await?;
 
             results.insert(key, count);
         }
