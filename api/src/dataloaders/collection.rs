@@ -76,6 +76,7 @@ impl DataLoader<Uuid> for TotalMintsLoader {
 
         for key in keys {
             let redis_key = format!("collection:{key}:total_mints");
+
             match redis_connection.get::<_, i64>(&redis_key).await {
                 Ok(value) => {
                     results.insert(*key, value);
@@ -113,9 +114,7 @@ impl DataLoader<Uuid> for TotalMintsLoader {
             let count = count_results.get(&key).copied().unwrap_or_default();
             let redis_key = format!("collection:{key}:total_mints");
 
-            redis_connection
-                .set::<_, i64, Option<i64>>(&redis_key, count)
-                .await?;
+            redis_connection.set(&redis_key, count).await?;
 
             results.insert(key, count);
         }
@@ -151,27 +150,23 @@ impl DataLoader<Uuid> for SupplyLoader {
     async fn load(&self, keys: &[Uuid]) -> Result<HashMap<Uuid, Self::Value>, Self::Error> {
         let mut results: HashMap<Uuid, Self::Value> = HashMap::new();
         let mut missing_keys: Vec<Uuid> = Vec::new();
+        let mut compute_keys: Vec<Uuid> = Vec::new();
 
         let mut redis_connection = self.redis.get_async_connection().await?;
+        let conn = self.db.get();
 
         for key in keys {
             let redis_key = format!("collection:{key}:supply");
-            match redis_connection.get::<_, Option<i64>>(&redis_key).await {
+
+            match redis_connection.get::<_, i64>(&redis_key).await {
                 Ok(value) => {
-                    results.insert(*key, value);
+                    results.insert(*key, Some(value));
                 },
                 Err(_) => {
                     missing_keys.push(*key);
                 },
             }
         }
-
-        if missing_keys.is_empty() {
-            return Ok(results);
-        }
-
-        let conn = self.db.get();
-        let mut computed_supplies: Vec<Uuid> = Vec::new();
 
         let collection_with_drops = collections::Entity::find()
             .filter(collections::Column::Id.is_in(missing_keys.iter().map(ToOwned::to_owned)))
@@ -181,21 +176,18 @@ impl DataLoader<Uuid> for SupplyLoader {
             .await?;
 
         for (collection, drop) in collection_with_drops {
-            if let Some(drop) = drop {
-                if drop.drop_type == DropType::Open {
-                    computed_supplies.push(collection.id);
-                    continue;
-                }
-                continue;
+            match drop {
+                Some(drop) if drop.drop_type == DropType::Edition => {
+                    results.insert(collection.id, collection.supply);
+                },
+                Some(_) | None => {
+                    compute_keys.push(collection.id);
+                },
             }
+        }
 
-            let redis_key = format!("collection:{}:supply", collection.id);
-
-            let supply = redis_connection
-                .set::<_, Option<i64>, Option<i64>>(&redis_key, collection.supply)
-                .await?;
-
-            results.insert(collection.id, supply);
+        if compute_keys.is_empty() {
+            return Ok(results);
         }
 
         let count_results = collection_mints::Entity::find()
@@ -204,7 +196,7 @@ impl DataLoader<Uuid> for SupplyLoader {
             .column_as(collection_mints::Column::CollectionId, "id")
             .filter(
                 collection_mints::Column::CollectionId
-                    .is_in(computed_supplies.iter().map(ToOwned::to_owned)),
+                    .is_in(compute_keys.iter().map(ToOwned::to_owned)),
             )
             .group_by(collection_mints::Column::CollectionId)
             .into_model::<CollectionSupplyCount>()
@@ -214,15 +206,13 @@ impl DataLoader<Uuid> for SupplyLoader {
             .map(|result| (result.id, result.count))
             .collect::<HashMap<_, _>>();
 
-        for key in computed_supplies {
-            let count = count_results.get(&key).copied();
+        for key in compute_keys {
+            let count = count_results.get(&key).copied().unwrap_or_default();
             let redis_key = format!("collection:{key}:supply");
 
-            redis_connection
-                .set::<_, Option<i64>, Option<i64>>(&redis_key, count)
-                .await?;
+            redis_connection.set(&redis_key, count).await?;
 
-            results.insert(key, count);
+            results.insert(key, Some(count));
         }
 
         Ok(results)
