@@ -1,11 +1,9 @@
-use hub_core::{
-    thiserror, tokio,
-    tracing::{error, info},
-};
+use hub_core::{thiserror, tokio, tracing::error};
 use sea_orm::{error::DbErr, ActiveModelTrait};
 use serde::{Deserialize, Serialize};
 
 use super::{
+    job::Job,
     job_queue::{JobQueue, JobQueueError},
     tasks::BackgroundTask,
 };
@@ -68,6 +66,8 @@ where
             tokio::spawn({
                 let db_pool = db_pool.clone();
                 let context = context.clone();
+                let job_queue = job_queue.clone();
+
                 async move {
                     let db_conn = db_pool.get();
                     let db_pool_process = db_pool.clone();
@@ -100,14 +100,20 @@ where
                                 if let Err(e) = job_tracking_am.update(db_conn).await {
                                     error!("Error updating job tracking: {}", e);
                                 }
-                                info!("Successfully processed job {}", job.id);
                             },
                             Err(e) => {
                                 let job_tracking_am =
                                     job_trackings::Entity::update_status(model, "failed");
                                 if let Err(e) = job_tracking_am.update(db_conn).await {
-                                    error!("Error updating job tracking: {}", e);
+                                    error!("Error updating job tracking after failure: {}", e);
                                 }
+
+                                let requeue_result = job_queue.enqueue(job.task).await;
+
+                                if let Err(e) = requeue_result {
+                                    error!("Error requeueing job {}: {}", job.id, e);
+                                }
+
                                 error!("Error processing job {}: {}", job.id, e);
                             },
                         }
@@ -117,5 +123,64 @@ where
                 }
             });
         }
+    }
+
+    /// This method is responsible for retrying failed jobs.
+    /// It fetches all failed jobs of a specific type from the database,
+    /// deserializes their payloads, and attempts to process them again.
+    /// If the job is processed successfully, its status is updated to "completed".
+    /// If the job fails again, an error is logged and the job is skipped.
+    /// The method returns an empty result if it finishes without panicking.
+    ///
+    /// # Args
+    ///
+    /// * `&self` - A reference to the Worker instance.
+    ///
+    /// # Results
+    ///
+    /// * `Result<(), WorkerError>` - An empty result indicating successful execution.
+    /// # Errors
+    /// `Err(WorkerError)`
+    pub async fn retry(&self) -> Result<(), WorkerError> {
+        let db_pool = self.db_pool.clone();
+        let conn = db_pool.get();
+
+        let failed_jobs = job_trackings::Entity::filter_failed_for_job_type(T::NAME.to_string())
+            .all(conn)
+            .await?;
+
+        for failed_job in failed_jobs {
+            let task_payload_result: Result<T, _> =
+                serde_json::from_value(failed_job.clone().payload);
+
+            match task_payload_result {
+                Ok(task_payload) => {
+                    let job = Job::new(failed_job.id, task_payload);
+
+                    let task_results = job
+                        .task
+                        .process(db_pool.clone(), self.context.clone())
+                        .await;
+
+                    if let Err(e) = task_results {
+                        error!("Error retrying job: {}", e);
+                        continue;
+                    }
+
+                    let job_tracking_am =
+                        job_trackings::Entity::update_status(failed_job, "completed");
+
+                    if let Err(e) = job_tracking_am.update(conn).await {
+                        error!("Error updating job tracking: {}", e);
+                    }
+                },
+                Err(e) => {
+                    error!("Error deserializing job: {}", e);
+                    continue;
+                },
+            }
+        }
+
+        Ok(())
     }
 }
