@@ -666,8 +666,15 @@ impl Context {
 
 #[async_trait::async_trait]
 impl BackgroundTask<Context> for MetadataJsonUploadTask {
+    const QUEUE: &'static str = "job_queue";
+    const NAME: &'static str = "MetadataJsonUploadTask";
+
     fn name(&self) -> &'static str {
-        "MetadataJsonUploadTask"
+        Self::NAME
+    }
+
+    fn queue(&self) -> &'static str {
+        Self::QUEUE
     }
 
     fn payload(&self) -> Result<Value> {

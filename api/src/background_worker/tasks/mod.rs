@@ -36,6 +36,12 @@ pub enum BackgroundTaskError {
 
 #[async_trait::async_trait]
 pub trait BackgroundTask<C: Clone + Send + Sync>: Send + Sync + std::fmt::Debug {
+    /// The name of the task
+    const NAME: &'static str;
+
+    /// The queue of the task
+    const QUEUE: &'static str;
+
     /// Process the task
     /// # Arguments
     /// * `self` - The task
@@ -55,6 +61,7 @@ pub trait BackgroundTask<C: Clone + Send + Sync>: Send + Sync + std::fmt::Debug 
     /// * `anyhow::Error` - Unable to serialize the payload
     fn payload(&self) -> Result<Json>;
     fn name(&self) -> &'static str;
+    fn queue(&self) -> &'static str;
 }
 
 pub use metadata_json_upload_task::{

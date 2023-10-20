@@ -1,5 +1,5 @@
 use hub_core::chrono;
-use sea_orm::{entity::prelude::*, Set};
+use sea_orm::{entity::prelude::*, QueryOrder, Set};
 use serde_json::Value as Json;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
@@ -48,5 +48,15 @@ impl Entity {
         active_model.updated_at = Set(now);
 
         active_model
+    }
+
+    pub fn filter_failed_for_job_type(job_type: String) -> Select<Self> {
+        Self::find()
+            .filter(
+                Column::Status
+                    .eq("failed")
+                    .and(Column::JobType.eq(job_type)),
+            )
+            .order_by_asc(Column::CreatedAt)
     }
 }

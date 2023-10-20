@@ -120,6 +120,14 @@ pub struct Args {
 
     #[arg(long, env)]
     pub redis_url: String,
+
+    #[command(subcommand)]
+    pub command: Option<Subcommand>,
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum Subcommand {
+    RetryJobs,
 }
 
 #[derive(Debug, Clone, Copy)]
