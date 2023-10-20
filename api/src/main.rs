@@ -15,7 +15,7 @@ use holaplex_hub_nfts::{
     metrics::Metrics,
     proto, Actions, AppState, Args, Services, Subcommand,
 };
-use hub_core::{clap, prelude::*, tokio, tracing::info};
+use hub_core::{prelude::*, tokio};
 use poem::{get, listener::TcpListener, middleware::AddData, post, EndpointExt, Route, Server};
 use redis::Client as RedisClient;
 
@@ -35,7 +35,7 @@ pub fn main() {
 
         match command {
             None => serve(common, port, db, hub_uploads, redis_url),
-            Some(Subcommand::RetryJobs) => retry_jobs(common),
+            Some(Subcommand::RetryJobs) => retry_jobs(common, redis_url, db, hub_uploads),
         }
     });
 }
@@ -76,24 +76,12 @@ fn serve(
         let metadata_json_upload_task_context =
             MetadataJsonUploadContext::new(hub_uploads, solana.clone(), polygon.clone());
 
-        let job_queue = JobQueue::new(redis_client, connection.clone());
+        let job_queue = JobQueue::new(redis_client.clone(), connection.clone());
         let worker = Worker::<MetadataJsonUploadContext, MetadataJsonUploadTask>::new(
             job_queue.clone(),
             connection.clone(),
             metadata_json_upload_task_context,
         );
-
-        let matches = clap::Command::new("hub-nfts")
-            .subcommand(clap::command!("jobs").subcommand(clap::command!("retry")))
-            .get_matches();
-
-        if let Some(("jobs", jobs_command)) = matches.subcommand() {
-            if let Some(("retry", _retry_command)) = jobs_command.subcommand() {
-                worker.retry().await?;
-
-                return Ok(());
-            }
-        }
 
         let schema = build_schema();
 
@@ -106,6 +94,7 @@ fn serve(
             polygon.clone(),
             common.asset_proxy,
             job_queue.clone(),
+            redis_client,
         );
 
         let cons = common.consumer_cfg.build::<Services>().await?;
@@ -140,6 +129,40 @@ fn serve(
     })
 }
 
-fn retry_jobs(common: hub_core::Common) -> Result<()> {
-    common.rt.block_on(async move { todo!() })
+fn retry_jobs(
+    common: hub_core::Common,
+    redis_url: String,
+    db: holaplex_hub_nfts::db::DbArgs,
+    hub_uploads: holaplex_hub_nfts::hub_uploads::HubUploadArgs,
+) -> Result<()> {
+    common.rt.block_on(async move {
+        let connection = Connection::new(db)
+            .await
+            .context("failed to get database connection")?;
+        let redis_client = RedisClient::open(redis_url)?;
+        let hub_uploads = HubUploadClient::new(hub_uploads)?;
+
+        let producer = common
+            .producer_cfg
+            .clone()
+            .build::<proto::NftEvents>()
+            .await?;
+
+        let solana = Solana::new(producer.clone());
+        let polygon = Polygon::new(producer.clone());
+
+        let metadata_json_upload_task_context =
+            MetadataJsonUploadContext::new(hub_uploads, solana.clone(), polygon.clone());
+
+        let job_queue = JobQueue::new(redis_client, connection.clone());
+        let worker = Worker::<MetadataJsonUploadContext, MetadataJsonUploadTask>::new(
+            job_queue.clone(),
+            connection.clone(),
+            metadata_json_upload_task_context,
+        );
+
+        worker.retry().await?;
+
+        Ok(())
+    })
 }

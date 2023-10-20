@@ -1,7 +1,4 @@
-use hub_core::{
-    thiserror, tokio,
-    tracing::{error, info},
-};
+use hub_core::{thiserror, tokio, tracing::error};
 use sea_orm::{error::DbErr, ActiveModelTrait};
 use serde::{Deserialize, Serialize};
 
@@ -103,7 +100,6 @@ where
                                 if let Err(e) = job_tracking_am.update(db_conn).await {
                                     error!("Error updating job tracking: {}", e);
                                 }
-                                info!("Successfully processed job {}", job.id);
                             },
                             Err(e) => {
                                 let job_tracking_am =
@@ -129,6 +125,22 @@ where
         }
     }
 
+    /// This method is responsible for retrying failed jobs.
+    /// It fetches all failed jobs of a specific type from the database,
+    /// deserializes their payloads, and attempts to process them again.
+    /// If the job is processed successfully, its status is updated to "completed".
+    /// If the job fails again, an error is logged and the job is skipped.
+    /// The method returns an empty result if it finishes without panicking.
+    ///
+    /// # Args
+    ///
+    /// * `&self` - A reference to the Worker instance.
+    ///
+    /// # Results
+    ///
+    /// * `Result<(), WorkerError>` - An empty result indicating successful execution.
+    /// # Errors
+    /// `Err(WorkerError)`
     pub async fn retry(&self) -> Result<(), WorkerError> {
         let db_pool = self.db_pool.clone();
         let conn = db_pool.get();
