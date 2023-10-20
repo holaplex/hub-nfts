@@ -7,11 +7,7 @@ use hub_core::{
     producer::Producer,
 };
 use redis::AsyncCommands;
-use sea_orm::{
-    prelude::*,
-    sea_query::{Func, SimpleExpr},
-    JoinType, Order, QueryOrder, QuerySelect, Set, TransactionTrait,
-};
+use sea_orm::{prelude::*, JoinType, Order, QueryOrder, QuerySelect, Set, TransactionTrait};
 
 use super::collection::{
     fetch_owner, validate_creators, validate_json, validate_solana_creator_verification,
@@ -1176,7 +1172,7 @@ impl Mutation {
         let mint = CollectionMints::find()
             .filter(collection_mints::Column::CollectionId.eq(drop.collection_id))
             .filter(collection_mints::Column::CreationStatus.eq(CreationStatus::Queued))
-            .order_by(SimpleExpr::FunctionCall(Func::random()), Order::Asc)
+            .order_by(collection_mints::Column::RandomPick, Order::Asc)
             .one(conn)
             .await?
             .ok_or(Error::new("No Queued mint found for the drop"))?;
@@ -1355,7 +1351,7 @@ impl Mutation {
             )
             .filter(collection_mints::Column::CollectionId.eq(drop.collection_id))
             .filter(collection_mints::Column::CreationStatus.eq(CreationStatus::Queued))
-            .order_by(SimpleExpr::FunctionCall(Func::random()), Order::Asc)
+            .order_by(collection_mints::Column::RandomPick, Order::Asc)
             .limit(Some(batch_size.try_into()?))
             .all(conn)
             .await?;
