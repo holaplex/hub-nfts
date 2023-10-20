@@ -148,6 +148,7 @@ impl From<Model> for CollectionMint {
             seller_fee_basis_points,
             credits_deduction_id,
             compressed,
+            ..
         }: Model,
     ) -> Self {
         Self {
