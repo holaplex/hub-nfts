@@ -25,7 +25,6 @@ pub struct Model {
     pub credits_deduction_id: Option<Uuid>,
     #[sea_orm(nullable)]
     pub compressed: Option<bool>,
-    pub random_pick: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
