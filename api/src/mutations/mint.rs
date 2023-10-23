@@ -899,15 +899,6 @@ impl Mutation {
 
         let tx: sea_orm::DatabaseTransaction = conn.begin().await?;
 
-        collections::Entity::update_many()
-            .col_expr(
-                collections::Column::Supply,
-                Expr::value(Expr::col(collections::Column::Supply).add(Value::Int(Some(1)))),
-            )
-            .filter(collections::Column::Id.eq(collection_model.id))
-            .exec(&tx)
-            .await?;
-
         let mint = collection_mints::ActiveModel {
             collection_id: Set(drop.collection_id),
             owner: Set(None),
