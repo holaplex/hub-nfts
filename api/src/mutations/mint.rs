@@ -875,10 +875,13 @@ impl Mutation {
         ctx: &Context<'_>,
         input: QueueMintToDropInput,
     ) -> Result<QueueMintToDropPayload> {
-        let AppContext { db, user_id, .. } = ctx.data::<AppContext>()?;
+        let AppContext {
+            db, user_id, redis, ..
+        } = ctx.data::<AppContext>()?;
 
         let conn = db.get();
 
+        let mut redis_conn = redis.get_async_connection().await?;
         let metadata_json_upload_job_queue = ctx.data::<JobQueue>()?;
         let nfts_producer = ctx.data::<Producer<NftEvents>>()?;
 
@@ -941,6 +944,10 @@ impl Mutation {
                 ),
                 metadata_json: input.metadata_json,
             })
+            .await?;
+
+        redis_conn
+            .del(format!("collection:{}:supply", drop.collection_id))
             .await?;
 
         nfts_producer
