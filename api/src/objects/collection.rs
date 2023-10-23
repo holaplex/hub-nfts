@@ -1,10 +1,10 @@
-use async_graphql::{Context, Error, Object, Result};
-use sea_orm::entity::prelude::*;
+use async_graphql::{connection, Context, Error, Object, Result};
+use sea_orm::{entity::prelude::*, JoinType, Order, QueryOrder, QuerySelect};
 
 use super::{metadata_json::MetadataJson, CollectionMint, Drop, Holder};
 use crate::{
     entities::{
-        collection_creators,
+        collection_creators, collection_mints,
         collections::Model,
         mint_histories,
         sea_orm_active_enums::{Blockchain, CreationStatus},
@@ -120,13 +120,48 @@ impl Collection {
     }
 
     /// The list of minted NFTs from the collection including the NFTs address and current owner's wallet address.
-    async fn mints(&self, ctx: &Context<'_>) -> Result<Option<Vec<CollectionMint>>> {
-        let AppContext {
-            collection_mints_loader,
-            ..
-        } = ctx.data::<AppContext>()?;
+    async fn mints(
+        &self,
+        ctx: &Context<'_>,
+        after: Option<String>,
+        first: Option<i32>,
+    ) -> Result<connection::Connection<u64, u64, connection::EmptyFields, CollectionMint>> {
+        connection::query(
+            after,
+            None,
+            first,
+            None,
+            |after, before, first, last| async move {
+                const MAX_LIMIT: u64 = 32;
 
-        collection_mints_loader.load_one(self.id).await
+                assert!(before.is_none());
+                assert!(last.is_none());
+                let offset = after.map_or(0, |a| a + 1);
+                let limit = first
+                    .and_then(|f| u64::try_from(f).ok())
+                    .map_or(MAX_LIMIT, |f| f.min(MAX_LIMIT));
+
+                let mut conn = connection::Connection::new(offset > 0, true);
+
+                let AppContext { db, .. } = ctx.data::<AppContext>()?;
+
+                let mints = collection_mints::Entity::find()
+                    .filter(collection_mints::Column::Id.eq(self.id))
+                    .offset(offset)
+                    .limit(limit)
+                    .all(db.get())
+                    .await?;
+
+                conn.edges
+                    .extend(mints.into_iter().enumerate().map(|(i, m)| {
+                        let n = offset + u64::try_from(i).unwrap();
+                        connection::Edge::with_additional_fields(n, n, m.into())
+                    }));
+
+                Result::<_>::Ok(conn)
+            },
+        )
+        .await
     }
 
     /// The list of attributed creators for the collection.
@@ -139,10 +174,56 @@ impl Collection {
     }
 
     /// The list of current holders of NFTs from the collection.
-    async fn holders(&self, ctx: &Context<'_>) -> Result<Option<Vec<Holder>>> {
-        let AppContext { holders_loader, .. } = ctx.data::<AppContext>()?;
+    async fn holders(
+        &self,
+        ctx: &Context<'_>,
+        after: Option<String>,
+        first: Option<i32>,
+    ) -> Result<connection::Connection<u64, u64, connection::EmptyFields, Holder>> {
+        connection::query(
+            after,
+            None,
+            first,
+            None,
+            |after, before, first, last| async move {
+                const MAX_LIMIT: u64 = 32;
 
-        holders_loader.load_one(self.id).await
+                assert!(before.is_none());
+                assert!(last.is_none());
+                let offset = after.map_or(0, |a| a + 1);
+                let limit = first
+                    .and_then(|f| u64::try_from(f).ok())
+                    .map_or(MAX_LIMIT, |f| f.min(MAX_LIMIT));
+
+                let mut conn = connection::Connection::new(offset > 0, true);
+
+                let AppContext { db, .. } = ctx.data::<AppContext>()?;
+
+                let holders = collection_mints::Entity::find()
+                    .filter(collection_mints::Column::CollectionId.eq(self.id))
+                    .filter(collection_mints::Column::Owner.is_not_null())
+                    .select_only()
+                    .column(collection_mints::Column::CollectionId)
+                    .column_as(collection_mints::Column::Owner, "address")
+                    .column_as(collection_mints::Column::Id.count(), "owns")
+                    .group_by(collection_mints::Column::Owner)
+                    .group_by(collection_mints::Column::CollectionId)
+                    .offset(offset)
+                    .limit(limit)
+                    .into_model::<Holder>()
+                    .all(db.get())
+                    .await?;
+
+                conn.edges
+                    .extend(holders.into_iter().enumerate().map(|(i, m)| {
+                        let n = offset + u64::try_from(i).unwrap();
+                        connection::Edge::with_additional_fields(n, n, m)
+                    }));
+
+                Result::<_>::Ok(conn)
+            },
+        )
+        .await
     }
 
     #[graphql(deprecation = "Use `mint_histories` instead")]
@@ -160,13 +241,51 @@ impl Collection {
     async fn mint_histories(
         &self,
         ctx: &Context<'_>,
-    ) -> Result<Option<Vec<mint_histories::Model>>> {
-        let AppContext {
-            collection_mint_history_loader,
-            ..
-        } = ctx.data::<AppContext>()?;
+        after: Option<String>,
+        first: Option<i32>,
+    ) -> Result<connection::Connection<u64, u64, connection::EmptyFields, mint_histories::Model>>
+    {
+        connection::query(
+            after,
+            None,
+            first,
+            None,
+            |after, before, first, last| async move {
+                const MAX_LIMIT: u64 = 32;
 
-        collection_mint_history_loader.load_one(self.id).await
+                assert!(before.is_none());
+                assert!(last.is_none());
+                let offset = after.map_or(0, |a| a + 1);
+                let limit = first
+                    .and_then(|f| u64::try_from(f).ok())
+                    .map_or(MAX_LIMIT, |f| f.min(MAX_LIMIT));
+
+                let mut conn = connection::Connection::new(offset > 0, true);
+
+                let AppContext { db, .. } = ctx.data::<AppContext>()?;
+
+                let mint_histories = mint_histories::Entity::find()
+                    .join(
+                        JoinType::InnerJoin,
+                        mint_histories::Relation::CollectionMints.def(),
+                    )
+                    .filter(collection_mints::Column::CollectionId.eq(self.id))
+                    .order_by(mint_histories::Column::CreatedAt, Order::Desc)
+                    .offset(offset)
+                    .limit(limit)
+                    .all(db.get())
+                    .await?;
+
+                conn.edges
+                    .extend(mint_histories.into_iter().enumerate().map(|(i, m)| {
+                        let n = offset + u64::try_from(i).unwrap();
+                        connection::Edge::with_additional_fields(n, n, m)
+                    }));
+
+                Result::<_>::Ok(conn)
+            },
+        )
+        .await
     }
 
     async fn drop(&self, ctx: &Context<'_>) -> Result<Option<Drop>> {
