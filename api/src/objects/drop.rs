@@ -1,11 +1,11 @@
-use async_graphql::{Context, Enum, Error, Object, Result};
+use async_graphql::{connection, Context, Enum, Error, Object, Result};
 use hub_core::chrono::Utc;
-use sea_orm::entity::prelude::*;
+use sea_orm::{entity::prelude::*, JoinType, QuerySelect};
 
 use super::{Collection, CollectionMint};
 use crate::{
     entities::{
-        drops, mint_histories,
+        collection_mints, drops, mint_histories,
         sea_orm_active_enums::{CreationStatus, DropType},
     },
     AppContext,
@@ -155,13 +155,54 @@ impl Drop {
         }
     }
 
-    async fn queued_mints(&self, ctx: &Context<'_>) -> Result<Option<Vec<CollectionMint>>> {
-        let AppContext {
-            queued_mints_loader,
-            ..
-        } = ctx.data::<AppContext>()?;
+    async fn queued_mints(
+        &self,
+        ctx: &Context<'_>,
+        after: Option<String>,
+        first: Option<i32>,
+    ) -> Result<connection::Connection<u64, u64, connection::EmptyFields, CollectionMint>> {
+        connection::query(
+            after,
+            None,
+            first,
+            None,
+            |after, before, first, last| async move {
+                const MAX_LIMIT: u64 = 32;
 
-        queued_mints_loader.load_one(self.id).await
+                assert!(before.is_none());
+                assert!(last.is_none());
+                let offset = after.map_or(0, |a| a + 1);
+                let limit = first
+                    .and_then(|f| u64::try_from(f).ok())
+                    .map_or(MAX_LIMIT, |f| f.min(MAX_LIMIT));
+
+                let mut conn = connection::Connection::new(offset > 0, true);
+
+                let AppContext { db, .. } = ctx.data::<AppContext>()?;
+
+                let mints = collection_mints::Entity::find()
+                    .join(
+                        JoinType::InnerJoin,
+                        collection_mints::Relation::Collections.def(),
+                    )
+                    .join(JoinType::InnerJoin, drops::Relation::Collections.def())
+                    .filter(drops::Column::Id.eq(self.id))
+                    .filter(collection_mints::Column::CreationStatus.eq(CreationStatus::Queued))
+                    .offset(offset)
+                    .limit(limit)
+                    .all(db.get())
+                    .await?;
+
+                conn.edges
+                    .extend(mints.into_iter().enumerate().map(|(i, m)| {
+                        let n = offset + u64::try_from(i).unwrap();
+                        connection::Edge::with_additional_fields(n, n, m.into())
+                    }));
+
+                Result::<_>::Ok(conn)
+            },
+        )
+        .await
     }
 
     #[graphql(deprecation = "Use `mint_histories` under `Collection` Object instead.")]
