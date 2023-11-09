@@ -435,6 +435,7 @@ impl Processor {
                 .map_err(ProcessorErrorKind::InvalidSellerFee)?),
             credits_deduction_id: Set(None),
             compressed: Set(Some(compressed)),
+            ..Default::default()
         };
 
         let mint_model = mint_am.insert(self.db.get()).await?;
